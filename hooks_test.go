@@ -66,6 +66,31 @@ func TestSplitStatements(t *testing.T) {
 			"-- cleanup\nDELETE FROM t; SELECT 1",
 			[]string{"-- cleanup\nDELETE FROM t", "SELECT 1"},
 		},
+		{
+			"dollar-quoted function body",
+			"CREATE FUNCTION f() RETURNS void AS $$ BEGIN PERFORM 1; PERFORM 2; END; $$ LANGUAGE plpgsql; SELECT 1;",
+			[]string{"CREATE FUNCTION f() RETURNS void AS $$ BEGIN PERFORM 1; PERFORM 2; END; $$ LANGUAGE plpgsql", "SELECT 1"},
+		},
+		{
+			"tagged dollar-quoted body",
+			"DO $fn$ BEGIN RAISE NOTICE 'x;y'; END; $fn$; SELECT 2;",
+			[]string{"DO $fn$ BEGIN RAISE NOTICE 'x;y'; END; $fn$", "SELECT 2"},
+		},
+		{
+			"block comment with semicolon",
+			"/* comment; still comment */ SELECT 1; SELECT 2;",
+			[]string{"/* comment; still comment */ SELECT 1", "SELECT 2"},
+		},
+		{
+			"nested block comment with semicolon",
+			"/* outer; /* inner; */ done; */ SELECT 1; SELECT 2;",
+			[]string{"/* outer; /* inner; */ done; */ SELECT 1", "SELECT 2"},
+		},
+		{
+			"double-quoted identifier with semicolon",
+			`SELECT "a;b" FROM t; SELECT 2;`,
+			[]string{`SELECT "a;b" FROM t`, "SELECT 2"},
+		},
 	}
 
 	for _, tt := range tests {
