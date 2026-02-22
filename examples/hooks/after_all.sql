@@ -1,0 +1,2 @@
+-- Runs after FK, sequences, and triggers are created.
+-- Put views/materialized views/validation queries here.

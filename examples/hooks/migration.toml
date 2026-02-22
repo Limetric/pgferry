@@ -1,0 +1,15 @@
+schema = "app"
+on_schema_exists = "error"
+unlogged_tables = false
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+
+[postgres]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+
+[hooks]
+before_data = ["before_data.sql"]
+after_data = ["after_data.sql"]
+before_fk = ["before_fk.sql"]
+after_all = ["after_all.sql"]
