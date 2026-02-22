@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -53,7 +53,7 @@ jobs:
       POSTGRES_DSN: "postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable"
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: go test -tags integration -count=1 -v ./...
@@ -63,7 +63,7 @@ jobs:
     needs: [test, integration]
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: go build -o pgferry .
@@ -91,7 +91,7 @@ jobs:
             goarch: arm64
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Build binary
