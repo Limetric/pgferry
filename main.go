@@ -53,9 +53,21 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	start := time.Now()
 
+	// Force unlogged_tables=false in split modes (no bulk load benefit)
+	if cfg.SchemaOnly || cfg.DataOnly {
+		cfg.UnloggedTables = false
+	}
+
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
+	mode := "full"
+	if cfg.SchemaOnly {
+		mode = "schema_only"
+	} else if cfg.DataOnly {
+		mode = "data_only"
+	}
 	log.Printf(
-		"config: workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t replicate_on_update_current_timestamp=%t",
+		"config: mode=%s workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t replicate_on_update_current_timestamp=%t",
+		mode,
 		cfg.Workers,
 		cfg.Schema,
 		cfg.OnSchemaExists,
@@ -149,35 +161,55 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 
 	// 4. Create schema based on configured conflict behavior
-	log.Printf("preparing schema '%s'...", cfg.Schema)
-	if err := prepareTargetSchema(ctx, pgPool, cfg.Schema, cfg.OnSchemaExists); err != nil {
-		return err
+	if !cfg.DataOnly {
+		log.Printf("preparing schema '%s'...", cfg.Schema)
+		if err := prepareTargetSchema(ctx, pgPool, cfg.Schema, cfg.OnSchemaExists); err != nil {
+			return err
+		}
+
+		// 5. Create bare tables (no PKs, FKs, indexes)
+		log.Printf("creating tables...")
+		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
+			return fmt.Errorf("create tables: %w", err)
+		}
 	}
 
-	// 5. Create bare UNLOGGED tables (no PKs, FKs, indexes)
-	log.Printf("creating tables...")
-	if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
-		return fmt.Errorf("create tables: %w", err)
-	}
+	if !cfg.SchemaOnly {
+		// In data_only mode, FKs are already in place from the schema_only run.
+		// Disable triggers to prevent FK violations during parallel COPY.
+		if cfg.DataOnly {
+			log.Printf("disabling triggers for data load...")
+			if err := setTriggers(ctx, pgPool, schema, cfg.Schema, false); err != nil {
+				return fmt.Errorf("disable triggers: %w", err)
+			}
+		}
 
-	// 6. before_data hooks
-	if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data"); err != nil {
-		return fmt.Errorf("before_data hooks: %w", err)
-	}
+		// 6. before_data hooks
+		if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data"); err != nil {
+			return fmt.Errorf("before_data hooks: %w", err)
+		}
 
-	// 7. Migrate data
-	if cfg.SourceSnapshotMode == "single_tx" {
-		log.Printf("migrating data with source_snapshot_mode=single_tx (sequential)")
-	} else {
-		log.Printf("migrating data with %d workers...", cfg.Workers)
-	}
-	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
-		return fmt.Errorf("migrate data: %w", err)
-	}
+		// 7. Migrate data
+		if cfg.SourceSnapshotMode == "single_tx" {
+			log.Printf("migrating data with source_snapshot_mode=single_tx (sequential)")
+		} else {
+			log.Printf("migrating data with %d workers...", cfg.Workers)
+		}
+		if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+			return fmt.Errorf("migrate data: %w", err)
+		}
 
-	// 8. after_data hooks
-	if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data"); err != nil {
-		return fmt.Errorf("after_data hooks: %w", err)
+		// 8. after_data hooks
+		if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data"); err != nil {
+			return fmt.Errorf("after_data hooks: %w", err)
+		}
+
+		if cfg.DataOnly {
+			log.Printf("re-enabling triggers...")
+			if err := setTriggers(ctx, pgPool, schema, cfg.Schema, true); err != nil {
+				return fmt.Errorf("enable triggers: %w", err)
+			}
+		}
 	}
 
 	// 9. Post-migration: SET LOGGED, PKs, indexes, hooks, FKs, sequences, triggers

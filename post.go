@@ -15,20 +15,34 @@ import (
 func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *MigrationConfig) error {
 	pgSchema := cfg.Schema
 
-	steps := []struct {
-		name string
-		fn   func(context.Context, *pgxpool.Pool, *Schema, string) error
-	}{
-		{"SET LOGGED", setLogged},
-		{"primary keys", addPrimaryKeys},
-		{"indexes", addIndexes},
+	// data_only: skip all DDL steps, only reset sequences + after_all hooks
+	if cfg.DataOnly {
+		log.Printf("  sequences...")
+		if err := resetSequences(ctx, pool, schema, pgSchema); err != nil {
+			return fmt.Errorf("sequences: %w", err)
+		}
+		if err := loadAndExecSQLFiles(ctx, pool, cfg, cfg.Hooks.AfterAll, "after_all"); err != nil {
+			return fmt.Errorf("after_all hooks: %w", err)
+		}
+		return nil
 	}
 
-	for _, step := range steps {
-		log.Printf("  %s...", step.name)
-		if err := step.fn(ctx, pool, schema, pgSchema); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
+	// schema_only: skip SET LOGGED (tables are already LOGGED)
+	if !cfg.SchemaOnly {
+		log.Printf("  SET LOGGED...")
+		if err := setLogged(ctx, pool, schema, pgSchema); err != nil {
+			return fmt.Errorf("SET LOGGED: %w", err)
 		}
+	}
+
+	log.Printf("  primary keys...")
+	if err := addPrimaryKeys(ctx, pool, schema, pgSchema); err != nil {
+		return fmt.Errorf("primary keys: %w", err)
+	}
+
+	log.Printf("  indexes...")
+	if err := addIndexes(ctx, pool, schema, pgSchema); err != nil {
+		return fmt.Errorf("indexes: %w", err)
 	}
 
 	// before_fk hooks
@@ -36,25 +50,22 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 		return fmt.Errorf("before_fk hooks: %w", err)
 	}
 
-	// Auto-clean orphaned rows that would violate FK constraints
-	log.Printf("  orphan cleanup...")
-	if err := cleanOrphans(ctx, pool, schema, pgSchema); err != nil {
-		return fmt.Errorf("orphan cleanup: %w", err)
-	}
-
-	steps2 := []struct {
-		name string
-		fn   func(context.Context, *pgxpool.Pool, *Schema, string) error
-	}{
-		{"foreign keys", addForeignKeys},
-		{"sequences", resetSequences},
-	}
-
-	for _, step := range steps2 {
-		log.Printf("  %s...", step.name)
-		if err := step.fn(ctx, pool, schema, pgSchema); err != nil {
-			return fmt.Errorf("%s: %w", step.name, err)
+	// schema_only: skip orphan cleanup (no data to clean)
+	if !cfg.SchemaOnly {
+		log.Printf("  orphan cleanup...")
+		if err := cleanOrphans(ctx, pool, schema, pgSchema); err != nil {
+			return fmt.Errorf("orphan cleanup: %w", err)
 		}
+	}
+
+	log.Printf("  foreign keys...")
+	if err := addForeignKeys(ctx, pool, schema, pgSchema); err != nil {
+		return fmt.Errorf("foreign keys: %w", err)
+	}
+
+	log.Printf("  sequences...")
+	if err := resetSequences(ctx, pool, schema, pgSchema); err != nil {
+		return fmt.Errorf("sequences: %w", err)
 	}
 
 	if cfg.AddUnsignedChecks {
@@ -367,6 +378,22 @@ func cleanOrphans(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 				log.Printf("    %s %d orphaned rows in %s.%s (fk: %s → %s)",
 					action, tag.RowsAffected(), pgSchema, t.PGName, fk.Name, fk.RefPGTable)
 			}
+		}
+	}
+	return nil
+}
+
+// setTriggers enables or disables all triggers on every table in the schema.
+// Disabling triggers suspends FK enforcement, allowing parallel COPY in data_only mode.
+func setTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, enable bool) error {
+	action := "DISABLE"
+	if enable {
+		action = "ENABLE"
+	}
+	for _, t := range schema.Tables {
+		q := fmt.Sprintf("ALTER TABLE %s.%s %s TRIGGER ALL", pgIdent(pgSchema), pgIdent(t.PGName), action)
+		if err := execSQL(ctx, pool, t.PGName, q); err != nil {
+			return err
 		}
 	}
 	return nil
