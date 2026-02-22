@@ -164,7 +164,7 @@ func introspectColumns(db *sql.DB, dbName, tableName string) ([]Column, error) {
 
 func introspectIndexes(db *sql.DB, dbName, tableName string) ([]Index, error) {
 	rows, err := db.Query(
-		`SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX
+		`SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX, INDEX_TYPE, COLLATION, SUB_PART
 		 FROM INFORMATION_SCHEMA.STATISTICS
 		 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		 ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
@@ -179,9 +179,11 @@ func introspectIndexes(db *sql.DB, dbName, tableName string) ([]Index, error) {
 	var indexOrder []string
 
 	for rows.Next() {
-		var idxName, colName string
+		var idxName, indexType string
+		var colName, collation sql.NullString
+		var subPart sql.NullInt64
 		var nonUnique, seqInIndex int
-		if err := rows.Scan(&idxName, &colName, &nonUnique, &seqInIndex); err != nil {
+		if err := rows.Scan(&idxName, &colName, &nonUnique, &seqInIndex, &indexType, &collation, &subPart); err != nil {
 			return nil, err
 		}
 
@@ -189,13 +191,29 @@ func introspectIndexes(db *sql.DB, dbName, tableName string) ([]Index, error) {
 		if !ok {
 			idx = &Index{
 				Name:      toSnakeCase(idxName),
+				MySQLName: idxName,
 				Unique:    nonUnique == 0,
 				IsPrimary: idxName == "PRIMARY",
+				Type:      strings.ToUpper(indexType),
 			}
 			indexMap[idxName] = idx
 			indexOrder = append(indexOrder, idxName)
 		}
-		idx.Columns = append(idx.Columns, toSnakeCase(colName))
+
+		if subPart.Valid {
+			idx.HasPrefix = true
+		}
+		if !colName.Valid {
+			idx.HasExpression = true
+			continue
+		}
+
+		idx.Columns = append(idx.Columns, toSnakeCase(colName.String))
+		if collation.Valid && strings.EqualFold(collation.String, "D") {
+			idx.ColumnOrders = append(idx.ColumnOrders, "DESC")
+		} else {
+			idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

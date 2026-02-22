@@ -198,7 +198,12 @@ func addPrimaryKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
 	for _, t := range schema.Tables {
 		for _, idx := range t.Indexes {
-			cols := quotedColumnList(idx.Columns)
+			if reason, unsupported := indexUnsupportedReason(idx); unsupported {
+				log.Printf("    skipping index %s on %s.%s: %s", idx.MySQLName, pgSchema, t.PGName, reason)
+				continue
+			}
+
+			cols := quotedOrderedColumnList(idx.Columns, idx.ColumnOrders)
 			unique := ""
 			if idx.Unique {
 				unique = "UNIQUE "
@@ -372,6 +377,18 @@ func quotedColumnList(cols []string) string {
 	quoted := make([]string, len(cols))
 	for i, c := range cols {
 		quoted[i] = pgIdent(c)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func quotedOrderedColumnList(cols, orders []string) string {
+	quoted := make([]string, len(cols))
+	for i, c := range cols {
+		dir := ""
+		if i < len(orders) && strings.EqualFold(orders[i], "DESC") {
+			dir = " DESC"
+		}
+		quoted[i] = pgIdent(c) + dir
 	}
 	return strings.Join(quoted, ", ")
 }

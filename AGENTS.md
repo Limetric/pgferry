@@ -37,4 +37,5 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 - MySQL names are converted to snake_case via `toSnakeCase`; PostgreSQL reserved words are quoted via `pgIdent`
 - Tables are created as regular logged tables by default; set `unlogged_tables=true` to use UNLOGGED during bulk load
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
+- Unsupported MySQL index features (e.g. FULLTEXT/SPATIAL/prefix/expression indexes) are reported and skipped so migration can proceed safely
 - Integration tests use build tag `//go:build integration`

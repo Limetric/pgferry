@@ -99,6 +99,12 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		log.Printf("  %s → %s (%d cols, %d indexes, %d fks)",
 			t.MySQLName, t.PGName, len(t.Columns), len(t.Indexes), len(t.ForeignKeys))
 	}
+	if warnings := collectIndexCompatibilityWarnings(schema); len(warnings) > 0 {
+		log.Printf("index compatibility report: %d index(es) may require manual handling", len(warnings))
+		for _, w := range warnings {
+			log.Printf("  WARN: %s", w)
+		}
+	}
 
 	// Close introspection connection — data migration opens its own per-table connections
 	mysqlDB.Close()
