@@ -383,6 +383,22 @@ func cleanOrphans(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 	return nil
 }
 
+// setTriggers enables or disables all triggers on every table in the schema.
+// Disabling triggers suspends FK enforcement, allowing parallel COPY in data_only mode.
+func setTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, enable bool) error {
+	action := "DISABLE"
+	if enable {
+		action = "ENABLE"
+	}
+	for _, t := range schema.Tables {
+		q := fmt.Sprintf("ALTER TABLE %s.%s %s TRIGGER ALL", pgIdent(pgSchema), pgIdent(t.PGName), action)
+		if err := execSQL(ctx, pool, t.PGName, q); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // quotedColumnList joins column names with proper quoting.
 func quotedColumnList(cols []string) string {
 	quoted := make([]string, len(cols))

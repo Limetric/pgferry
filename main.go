@@ -175,6 +175,15 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 
 	if !cfg.SchemaOnly {
+		// In data_only mode, FKs are already in place from the schema_only run.
+		// Disable triggers to prevent FK violations during parallel COPY.
+		if cfg.DataOnly {
+			log.Printf("disabling triggers for data load...")
+			if err := setTriggers(ctx, pgPool, schema, cfg.Schema, false); err != nil {
+				return fmt.Errorf("disable triggers: %w", err)
+			}
+		}
+
 		// 6. before_data hooks
 		if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data"); err != nil {
 			return fmt.Errorf("before_data hooks: %w", err)
@@ -193,6 +202,13 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		// 8. after_data hooks
 		if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data"); err != nil {
 			return fmt.Errorf("after_data hooks: %w", err)
+		}
+
+		if cfg.DataOnly {
+			log.Printf("re-enabling triggers...")
+			if err := setTriggers(ctx, pgPool, schema, cfg.Schema, true); err != nil {
+				return fmt.Errorf("enable triggers: %w", err)
+			}
 		}
 	}
 
