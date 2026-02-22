@@ -52,7 +52,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
-	log.Printf("config: workers=%d batch_size=%d schema=%s", cfg.Workers, cfg.BatchSize, cfg.Schema)
+	log.Printf("config: workers=%d batch_size=%d schema=%s on_schema_exists=%s", cfg.Workers, cfg.BatchSize, cfg.Schema, cfg.OnSchemaExists)
 
 	// 1. Connect to MySQL (for schema introspection only)
 	log.Printf("connecting to MySQL...")
@@ -100,13 +100,29 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	// 4. Create schema, drop if exists
-	log.Printf("creating schema '%s'...", cfg.Schema)
-	if _, err := pgPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(cfg.Schema))); err != nil {
-		return fmt.Errorf("drop schema: %w", err)
-	}
-	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(cfg.Schema))); err != nil {
-		return fmt.Errorf("create schema: %w", err)
+	// 4. Create schema based on configured conflict behavior
+	log.Printf("preparing schema '%s'...", cfg.Schema)
+	switch cfg.OnSchemaExists {
+	case "recreate":
+		if _, err := pgPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(cfg.Schema))); err != nil {
+			return fmt.Errorf("drop schema: %w", err)
+		}
+		if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(cfg.Schema))); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+	case "error":
+		var exists bool
+		if err := pgPool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", cfg.Schema).Scan(&exists); err != nil {
+			return fmt.Errorf("check schema existence: %w", err)
+		}
+		if exists {
+			return fmt.Errorf("schema %q already exists in target database (on_schema_exists=error)", cfg.Schema)
+		}
+		if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(cfg.Schema))); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported on_schema_exists value %q", cfg.OnSchemaExists)
 	}
 
 	// 5. Create bare UNLOGGED tables (no PKs, FKs, indexes)

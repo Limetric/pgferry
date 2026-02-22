@@ -12,6 +12,7 @@ func TestLoadConfig(t *testing.T) {
 
 	content := `
 schema = "myschema"
+on_schema_exists = "recreate"
 workers = 8
 batch_size = 10000
 
@@ -48,6 +49,9 @@ after_all = ["post.sql"]
 	if cfg.Workers != 8 {
 		t.Errorf("Workers = %d, want 8", cfg.Workers)
 	}
+	if cfg.OnSchemaExists != "recreate" {
+		t.Errorf("OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "recreate")
+	}
 	if cfg.BatchSize != 10000 {
 		t.Errorf("BatchSize = %d, want 10000", cfg.BatchSize)
 	}
@@ -64,13 +68,15 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	cfgFile := filepath.Join(dir, "minimal.toml")
 
 	content := `
-[mysql]
+schema = "target"
+
+	[mysql]
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
 dsn = "postgres://u:p@h:5432/db"
 `
-	// schema, workers, batch_size omitted — defaults should apply
+	// on_schema_exists, workers, batch_size omitted — defaults should apply
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -80,8 +86,11 @@ dsn = "postgres://u:p@h:5432/db"
 		t.Fatalf("loadConfig() error: %v", err)
 	}
 
-	if cfg.Schema != "app" {
-		t.Errorf("default Schema = %q, want %q", cfg.Schema, "app")
+	if cfg.Schema != "target" {
+		t.Errorf("Schema = %q, want %q", cfg.Schema, "target")
+	}
+	if cfg.OnSchemaExists != "error" {
+		t.Errorf("default OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "error")
 	}
 	if cfg.Workers != 4 {
 		t.Errorf("default Workers = %d, want 4", cfg.Workers)
@@ -95,13 +104,58 @@ func TestLoadConfig_MissingDSN(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "bad.toml")
 
-	if err := os.WriteFile(cfgFile, []byte(`[mysql]`), 0644); err != nil {
+	if err := os.WriteFile(cfgFile, []byte(`schema = "x"`+"\n"+`[mysql]`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for missing DSNs")
+	}
+}
+
+func TestLoadConfig_MissingSchema(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_schema.toml")
+
+	content := `
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for missing schema")
+	}
+}
+
+func TestLoadConfig_InvalidOnSchemaExists(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_mode.toml")
+
+	content := `
+schema = "target"
+on_schema_exists = "merge"
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid on_schema_exists")
 	}
 }
 

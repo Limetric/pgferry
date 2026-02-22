@@ -4,18 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
 
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
-	MySQL    MySQLConfig    `toml:"mysql"`
-	Postgres PostgresConfig `toml:"postgres"`
-	Schema   string         `toml:"schema"`
-	Workers  int            `toml:"workers"`
-	BatchSize int           `toml:"batch_size"`
-	Hooks    HooksConfig    `toml:"hooks"`
+	MySQL          MySQLConfig    `toml:"mysql"`
+	Postgres       PostgresConfig `toml:"postgres"`
+	Schema         string         `toml:"schema"`
+	OnSchemaExists string         `toml:"on_schema_exists"`
+	Workers        int            `toml:"workers"`
+	BatchSize      int            `toml:"batch_size"`
+	Hooks          HooksConfig    `toml:"hooks"`
 
 	// configDir is the directory containing the TOML file, used to resolve relative SQL paths.
 	configDir string
@@ -54,14 +56,25 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	}
 	cfg.configDir = filepath.Dir(absPath)
 
-	if cfg.Schema == "" {
-		cfg.Schema = "app"
-	}
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
 	}
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 50000
+	}
+
+	cfg.Schema = strings.TrimSpace(cfg.Schema)
+	if cfg.Schema == "" {
+		return nil, fmt.Errorf("schema is required")
+	}
+
+	if cfg.OnSchemaExists == "" {
+		cfg.OnSchemaExists = "error"
+	}
+	switch cfg.OnSchemaExists {
+	case "error", "recreate":
+	default:
+		return nil, fmt.Errorf("on_schema_exists must be one of: error, recreate")
 	}
 
 	if cfg.MySQL.DSN == "" {
