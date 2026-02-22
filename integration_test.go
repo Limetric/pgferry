@@ -16,11 +16,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestIntegration(t *testing.T) {
+func TestIntegration_MySQL(t *testing.T) {
 	mysqlDSN := os.Getenv("MYSQL_DSN")
 	pgDSN := os.Getenv("POSTGRES_DSN")
 	if mysqlDSN == "" || pgDSN == "" {
-		t.Fatal("MYSQL_DSN and POSTGRES_DSN env vars required")
+		t.Skip("MYSQL_DSN and POSTGRES_DSN env vars required")
 	}
 
 	ctx := context.Background()
@@ -38,19 +38,20 @@ func TestIntegration(t *testing.T) {
 	mysqlDB.Close()
 
 	// --- Introspect ---
-	mysqlDB2, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true")
+	src := &mysqlSourceDB{}
+	mysqlDB2, err := src.OpenDB(mysqlDSN)
 	if err != nil {
 		t.Fatalf("open mysql for introspection: %v", err)
 	}
 	defer mysqlDB2.Close()
 	mysqlDB2.SetMaxOpenConns(1)
 
-	dbName, err := extractMySQLDBName(mysqlDSN)
+	dbName, err := src.ExtractDBName(mysqlDSN)
 	if err != nil {
 		t.Fatalf("extract db name: %v", err)
 	}
 
-	schema, err := introspectSchema(mysqlDB2, dbName)
+	schema, err := src.IntrospectSchema(mysqlDB2, dbName)
 	if err != nil {
 		t.Fatalf("introspect: %v", err)
 	}
@@ -92,7 +93,8 @@ func TestIntegration(t *testing.T) {
 	tomlContent := fmt.Sprintf(`schema = %q
 workers = 2
 
-[mysql]
+[source]
+type = "mysql"
 dsn = %q
 
 [postgres]
@@ -116,7 +118,7 @@ after_all = []
 	}
 
 	// --- Run pipeline ---
-	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
 
@@ -124,7 +126,7 @@ after_all = []
 		t.Fatalf("before_data hooks: %v", err)
 	}
 
-	if err := migrateData(ctx, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+	if err := migrateData(ctx, src, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
 		t.Fatalf("migrateData: %v", err)
 	}
 
@@ -171,7 +173,7 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 	mysqlDSN := os.Getenv("MYSQL_DSN")
 	pgDSN := os.Getenv("POSTGRES_DSN")
 	if mysqlDSN == "" || pgDSN == "" {
-		t.Fatal("MYSQL_DSN and POSTGRES_DSN env vars required")
+		t.Skip("MYSQL_DSN and POSTGRES_DSN env vars required")
 	}
 
 	ctx := context.Background()
@@ -206,12 +208,8 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 		t.Fatalf("build readonly DSN: %v", err)
 	}
 
-	roQueryDSN, err := mysqlDSNWithReadOptions(roDSN)
-	if err != nil {
-		t.Fatalf("prepare readonly query DSN: %v", err)
-	}
-
-	roMySQL, err := sql.Open("mysql", roQueryDSN)
+	src := &mysqlSourceDB{}
+	roMySQL, err := src.OpenDB(roDSN)
 	if err != nil {
 		t.Fatalf("open mysql readonly connection: %v", err)
 	}
@@ -222,7 +220,7 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 		t.Fatal("expected INSERT to fail for read-only MySQL user")
 	}
 
-	schema, err := introspectSchema(roMySQL, dbName)
+	schema, err := src.IntrospectSchema(roMySQL, dbName)
 	if err != nil {
 		t.Fatalf("introspect with readonly user: %v", err)
 	}
@@ -254,10 +252,10 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 		},
 	}
 
-	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
-	if err := migrateData(ctx, roDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+	if err := migrateData(ctx, src, roDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
 		t.Fatalf("migrateData with readonly user: %v", err)
 	}
 	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
@@ -269,7 +267,182 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 	assertRowCount(t, pgPool, pgSchema, "comments", 10)
 }
 
-// seedMySQL creates the test schema and inserts seed data.
+func TestIntegration_SQLite(t *testing.T) {
+	pgDSN := os.Getenv("POSTGRES_DSN")
+	if pgDSN == "" {
+		t.Skip("POSTGRES_DSN env var required")
+	}
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+
+	// Create and seed SQLite database
+	sqliteFile := filepath.Join(tmpDir, "test.db")
+	seedSQLite(t, sqliteFile)
+
+	src := &sqliteSourceDB{}
+	sqliteDB, err := src.OpenDB(sqliteFile)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer sqliteDB.Close()
+
+	dbName, err := src.ExtractDBName(sqliteFile)
+	if err != nil {
+		t.Fatalf("extract db name: %v", err)
+	}
+	t.Logf("SQLite db name: %s", dbName)
+
+	schema, err := src.IntrospectSchema(sqliteDB, dbName)
+	if err != nil {
+		t.Fatalf("introspect: %v", err)
+	}
+	sqliteDB.Close()
+
+	if len(schema.Tables) != 3 {
+		t.Fatalf("expected 3 tables, got %d", len(schema.Tables))
+	}
+
+	// --- Prepare PG ---
+	pgPool, err := pgxpool.New(ctx, pgDSN)
+	if err != nil {
+		t.Fatalf("connect pg: %v", err)
+	}
+	defer pgPool.Close()
+
+	const pgSchema = "inttest_sqlite"
+
+	_, _ = pgPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(pgSchema)))
+	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(pgSchema))); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		pgPool.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(pgSchema)))
+	})
+
+	tomlContent := fmt.Sprintf(`schema = %q
+workers = 1
+
+[source]
+type = "sqlite"
+dsn = %q
+
+[postgres]
+dsn = %q
+`, pgSchema, sqliteFile, pgDSN)
+
+	cfgPath := filepath.Join(tmpDir, "migration.toml")
+	if err := os.WriteFile(cfgPath, []byte(tomlContent), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
+		t.Fatalf("createTables: %v", err)
+	}
+
+	if err := migrateData(ctx, src, sqliteFile, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+		t.Fatalf("migrateData: %v", err)
+	}
+
+	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
+		t.Fatalf("postMigrate: %v", err)
+	}
+
+	// --- Assertions ---
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+
+	for _, tbl := range []string{"users", "posts", "comments"} {
+		assertPKExists(t, pgPool, pgSchema, tbl)
+	}
+
+	assertFKExists(t, pgPool, pgSchema, "posts", "users")
+	assertFKExists(t, pgPool, pgSchema, "comments", "posts")
+	assertFKExists(t, pgPool, pgSchema, "comments", "users")
+
+	// Spot-check data
+	var name string
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("SELECT name FROM %s.users WHERE id = 1", pgIdent(pgSchema)),
+	).Scan(&name)
+	if err != nil {
+		t.Fatalf("spot-check query: %v", err)
+	}
+	if name != "Alice" {
+		t.Errorf("expected user 1 name 'Alice', got %q", name)
+	}
+}
+
+func seedSQLite(t *testing.T, dbPath string) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite for seeding: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			email TEXT
+		)`,
+		`CREATE TABLE posts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			title TEXT NOT NULL,
+			body TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		`CREATE TABLE comments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			post_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			content TEXT,
+			FOREIGN KEY (post_id) REFERENCES posts(id),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+
+		"INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Bob', NULL)",
+		"INSERT INTO users (name, email) VALUES ('Charlie', 'charlie@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Diana', 'diana@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Eve', NULL)",
+
+		"INSERT INTO posts (user_id, title, body) VALUES (1, 'First Post', 'Hello world')",
+		"INSERT INTO posts (user_id, title, body) VALUES (2, 'Bobs Post', 'Content here')",
+		"INSERT INTO posts (user_id, title, body) VALUES (3, 'Thoughts', 'Some thoughts')",
+		"INSERT INTO posts (user_id, title, body) VALUES (4, 'Update', NULL)",
+		"INSERT INTO posts (user_id, title, body) VALUES (5, 'Hello', 'Eve here')",
+
+		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 2, 'Nice post!')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 3, 'Great read')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (2, 1, 'Thanks Bob')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (2, 4, 'Interesting')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (3, 5, 'I agree')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (3, 1, 'Me too')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (4, 2, 'Good update')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (4, 3, 'Thanks')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 1, 'Welcome Eve')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 4, 'Hi Eve!')",
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed sqlite %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
+// --- MySQL seed helpers ---
+
 func seedMySQL(t *testing.T, db *sql.DB) {
 	t.Helper()
 
@@ -299,21 +472,18 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 			FOREIGN KEY (user_id) REFERENCES users(id)
 		)`,
 
-		// Users
 		"INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')",
 		"INSERT INTO users (name, email) VALUES ('Bob', NULL)",
 		"INSERT INTO users (name, email) VALUES ('Charlie', 'charlie@example.com')",
 		"INSERT INTO users (name, email) VALUES ('Diana', 'diana@example.com')",
 		"INSERT INTO users (name, email) VALUES ('Eve', NULL)",
 
-		// Posts (one per user)
 		"INSERT INTO posts (user_id, title, body) VALUES (1, 'First Post', 'Hello world')",
 		"INSERT INTO posts (user_id, title, body) VALUES (2, 'Bobs Post', 'Content here')",
 		"INSERT INTO posts (user_id, title, body) VALUES (3, 'Thoughts', 'Some thoughts')",
 		"INSERT INTO posts (user_id, title, body) VALUES (4, 'Update', NULL)",
 		"INSERT INTO posts (user_id, title, body) VALUES (5, 'Hello', 'Eve here')",
 
-		// Valid comments (10)
 		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 2, 'Nice post!')",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 3, 'Great read')",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (2, 1, 'Thanks Bob')",
@@ -325,7 +495,6 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 1, 'Welcome Eve')",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 4, 'Hi Eve!')",
 
-		// Disable FK checks to insert orphan comments (post_id references non-existent posts)
 		"SET FOREIGN_KEY_CHECKS=0",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (999, 1, 'Orphan 1')",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (998, 2, 'Orphan 2')",
