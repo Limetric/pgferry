@@ -32,15 +32,15 @@ MySQL servers without auth workarounds.
 ## Install
 
 ```bash
-go install pgferry@latest
+go install github.com/Limetric/pgferry@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/your-org/pgferry.git
+git clone https://github.com/Limetric/pgferry.git
 cd pgferry
-go build -o pgferry .
+go build -o build/pgferry .
 ```
 
 ## Quick start
@@ -89,140 +89,22 @@ common scenarios:
 | [`schema-only`](examples/schema-only/) | Create the PostgreSQL schema (tables, PKs, indexes, FKs, sequences, triggers) without migrating any data |
 | [`data-only`](examples/data-only/) | Stream data into an existing schema and reset sequences &mdash; use after a `schema_only` run |
 
-## Configuration reference
+## Documentation
 
-```toml
-# Target PostgreSQL schema name (required)
-schema = "app"
-
-# What to do if the schema already exists: "error" (default) or "recreate"
-on_schema_exists = "error"
-
-# DDL only — create tables, PKs, indexes, FKs, sequences, triggers; skip data (default: false)
-schema_only = false
-
-# Data only — assumes schema exists; stream data + reset sequences (default: false)
-# Mutually exclusive with schema_only
-data_only = false
-
-# Source read consistency mode: "none" (default, parallel) or "single_tx" (single-transaction snapshot, sequential)
-source_snapshot_mode = "none"
-
-# Use UNLOGGED tables during bulk load, then SET LOGGED after (default: false)
-# Ignored when schema_only or data_only is true
-unlogged_tables = false
-
-# Emulate MySQL ON UPDATE CURRENT_TIMESTAMP via PG triggers (default: false)
-replicate_on_update_current_timestamp = false
-
-# Parallel worker count (default: min(NumCPU, 8))
-workers = 4
-
-[mysql]
-dsn = "user:pass@tcp(host:port)/dbname"
-
-[postgres]
-dsn = "postgres://user:pass@host:port/dbname?sslmode=disable"
-
-[type_mapping]
-tinyint1_as_boolean = false       # tinyint(1) → boolean instead of smallint
-binary16_as_uuid = false          # binary(16) → uuid instead of bytea
-datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp
-json_as_jsonb = false             # json → jsonb instead of json
-sanitize_json_null_bytes = true   # strip \x00 from JSON (PG rejects them)
-unknown_as_text = false           # map unrecognized MySQL types to text
-
-[hooks]
-before_data = []   # after table creation, before COPY
-after_data = []    # after COPY, before constraints
-before_fk = []     # after PKs/indexes, before FK creation
-after_all = []     # after everything (views, ANALYZE, etc.)
-```
-
-Hook SQL file paths are resolved relative to the config file directory. All
-occurrences of `{{schema}}` in hook files are replaced with the configured schema
-name at runtime.
-
-## Migration pipeline
-
-pgferry runs the following steps in order (steps marked with a mode indicator
-are skipped in that mode):
-
-1. **Introspect** &mdash; query MySQL `INFORMATION_SCHEMA` for tables, columns, indexes, and foreign keys
-2. **Create tables** &mdash; columns only, no constraints (optionally `UNLOGGED` for speed) *(skipped in `data_only`)*
-3. **`before_data` hooks** *(skipped in `schema_only`)*
-4. **Stream data** &mdash; either parallel workers (`source_snapshot_mode = "none"`) or a single read-only source transaction (`"single_tx"`) to keep all table reads in one MySQL snapshot *(skipped in `schema_only`)*
-5. **`after_data` hooks** *(skipped in `schema_only`)*
-6. **Post-migration:**
-   - Convert `UNLOGGED` tables to `LOGGED` (if applicable) *(skipped in `schema_only` and `data_only`)*
-   - Add primary keys *(skipped in `data_only`)*
-   - Create indexes *(skipped in `data_only`)*
-   - **`before_fk` hooks** *(skipped in `data_only`)*
-   - Auto-clean orphaned rows that would violate FK constraints *(skipped in `schema_only` and `data_only`)*
-   - Add foreign keys *(skipped in `data_only`)*
-   - Reset auto-increment sequences
-   - Create `ON UPDATE CURRENT_TIMESTAMP` triggers (if enabled) *(skipped in `data_only`)*
-   - **`after_all` hooks**
-
-### Two-phase workflow
-
-You can split a migration into two phases for more control:
-
-```bash
-# Phase 1: create the full schema (tables + constraints + indexes)
-pgferry schema-migration.toml   # schema_only = true
-
-# Phase 2: stream data into the existing schema
-pgferry data-migration.toml     # data_only = true
-```
-
-Note that in a two-phase workflow, data is streamed with indexes and foreign keys
-already in place, which is slower than the default full pipeline (where
-constraints are deferred until after the bulk load). Use the split workflow when
-you need to inspect or modify the schema before loading data.
-
-## Conventions
-
-- MySQL names are converted to `snake_case` (e.g. `parentUserId` becomes `parent_user_id`)
-- PostgreSQL reserved words are automatically quoted (e.g. `user` becomes `"user"`)
-- `auto_increment` columns get PostgreSQL sequences
-- Zero dates (`0000-00-00`) are converted to `NULL`
-- All type mappings default to conservative, lossless conversions &mdash; opt in to semantic mappings like `boolean` or `uuid` explicitly
-- Unsupported MySQL column types are reported before table creation with a full list and a fallback hint (`type_mapping.unknown_as_text = true`)
-- Generated columns are copied as materialized values; generation expressions are not recreated automatically (pgferry reports these columns before migration)
-
-## Type mapping
-
-| MySQL | Default PG type | Opt-in PG type |
-|---|---|---|
-| `tinyint(1)` | `smallint` | `boolean` |
-| `tinyint` | `smallint` | |
-| `smallint` | `smallint` (`integer` if unsigned) | |
-| `mediumint` | `integer` | |
-| `int` | `integer` (`bigint` if unsigned) | |
-| `bigint` | `bigint` (`numeric(20)` if unsigned) | |
-| `float` | `real` | |
-| `double` | `double precision` | |
-| `decimal(p,s)` | `numeric(p,s)` | |
-| `varchar(n)` | `varchar(n)` | |
-| `char(n)` | `varchar(n)` | |
-| `text` / `mediumtext` / `longtext` | `text` | |
-| `json` | `json` | `jsonb` |
-| `enum` | `text` | |
-| `timestamp` | `timestamptz` | |
-| `datetime` | `timestamp` | `timestamptz` |
-| `year` | `integer` | |
-| `date` | `date` | |
-| `bit(n)` | `bytea` | |
-| `binary(16)` | `bytea` | `uuid` |
-| `blob` / `mediumblob` / `longblob` | `bytea` | |
+| Topic | Description |
+|---|---|
+| [Configuration](docs/configuration.md) | All TOML settings, defaults, validation |
+| [Type mapping](docs/type-mapping.md) | MySQL&rarr;PG type table, coercion options, edge cases |
+| [Migration pipeline](docs/migration-pipeline.md) | Step-by-step pipeline, modes, snapshots |
+| [Hooks](docs/hooks.md) | 4-phase SQL hook system, templating |
+| [Conventions & limitations](docs/conventions.md) | Naming, orphan cleanup, unsupported features |
 
 ## Development
 
 ```bash
-go build -o pgferry .          # build
-go vet ./...                   # lint
-go test ./... -count=1         # unit tests (no DB required)
+go build -o build/pgferry .          # build
+go vet ./...                         # lint
+go test ./... -count=1               # unit tests (no DB required)
 
 # integration tests (requires MySQL on :3306 and PostgreSQL on :5432)
 MYSQL_DSN="root:root@tcp(127.0.0.1:3306)/pgferry_test" \
