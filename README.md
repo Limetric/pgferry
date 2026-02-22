@@ -24,6 +24,11 @@ job, but it has real pain points that pgferry sidesteps:
 In short: pgferry is easier to install, easier to configure, and works with modern
 MySQL servers without auth workarounds.
 
+> **Note:** We also maintain a [pgloader fork](https://github.com/Limetric/pgloader)
+> that patches some of the most common upstream issues. It may be useful if you need
+> pgloader-specific features, but pgferry is the more reliable option for
+> MySQL-to-PostgreSQL migrations.
+
 ## Install
 
 ```bash
