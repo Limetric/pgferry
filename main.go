@@ -24,8 +24,20 @@ var rootCmd = &cobra.Command{
 	RunE:  runMigration,
 }
 
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print pgferry version",
+	Args:  cobra.NoArgs,
+	Run: func(cmd *cobra.Command, _ []string) {
+		fmt.Fprintln(cmd.OutOrStdout(), versionString())
+	},
+}
+
 func init() {
+	rootCmd.Version = versionString()
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
+	rootCmd.AddCommand(versionCmd)
 }
 
 func main() {

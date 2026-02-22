@@ -67,6 +67,14 @@ That's it. pgferry will introspect your MySQL database, create tables in
 PostgreSQL under the `app` schema, stream all data, then add primary keys,
 indexes, foreign keys, and auto-increment sequences.
 
+Check the binary version at any time with:
+
+```bash
+pgferry --version
+# or
+pgferry version
+```
+
 ## Examples
 
 The [`examples/`](examples/) directory contains ready-to-use configurations for
