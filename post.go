@@ -129,7 +129,7 @@ func unsignedCheckExpr(col Column, typeMap TypeMappingConfig) (string, bool) {
 	if !strings.Contains(col.ColumnType, "unsigned") {
 		return "", false
 	}
-	if col.DataType == "tinyint" && col.Precision == 1 && typeMap.TinyInt1AsBoolean {
+	if isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean {
 		return "", false
 	}
 

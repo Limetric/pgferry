@@ -35,7 +35,7 @@ func TestUnsignedCheckExpr(t *testing.T) {
 		},
 		{
 			name: "tinyint1 bool opt-in skipped",
-			col:  Column{PGName: "enabled", DataType: "tinyint", Precision: 1, ColumnType: "tinyint(1) unsigned"},
+			col:  Column{PGName: "enabled", DataType: "tinyint", Precision: 3, ColumnType: "tinyint(1) unsigned"},
 			tm: TypeMappingConfig{
 				TinyInt1AsBoolean: true,
 			},

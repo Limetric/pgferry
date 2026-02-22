@@ -15,8 +15,12 @@ func TestMapType(t *testing.T) {
 	}{
 		{"binary16→bytea default", Column{DataType: "binary", Precision: 16, ColumnType: "binary(16)"}, defaultTypeMappingConfig(), "bytea", false},
 		{"binary16→uuid opt-in", Column{DataType: "binary", Precision: 16, ColumnType: "binary(16)"}, TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}, "uuid", false},
+		{"binary16→uuid opt-in when precision missing", Column{DataType: "binary", Precision: 0, ColumnType: "binary(16)"}, TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}, "uuid", false},
+		{"binary shape uses column_type over precision", Column{DataType: "binary", Precision: 16, ColumnType: "binary(8)"}, TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}, "bytea", false},
 		{"tinyint1→smallint default", Column{DataType: "tinyint", Precision: 1, ColumnType: "tinyint(1)"}, defaultTypeMappingConfig(), "smallint", false},
 		{"tinyint1→bool opt-in", Column{DataType: "tinyint", Precision: 1, ColumnType: "tinyint(1)"}, TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}, "boolean", false},
+		{"tinyint1→bool opt-in when precision misleading", Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(1)"}, TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}, "boolean", false},
+		{"tinyint shape uses column_type over precision", Column{DataType: "tinyint", Precision: 1, ColumnType: "tinyint(2)"}, TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}, "smallint", false},
 		{"tinyint→smallint", Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(3)"}, defaultTypeMappingConfig(), "smallint", false},
 		{"smallint unsigned→integer", Column{DataType: "smallint", ColumnType: "smallint unsigned"}, defaultTypeMappingConfig(), "integer", false},
 		{"int unsigned→bigint", Column{DataType: "int", ColumnType: "int unsigned"}, defaultTypeMappingConfig(), "bigint", false},
@@ -67,7 +71,7 @@ func TestMapType(t *testing.T) {
 }
 
 func TestTransformValue_UUID(t *testing.T) {
-	col := Column{DataType: "binary", Precision: 16}
+	col := Column{DataType: "binary", Precision: 0, ColumnType: "binary(16)"}
 	optIn := TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}
 
 	// Valid 16-byte UUID
@@ -92,8 +96,26 @@ func TestTransformValue_UUID(t *testing.T) {
 	}
 }
 
+func TestTransformValue_UUIDOptInNonBinary16Passthrough(t *testing.T) {
+	col := Column{DataType: "binary", Precision: 16, ColumnType: "binary(8)"}
+	optIn := TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}
+
+	in := []byte{0x01, 0x02, 0x03}
+	got, err := transformValue(in, col, optIn)
+	if err != nil {
+		t.Fatalf("transformValue(non-binary16) unexpected error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("transformValue(non-binary16) type = %T, want []byte", got)
+	}
+	if len(out) != len(in) || out[0] != in[0] || out[1] != in[1] || out[2] != in[2] {
+		t.Fatalf("transformValue(non-binary16) = %#v, want %#v", out, in)
+	}
+}
+
 func TestTransformValue_Bool(t *testing.T) {
-	col := Column{DataType: "tinyint", Precision: 1}
+	col := Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(1)"}
 	optIn := TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}
 
 	if got, err := transformValue(int64(1), col, optIn); err != nil || got != true {
@@ -111,13 +133,25 @@ func TestTransformValue_Bool(t *testing.T) {
 }
 
 func TestTransformValue_BoolNoOptInPassthrough(t *testing.T) {
-	col := Column{DataType: "tinyint", Precision: 1}
+	col := Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(1)"}
 	got, err := transformValue(int64(2), col, defaultTypeMappingConfig())
 	if err != nil {
 		t.Fatalf("transformValue default tinyint(1) unexpected error: %v", err)
 	}
 	if got != int64(2) {
 		t.Fatalf("transformValue default tinyint(1) = %v, want %v", got, int64(2))
+	}
+}
+
+func TestTransformValue_BoolOptInNonTinyInt1Passthrough(t *testing.T) {
+	col := Column{DataType: "tinyint", Precision: 1, ColumnType: "tinyint(2)"}
+	optIn := TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}
+	got, err := transformValue(int64(2), col, optIn)
+	if err != nil {
+		t.Fatalf("transformValue(non-tinyint1) unexpected error: %v", err)
+	}
+	if got != int64(2) {
+		t.Fatalf("transformValue(non-tinyint1) = %v, want %v", got, int64(2))
 	}
 }
 

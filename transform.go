@@ -7,14 +7,51 @@ import (
 	"time"
 )
 
+func isBinary16Column(col Column) bool {
+	return isMySQLTypeWithLength(col, "binary", 16)
+}
+
+func isTinyInt1Column(col Column) bool {
+	return isMySQLTypeWithLength(col, "tinyint", 1)
+}
+
+func isMySQLTypeWithLength(col Column, baseType string, wantLength int64) bool {
+	if col.DataType != baseType {
+		return false
+	}
+	if n, ok := mysqlColumnTypeLength(col.ColumnType, baseType); ok {
+		return n == wantLength
+	}
+	// Fallback for synthetic tests/callers that don't populate ColumnType.
+	return strings.TrimSpace(col.ColumnType) == "" && col.Precision == wantLength
+}
+
+func mysqlColumnTypeLength(columnType, baseType string) (int64, bool) {
+	ct := strings.ToLower(strings.TrimSpace(columnType))
+	prefix := baseType + "("
+	if !strings.HasPrefix(ct, prefix) {
+		return 0, false
+	}
+	rest := ct[len(prefix):]
+	end := strings.IndexByte(rest, ')')
+	if end < 0 {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(rest[:end]), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 // mapType returns the PostgreSQL type for a given MySQL column.
 func mapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	isUnsigned := strings.Contains(col.ColumnType, "unsigned")
 
 	switch {
-	case col.DataType == "binary" && col.Precision == 16 && typeMap.Binary16AsUUID:
+	case isBinary16Column(col) && typeMap.Binary16AsUUID:
 		return "uuid", nil
-	case col.DataType == "tinyint" && col.Precision == 1 && typeMap.TinyInt1AsBoolean:
+	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
 		return "boolean", nil
 	case col.DataType == "tinyint":
 		return "smallint", nil
@@ -100,7 +137,7 @@ func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error)
 
 	switch {
 	// binary(16) → uuid string
-	case col.DataType == "binary" && col.Precision == 16 && typeMap.Binary16AsUUID:
+	case isBinary16Column(col) && typeMap.Binary16AsUUID:
 		b, ok := val.([]byte)
 		if !ok || len(b) != 16 {
 			return nil, fmt.Errorf("expected 16-byte binary UUID payload, got %T", val)
@@ -118,7 +155,7 @@ func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error)
 		return val, nil
 
 	// tinyint(1) → bool
-	case col.DataType == "tinyint" && col.Precision == 1 && typeMap.TinyInt1AsBoolean:
+	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
 		switch v := val.(type) {
 		case int64:
 			if v == 0 {
