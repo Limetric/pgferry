@@ -78,6 +78,8 @@ common scenarios:
 | [`recreate-fast`](examples/recreate-fast/) | Drops and recreates the target schema, uses `UNLOGGED` tables during bulk load for maximum throughput, 8 parallel workers |
 | [`hooks`](examples/hooks/) | Demonstrates all 4 hook phases with example SQL files for extensions, ANALYZE, orphan cleanup, and post-migration views |
 | [`sakila`](examples/sakila/) | Full migration of the [Sakila sample database](https://dev.mysql.com/doc/sakila/en/) with orphan cleanup and post-migration views |
+| [`schema-only`](examples/schema-only/) | Create the PostgreSQL schema (tables, PKs, indexes, FKs, sequences, triggers) without migrating any data |
+| [`data-only`](examples/data-only/) | Stream data into an existing schema and reset sequences &mdash; use after a `schema_only` run |
 
 ## Configuration reference
 
@@ -88,10 +90,18 @@ schema = "app"
 # What to do if the schema already exists: "error" (default) or "recreate"
 on_schema_exists = "error"
 
+# DDL only — create tables, PKs, indexes, FKs, sequences, triggers; skip data (default: false)
+schema_only = false
+
+# Data only — assumes schema exists; stream data + reset sequences (default: false)
+# Mutually exclusive with schema_only
+data_only = false
+
 # Source read consistency mode: "none" (default, parallel) or "single_tx" (single-transaction snapshot, sequential)
 source_snapshot_mode = "none"
 
 # Use UNLOGGED tables during bulk load, then SET LOGGED after (default: false)
+# Ignored when schema_only or data_only is true
 unlogged_tables = false
 
 # Emulate MySQL ON UPDATE CURRENT_TIMESTAMP via PG triggers (default: false)
@@ -127,23 +137,41 @@ name at runtime.
 
 ## Migration pipeline
 
-pgferry runs the following steps in order:
+pgferry runs the following steps in order (steps marked with a mode indicator
+are skipped in that mode):
 
 1. **Introspect** &mdash; query MySQL `INFORMATION_SCHEMA` for tables, columns, indexes, and foreign keys
-2. **Create tables** &mdash; columns only, no constraints (optionally `UNLOGGED` for speed)
-3. **`before_data` hooks**
-4. **Stream data** &mdash; either parallel workers (`source_snapshot_mode = "none"`) or a single read-only source transaction (`"single_tx"`) to keep all table reads in one MySQL snapshot
-5. **`after_data` hooks**
+2. **Create tables** &mdash; columns only, no constraints (optionally `UNLOGGED` for speed) *(skipped in `data_only`)*
+3. **`before_data` hooks** *(skipped in `schema_only`)*
+4. **Stream data** &mdash; either parallel workers (`source_snapshot_mode = "none"`) or a single read-only source transaction (`"single_tx"`) to keep all table reads in one MySQL snapshot *(skipped in `schema_only`)*
+5. **`after_data` hooks** *(skipped in `schema_only`)*
 6. **Post-migration:**
-   - Convert `UNLOGGED` tables to `LOGGED` (if applicable)
-   - Add primary keys
-   - Create indexes
-   - **`before_fk` hooks**
-   - Auto-clean orphaned rows that would violate FK constraints
-   - Add foreign keys
+   - Convert `UNLOGGED` tables to `LOGGED` (if applicable) *(skipped in `schema_only` and `data_only`)*
+   - Add primary keys *(skipped in `data_only`)*
+   - Create indexes *(skipped in `data_only`)*
+   - **`before_fk` hooks** *(skipped in `data_only`)*
+   - Auto-clean orphaned rows that would violate FK constraints *(skipped in `schema_only` and `data_only`)*
+   - Add foreign keys *(skipped in `data_only`)*
    - Reset auto-increment sequences
-   - Create `ON UPDATE CURRENT_TIMESTAMP` triggers (if enabled)
+   - Create `ON UPDATE CURRENT_TIMESTAMP` triggers (if enabled) *(skipped in `data_only`)*
    - **`after_all` hooks**
+
+### Two-phase workflow
+
+You can split a migration into two phases for more control:
+
+```bash
+# Phase 1: create the full schema (tables + constraints + indexes)
+pgferry schema-migration.toml   # schema_only = true
+
+# Phase 2: stream data into the existing schema
+pgferry data-migration.toml     # data_only = true
+```
+
+Note that in a two-phase workflow, data is streamed with indexes and foreign keys
+already in place, which is slower than the default full pipeline (where
+constraints are deferred until after the bulk load). Use the split workflow when
+you need to inspect or modify the schema before loading data.
 
 ## Conventions
 

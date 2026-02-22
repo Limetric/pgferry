@@ -1,0 +1,9 @@
+schema = "app"
+data_only = true
+workers = 8
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+
+[postgres]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"

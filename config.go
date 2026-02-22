@@ -16,6 +16,8 @@ type MigrationConfig struct {
 	Postgres                          PostgresConfig    `toml:"postgres"`
 	Schema                            string            `toml:"schema"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
+	SchemaOnly                        bool              `toml:"schema_only"`
+	DataOnly                          bool              `toml:"data_only"`
 	SourceSnapshotMode                string            `toml:"source_snapshot_mode"` // none|single_tx
 	UnloggedTables                    bool              `toml:"unlogged_tables"`
 	PreserveDefaults                  bool              `toml:"preserve_defaults"`
@@ -109,6 +111,10 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	case "text", "text_array":
 	default:
 		return nil, fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
+	}
+
+	if cfg.SchemaOnly && cfg.DataOnly {
+		return nil, fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
 
 	if cfg.MySQL.DSN == "" {
