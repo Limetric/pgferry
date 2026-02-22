@@ -36,7 +36,7 @@ TASK OVERVIEW:
 4. Select appropriate labels from the available labels list provided above:
    - Choose labels that accurately reflect the issue's nature
    - Be specific but comprehensive
-   - Consider app labels (SoChat, Globalis) if applicable
+   - Consider agent difficulty labels if applicable
    - If you find similar issues using gh search, consider using a "duplicate" label if appropriate. Only do so if the issue is a duplicate of another OPEN issue.
 
 5. Apply the selected labels:
