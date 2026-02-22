@@ -192,9 +192,9 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 			post_id INT NOT NULL,
 			user_id INT NOT NULL,
 			content TEXT,
+			FOREIGN KEY (post_id) REFERENCES posts(id),
 			FOREIGN KEY (user_id) REFERENCES users(id)
 		)`,
-		// Note: comments.post_id has no FK in MySQL so we can insert orphans
 
 		// Users
 		"INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')",
@@ -222,9 +222,11 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 1, 'Welcome Eve')",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 4, 'Hi Eve!')",
 
-		// Orphan comments (post_id references non-existent posts)
+		// Disable FK checks to insert orphan comments (post_id references non-existent posts)
+		"SET FOREIGN_KEY_CHECKS=0",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (999, 1, 'Orphan 1')",
 		"INSERT INTO comments (post_id, user_id, content) VALUES (998, 2, 'Orphan 2')",
+		"SET FOREIGN_KEY_CHECKS=1",
 	}
 
 	for _, stmt := range stmts {
