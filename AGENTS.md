@@ -28,7 +28,7 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 4. `loadAndExecSQLFiles` — before_data hooks
 5. `migrateData` — parallel goroutines (semaphore pattern), each table gets own MySQL conn, streams rows through `pgx.CopyFrom`
 6. `loadAndExecSQLFiles` — after_data hooks
-7. `postMigrate` — SET LOGGED → PKs → indexes → before_fk hooks → FKs → sequences → triggers → after_all hooks
+7. `postMigrate` — SET LOGGED → PKs → indexes → before_fk hooks → orphan cleanup → FKs → sequences → triggers → after_all hooks
 
 **Hooks system:** SQL files run at 4 phases (before_data, after_data, before_fk, after_all). All occurrences of `{{schema}}` are replaced with the configured schema name. Paths are resolved relative to the TOML config file directory.
 

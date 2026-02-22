@@ -10,7 +10,7 @@ import (
 )
 
 // postMigrate runs all post-migration steps in order:
-// 1. SET LOGGED, 2. PKs, 3. Indexes, 4. before_fk hooks, 5. FKs, 6. Sequences, 7. Triggers, 8. after_all hooks
+// 1. SET LOGGED, 2. PKs, 3. Indexes, 4. before_fk hooks, 5. orphan cleanup, 6. FKs, 7. Sequences, 8. Triggers, 9. after_all hooks
 func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *MigrationConfig) error {
 	pgSchema := cfg.Schema
 
@@ -30,9 +30,15 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 		}
 	}
 
-	// before_fk hooks (orphan cleanup goes here)
+	// before_fk hooks
 	if err := loadAndExecSQLFiles(ctx, pool, cfg, cfg.Hooks.BeforeFk, "before_fk"); err != nil {
 		return fmt.Errorf("before_fk hooks: %w", err)
+	}
+
+	// Auto-clean orphaned rows that would violate FK constraints
+	log.Printf("  orphan cleanup...")
+	if err := cleanOrphans(ctx, pool, schema, pgSchema); err != nil {
+		return fmt.Errorf("orphan cleanup: %w", err)
 	}
 
 	steps2 := []struct {
@@ -203,6 +209,65 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 				return err
 			}
 			log.Printf("    trigger %s on %s.%s", trigName, pgSchema, t.PGName)
+		}
+	}
+	return nil
+}
+
+// cleanOrphans removes or nullifies rows that reference non-existent parent rows.
+// MySQL allows orphaned data via SET FOREIGN_KEY_CHECKS=0; PostgreSQL rejects it
+// when adding FK constraints. The action mirrors the FK's ON DELETE rule:
+// SET NULL → null out the columns, anything else → delete the rows.
+func cleanOrphans(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
+	for _, t := range schema.Tables {
+		for _, fk := range t.ForeignKeys {
+			child := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
+			parent := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(fk.RefPGTable))
+
+			// Build the NOT EXISTS join condition
+			var joinConds []string
+			for i, col := range fk.Columns {
+				joinConds = append(joinConds,
+					fmt.Sprintf("p.%s = c.%s", pgIdent(fk.RefColumns[i]), pgIdent(col)))
+			}
+			notExists := fmt.Sprintf("NOT EXISTS (SELECT 1 FROM %s p WHERE %s)",
+				parent, strings.Join(joinConds, " AND "))
+
+			// At least one FK column must be non-null for a violation to exist
+			var notNulls []string
+			for _, col := range fk.Columns {
+				notNulls = append(notNulls, fmt.Sprintf("c.%s IS NOT NULL", pgIdent(col)))
+			}
+			whereNotNull := strings.Join(notNulls, " OR ")
+
+			var q string
+			if strings.EqualFold(fk.DeleteRule, "SET NULL") {
+				// Null out the FK columns
+				var setClauses []string
+				for _, col := range fk.Columns {
+					setClauses = append(setClauses, fmt.Sprintf("%s = NULL", pgIdent(col)))
+				}
+				q = fmt.Sprintf("UPDATE %s c SET %s WHERE (%s) AND %s",
+					child, strings.Join(setClauses, ", "), whereNotNull, notExists)
+			} else {
+				// DELETE for CASCADE, RESTRICT, NO ACTION
+				q = fmt.Sprintf("DELETE FROM %s c WHERE (%s) AND %s",
+					child, whereNotNull, notExists)
+			}
+
+			tag, err := pool.Exec(ctx, q)
+			if err != nil {
+				return fmt.Errorf("clean orphans %s.%s → %s: %w\nSQL: %s",
+					t.PGName, fk.Name, fk.RefPGTable, err, q)
+			}
+			if tag.RowsAffected() > 0 {
+				action := "deleted"
+				if strings.EqualFold(fk.DeleteRule, "SET NULL") {
+					action = "nullified"
+				}
+				log.Printf("    %s %d orphaned rows in %s.%s (fk: %s → %s)",
+					action, tag.RowsAffected(), pgSchema, t.PGName, fk.Name, fk.RefPGTable)
+			}
 		}
 	}
 	return nil
