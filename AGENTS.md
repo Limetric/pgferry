@@ -5,7 +5,7 @@ MySQL-to-PostgreSQL migration CLI. Reads MySQL schema via INFORMATION_SCHEMA, cr
 ## Commands
 
 ```bash
-go build -o pgferry .          # Build binary
+go build -o build/pgferry .          # Build binary
 go vet ./...                   # Lint
 go test ./... -count=1         # Unit tests (no DB required)
 go test -run TestFoo ./...     # Run a single test
