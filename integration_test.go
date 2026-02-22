@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -165,6 +167,104 @@ after_all = []
 	}
 }
 
+func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
+	mysqlDSN := os.Getenv("MYSQL_DSN")
+	pgDSN := os.Getenv("POSTGRES_DSN")
+	if mysqlDSN == "" || pgDSN == "" {
+		t.Fatal("MYSQL_DSN and POSTGRES_DSN env vars required")
+	}
+
+	ctx := context.Background()
+
+	adminMySQL, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql admin connection: %v", err)
+	}
+	defer adminMySQL.Close()
+
+	seedMySQL(t, adminMySQL)
+
+	dbName, err := extractMySQLDBName(mysqlDSN)
+	if err != nil {
+		t.Fatalf("extract db name: %v", err)
+	}
+
+	roUser := fmt.Sprintf("pgferry_ro_%d", time.Now().UnixNano())
+	roPass := "pgferry_ro_pw"
+	if err := createReadOnlyMySQLUser(ctx, adminMySQL, dbName, roUser, roPass); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "access denied") {
+			t.Skipf("skipping read-only user test: insufficient MySQL privileges to create users (%v)", err)
+		}
+		t.Fatalf("create read-only user: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = adminMySQL.ExecContext(context.Background(), fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", roUser))
+	})
+
+	roDSN, err := buildReadOnlyUserDSN(mysqlDSN, roUser, roPass)
+	if err != nil {
+		t.Fatalf("build readonly DSN: %v", err)
+	}
+
+	roQueryDSN, err := mysqlDSNWithReadOptions(roDSN)
+	if err != nil {
+		t.Fatalf("prepare readonly query DSN: %v", err)
+	}
+
+	roMySQL, err := sql.Open("mysql", roQueryDSN)
+	if err != nil {
+		t.Fatalf("open mysql readonly connection: %v", err)
+	}
+	defer roMySQL.Close()
+
+	_, err = roMySQL.ExecContext(ctx, "INSERT INTO users (name, email) VALUES ('ReadOnlyProbe', NULL)")
+	if err == nil {
+		t.Fatal("expected INSERT to fail for read-only MySQL user")
+	}
+
+	schema, err := introspectSchema(roMySQL, dbName)
+	if err != nil {
+		t.Fatalf("introspect with readonly user: %v", err)
+	}
+
+	pgPool, err := pgxpool.New(ctx, pgDSN)
+	if err != nil {
+		t.Fatalf("connect pg: %v", err)
+	}
+	defer pgPool.Close()
+
+	const pgSchema = "inttest_ro"
+	_, _ = pgPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(pgSchema)))
+	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(pgSchema))); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() {
+		pgPool.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(pgSchema)))
+	})
+
+	cfg := &MigrationConfig{
+		Schema:         pgSchema,
+		OnSchemaExists: "error",
+		UnloggedTables: false,
+		Workers:        2,
+		Hooks:          HooksConfig{},
+	}
+
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables); err != nil {
+		t.Fatalf("createTables: %v", err)
+	}
+	if err := migrateData(ctx, roDSN, pgPool, schema, pgSchema, cfg.Workers); err != nil {
+		t.Fatalf("migrateData with readonly user: %v", err)
+	}
+	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
+		t.Fatalf("postMigrate: %v", err)
+	}
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 12)
+}
+
 // seedMySQL creates the test schema and inserts seed data.
 func seedMySQL(t *testing.T, db *sql.DB) {
 	t.Helper()
@@ -233,6 +333,30 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 			t.Fatalf("seed mysql %q: %v", stmt[:min(len(stmt), 60)], err)
 		}
 	}
+}
+
+func createReadOnlyMySQLUser(ctx context.Context, db *sql.DB, dbName, user, password string) error {
+	stmts := []string{
+		fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", user),
+		fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", user, password),
+		fmt.Sprintf("GRANT SELECT, SHOW VIEW ON `%s`.* TO '%s'@'%%'", dbName, user),
+	}
+	for _, stmt := range stmts {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func buildReadOnlyUserDSN(baseDSN, user, password string) (string, error) {
+	cfg, err := mysql.ParseDSN(baseDSN)
+	if err != nil {
+		return "", err
+	}
+	cfg.User = user
+	cfg.Passwd = password
+	return cfg.FormatDSN(), nil
 }
 
 func assertRowCount(t *testing.T, pool *pgxpool.Pool, schema, table string, want int) {
