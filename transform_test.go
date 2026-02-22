@@ -39,6 +39,7 @@ func TestMapType(t *testing.T) {
 		{"timestamp→timestamptz", Column{DataType: "timestamp", ColumnType: "timestamp"}, defaultTypeMappingConfig(), "timestamptz", false},
 		{"datetime→timestamp default", Column{DataType: "datetime", ColumnType: "datetime"}, defaultTypeMappingConfig(), "timestamp", false},
 		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "timestamptz", false},
+		{"year→integer", Column{DataType: "year", ColumnType: "year"}, defaultTypeMappingConfig(), "integer", false},
 		{"date", Column{DataType: "date", ColumnType: "date"}, defaultTypeMappingConfig(), "date", false},
 		{"binary→bytea", Column{DataType: "binary", ColumnType: "binary(32)", Precision: 32}, defaultTypeMappingConfig(), "bytea", false},
 		{"varbinary→bytea", Column{DataType: "varbinary", ColumnType: "varbinary(32)"}, defaultTypeMappingConfig(), "bytea", false},
@@ -184,6 +185,26 @@ func TestTransformValue_ZeroDates(t *testing.T) {
 		if got, err := transformValue(nil, col, defaultTypeMappingConfig()); err != nil || got != nil {
 			t.Errorf("transformValue(nil, %s) = %v, want nil", dt, got)
 		}
+	}
+}
+
+func TestTransformValue_Year(t *testing.T) {
+	col := Column{DataType: "year"}
+
+	if got, err := transformValue([]byte("2024"), col, defaultTypeMappingConfig()); err != nil || got != int64(2024) {
+		t.Fatalf("transformValue([]byte(\"2024\"), year) = %v, err=%v; want 2024", got, err)
+	}
+
+	if got, err := transformValue("1999", col, defaultTypeMappingConfig()); err != nil || got != int64(1999) {
+		t.Fatalf("transformValue(\"1999\", year) = %v, err=%v; want 1999", got, err)
+	}
+
+	if got, err := transformValue(int64(2001), col, defaultTypeMappingConfig()); err != nil || got != int64(2001) {
+		t.Fatalf("transformValue(int64(2001), year) = %v, err=%v; want 2001", got, err)
+	}
+
+	if _, err := transformValue("not-a-year", col, defaultTypeMappingConfig()); err == nil {
+		t.Fatal("transformValue(invalid year) expected error")
 	}
 }
 

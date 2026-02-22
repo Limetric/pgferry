@@ -174,6 +174,7 @@ pgferry runs the following steps in order:
 | `enum` | `text` | |
 | `timestamp` | `timestamptz` | |
 | `datetime` | `timestamp` | `timestamptz` |
+| `year` | `integer` | |
 | `date` | `date` | |
 | `binary(16)` | `bytea` | `uuid` |
 | `blob` / `mediumblob` / `longblob` | `bytea` | |

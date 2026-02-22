@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -74,6 +75,8 @@ func mapType(col Column, typeMap TypeMappingConfig) (string, error) {
 			return "timestamptz", nil
 		}
 		return "timestamp", nil
+	case col.DataType == "year":
+		return "integer", nil
 	case col.DataType == "date":
 		return "date", nil
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
@@ -152,6 +155,26 @@ func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error)
 		}
 		parts := strings.Split(raw, ",")
 		return parts, nil
+
+	// year → integer
+	case col.DataType == "year":
+		switch v := val.(type) {
+		case int64:
+			return v, nil
+		case []byte:
+			n, err := strconv.ParseInt(string(v), 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse year value %q: %w", string(v), err)
+			}
+			return n, nil
+		case string:
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("cannot parse year value %q: %w", v, err)
+			}
+			return n, nil
+		}
+		return nil, fmt.Errorf("cannot coerce year value of type %T to integer", val)
 
 	// date → zero dates to null
 	case col.DataType == "date":
