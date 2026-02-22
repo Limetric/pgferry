@@ -99,6 +99,14 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		log.Printf("  %s → %s (%d cols, %d indexes, %d fks)",
 			t.MySQLName, t.PGName, len(t.Columns), len(t.Indexes), len(t.ForeignKeys))
 	}
+	if sourceObjects, err := introspectSourceObjects(mysqlDB, dbName); err != nil {
+		log.Printf("WARN: failed to introspect non-table source objects: %v", err)
+	} else if warnings := sourceObjectWarnings(sourceObjects); len(warnings) > 0 {
+		log.Printf("source object report:")
+		for _, w := range warnings {
+			log.Printf("  WARN: %s", w)
+		}
+	}
 	if warnings := collectIndexCompatibilityWarnings(schema); len(warnings) > 0 {
 		log.Printf("index compatibility report: %d index(es) may require manual handling", len(warnings))
 		for _, w := range warnings {
