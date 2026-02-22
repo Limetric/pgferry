@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -95,8 +96,15 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.UnloggedTables {
 		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
 	}
-	if cfg.Workers != 4 {
-		t.Errorf("default Workers = %d, want 4", cfg.Workers)
+	wantWorkers := runtime.NumCPU()
+	if wantWorkers < 1 {
+		wantWorkers = 1
+	}
+	if wantWorkers > 8 {
+		wantWorkers = 8
+	}
+	if cfg.Workers != wantWorkers {
+		t.Errorf("default Workers = %d, want %d", cfg.Workers, wantWorkers)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -57,7 +58,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	cfg.configDir = filepath.Dir(absPath)
 
 	if cfg.Workers <= 0 {
-		cfg.Workers = 4
+		cfg.Workers = defaultWorkers()
 	}
 
 	cfg.Schema = strings.TrimSpace(cfg.Schema)
@@ -90,4 +91,15 @@ func (c *MigrationConfig) resolvePath(p string) string {
 		return p
 	}
 	return filepath.Join(c.configDir, p)
+}
+
+func defaultWorkers() int {
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	if n > 8 {
+		return 8
+	}
+	return n
 }
