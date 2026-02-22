@@ -13,25 +13,20 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// migrateData streams data from MySQL to PostgreSQL for all tables using parallel workers.
-func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig, sourceSnapshotMode string) error {
+// migrateData streams data from the source to PostgreSQL for all tables using parallel workers.
+func migrateData(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig, sourceSnapshotMode string) error {
 	switch sourceSnapshotMode {
 	case "single_tx":
-		return migrateDataSingleTx(ctx, mysqlDSN, pool, schema, pgSchema, typeMap)
+		return migrateDataSingleTx(ctx, src, srcDSN, pool, schema, pgSchema, typeMap)
 	default:
-		return migrateDataParallel(ctx, mysqlDSN, pool, schema, pgSchema, workers, typeMap)
+		return migrateDataParallel(ctx, src, srcDSN, pool, schema, pgSchema, workers, typeMap)
 	}
 }
 
-func migrateDataParallel(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig) error {
+func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig) error {
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(schema.Tables))
-
-	fullDSN, err := mysqlDSNWithReadOptions(mysqlDSN)
-	if err != nil {
-		return err
-	}
 
 	for _, t := range schema.Tables {
 		wg.Add(1)
@@ -40,8 +35,8 @@ func migrateDataParallel(ctx context.Context, mysqlDSN string, pool *pgxpool.Poo
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if err := migrateTable(ctx, fullDSN, pool, t, pgSchema, typeMap); err != nil {
-				errCh <- fmt.Errorf("table %s: %w", t.MySQLName, err)
+			if err := migrateTable(ctx, src, srcDSN, pool, t, pgSchema, typeMap); err != nil {
+				errCh <- fmt.Errorf("table %s: %w", t.SourceName, err)
 			}
 		}(t)
 	}
@@ -62,25 +57,20 @@ func migrateDataParallel(ctx context.Context, mysqlDSN string, pool *pgxpool.Poo
 	return nil
 }
 
-func migrateDataSingleTx(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
-	fullDSN, err := mysqlDSNWithReadOptions(mysqlDSN)
+func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
+	srcDB, err := src.OpenDB(srcDSN)
 	if err != nil {
 		return err
 	}
+	defer srcDB.Close()
+	srcDB.SetMaxOpenConns(1)
+	srcDB.SetMaxIdleConns(1)
 
-	mysqlConn, err := sql.Open("mysql", fullDSN)
-	if err != nil {
-		return fmt.Errorf("open mysql: %w", err)
-	}
-	defer mysqlConn.Close()
-	mysqlConn.SetMaxOpenConns(1)
-	mysqlConn.SetMaxIdleConns(1)
-
-	if _, err := mysqlConn.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
+	if _, err := srcDB.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
 		return fmt.Errorf("set source transaction isolation: %w", err)
 	}
 
-	tx, err := mysqlConn.BeginTx(ctx, &sql.TxOptions{
+	tx, err := srcDB.BeginTx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelRepeatableRead,
 		ReadOnly:  true,
 	})
@@ -91,8 +81,8 @@ func migrateDataSingleTx(ctx context.Context, mysqlDSN string, pool *pgxpool.Poo
 
 	log.Printf("source snapshot enabled: single_tx (sequential table copy)")
 	for _, t := range schema.Tables {
-		if err := migrateTableFromSource(ctx, tx, pool, t, pgSchema, typeMap); err != nil {
-			return fmt.Errorf("table %s: %w", t.MySQLName, err)
+		if err := migrateTableFromSource(ctx, src, tx, pool, t, pgSchema, typeMap); err != nil {
+			return fmt.Errorf("table %s: %w", t.SourceName, err)
 		}
 	}
 
@@ -102,36 +92,37 @@ func migrateDataSingleTx(ctx context.Context, mysqlDSN string, pool *pgxpool.Poo
 	return nil
 }
 
-// migrateTable streams one table from MySQL to PG via COPY protocol.
-func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
-	// Own MySQL connection (short-lived)
-	mysqlConn, err := sql.Open("mysql", mysqlDSN)
+// migrateTable streams one table from source to PG via COPY protocol.
+func migrateTable(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
+	// Own source connection (short-lived)
+	srcDB, err := src.OpenDB(srcDSN)
 	if err != nil {
-		return fmt.Errorf("open mysql: %w", err)
+		return err
 	}
-	defer mysqlConn.Close()
-	mysqlConn.SetMaxOpenConns(1)
-	mysqlConn.SetMaxIdleConns(1)
+	defer srcDB.Close()
+	srcDB.SetMaxOpenConns(1)
+	srcDB.SetMaxIdleConns(1)
 
-	return migrateTableFromSource(ctx, mysqlConn, pool, table, pgSchema, typeMap)
+	return migrateTableFromSource(ctx, src, srcDB, pool, table, pgSchema, typeMap)
 }
 
-type mysqlSource interface {
+type dbQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func migrateTableFromSource(ctx context.Context, source mysqlSource, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
+func migrateTableFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
 	// Count rows for progress
 	var totalRows int64
-	err := source.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM `%s`", table.MySQLName)).Scan(&totalRows)
+	quotedTable := src.QuoteIdentifier(table.SourceName)
+	err := source.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", quotedTable)).Scan(&totalRows)
 	if err != nil {
 		return fmt.Errorf("count rows: %w", err)
 	}
-	log.Printf("  [%s] %d rows to migrate", table.MySQLName, totalRows)
+	log.Printf("  [%s] %d rows to migrate", table.SourceName, totalRows)
 
 	if totalRows == 0 {
-		log.Printf("  [%s] done (empty)", table.MySQLName)
+		log.Printf("  [%s] done (empty)", table.SourceName)
 		return nil
 	}
 
@@ -148,20 +139,21 @@ func migrateTableFromSource(ctx context.Context, source mysqlSource, pool *pgxpo
 	}
 	defer conn.Release()
 
-	// Stream MySQL rows via COPY protocol
-	rows, err := source.QueryContext(ctx, fmt.Sprintf("SELECT * FROM `%s`", table.MySQLName))
+	// Stream source rows via COPY protocol
+	rows, err := source.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s", quotedTable))
 	if err != nil {
 		return fmt.Errorf("select: %w", err)
 	}
 	defer rows.Close()
 
-	src := &rowSource{
+	rs := &rowSource{
 		rows:        rows,
 		table:       table,
 		copied:      new(atomic.Int64),
 		total:       totalRows,
+		src:         src,
 		typeMapping: typeMap,
-		tableName:   table.MySQLName,
+		tableName:   table.SourceName,
 		lastLog:     time.Now(),
 	}
 
@@ -169,17 +161,17 @@ func migrateTableFromSource(ctx context.Context, source mysqlSource, pool *pgxpo
 		ctx,
 		pgx.Identifier{pgSchema, table.PGName},
 		pgColumns,
-		src,
+		rs,
 	)
 	if err != nil {
 		return fmt.Errorf("copy: %w", err)
 	}
 
-	log.Printf("  [%s] done (%d rows copied)", table.MySQLName, count)
+	log.Printf("  [%s] done (%d rows copied)", table.SourceName, count)
 	return nil
 }
 
-// rowSource implements pgx.CopyFromSource by reading from MySQL rows.
+// rowSource implements pgx.CopyFromSource by reading from source rows.
 type rowSource struct {
 	rows        *sql.Rows
 	table       Table
@@ -187,6 +179,7 @@ type rowSource struct {
 	err         error
 	copied      *atomic.Int64
 	total       int64
+	src         SourceDB
 	typeMapping TypeMappingConfig
 	tableName   string
 	lastLog     time.Time
@@ -214,9 +207,9 @@ func (r *rowSource) Next() bool {
 	// Transform values
 	r.values = make([]any, numCols)
 	for i, col := range r.table.Columns {
-		v, err := transformValue(dest[i], col, r.typeMapping)
+		v, err := r.src.TransformValue(dest[i], col, r.typeMapping)
 		if err != nil {
-			r.err = fmt.Errorf("column %s: %w", col.MySQLName, err)
+			r.err = fmt.Errorf("column %s: %w", col.SourceName, err)
 			return false
 		}
 		r.values[i] = v
