@@ -8,9 +8,12 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
+
+	_ "github.com/go-sql-driver/mysql"
 )
 
 var configPath string
@@ -102,27 +105,8 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 4. Create schema based on configured conflict behavior
 	log.Printf("preparing schema '%s'...", cfg.Schema)
-	switch cfg.OnSchemaExists {
-	case "recreate":
-		if _, err := pgPool.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(cfg.Schema))); err != nil {
-			return fmt.Errorf("drop schema: %w", err)
-		}
-		if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(cfg.Schema))); err != nil {
-			return fmt.Errorf("create schema: %w", err)
-		}
-	case "error":
-		var exists bool
-		if err := pgPool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", cfg.Schema).Scan(&exists); err != nil {
-			return fmt.Errorf("check schema existence: %w", err)
-		}
-		if exists {
-			return fmt.Errorf("schema %q already exists in target database (on_schema_exists=error)", cfg.Schema)
-		}
-		if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(cfg.Schema))); err != nil {
-			return fmt.Errorf("create schema: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported on_schema_exists value %q", cfg.OnSchemaExists)
+	if err := prepareTargetSchema(ctx, pgPool, cfg.Schema, cfg.OnSchemaExists); err != nil {
+		return err
 	}
 
 	// 5. Create bare UNLOGGED tables (no PKs, FKs, indexes)
@@ -192,4 +176,35 @@ func lastIndexOf(s string, c byte) int {
 		}
 	}
 	return -1
+}
+
+type schemaExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func prepareTargetSchema(ctx context.Context, exec schemaExecutor, schema, onSchemaExists string) error {
+	switch onSchemaExists {
+	case "recreate":
+		if _, err := exec.Exec(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(schema))); err != nil {
+			return fmt.Errorf("drop schema: %w", err)
+		}
+		if _, err := exec.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(schema))); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+	case "error":
+		var exists bool
+		if err := exec.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", schema).Scan(&exists); err != nil {
+			return fmt.Errorf("check schema existence: %w", err)
+		}
+		if exists {
+			return fmt.Errorf("schema %q already exists in target database (on_schema_exists=error)", schema)
+		}
+		if _, err := exec.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(schema))); err != nil {
+			return fmt.Errorf("create schema: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported on_schema_exists value %q", onSchemaExists)
+	}
+	return nil
 }
