@@ -31,16 +31,12 @@ MySQL servers without auth workarounds.
 
 ## Install
 
+Download the latest binary from the [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest) page.
+
+Or install with Go:
+
 ```bash
 go install github.com/Limetric/pgferry@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/Limetric/pgferry.git
-cd pgferry
-go build -o build/pgferry .
 ```
 
 ## Quick start
