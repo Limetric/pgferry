@@ -2,7 +2,10 @@ package main
 
 import "fmt"
 
-func collectUnsupportedTypeErrors(schema *Schema, typeMap TypeMappingConfig) []string {
+// typeMapper is a function that maps a source column to a PostgreSQL type.
+type typeMapper func(col Column, typeMap TypeMappingConfig) (string, error)
+
+func collectUnsupportedTypeErrors(schema *Schema, typeMap TypeMappingConfig, mapper typeMapper) []string {
 	if schema == nil {
 		return nil
 	}
@@ -10,8 +13,8 @@ func collectUnsupportedTypeErrors(schema *Schema, typeMap TypeMappingConfig) []s
 	var errs []string
 	for _, t := range schema.Tables {
 		for _, col := range t.Columns {
-			if _, err := mapType(col, typeMap); err != nil {
-				errs = append(errs, fmt.Sprintf("%s.%s (%s): %v", t.MySQLName, col.MySQLName, col.ColumnType, err))
+			if _, err := mapper(col, typeMap); err != nil {
+				errs = append(errs, fmt.Sprintf("%s.%s (%s): %v", t.SourceName, col.SourceName, col.ColumnType, err))
 			}
 		}
 	}
