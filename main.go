@@ -54,12 +54,13 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
 	log.Printf(
-		"config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t preserve_defaults=%t replicate_on_update_current_timestamp=%t",
+		"config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t replicate_on_update_current_timestamp=%t",
 		cfg.Workers,
 		cfg.Schema,
 		cfg.OnSchemaExists,
 		cfg.UnloggedTables,
 		cfg.PreserveDefaults,
+		cfg.AddUnsignedChecks,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 	)
 

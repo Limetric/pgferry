@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"strings"
 
@@ -56,6 +57,15 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 		}
 	}
 
+	if cfg.AddUnsignedChecks {
+		log.Printf("  unsigned checks...")
+		if err := addUnsignedChecks(ctx, pool, schema, pgSchema, cfg.TypeMapping); err != nil {
+			return fmt.Errorf("unsigned checks: %w", err)
+		}
+	} else {
+		log.Printf("  unsigned checks skipped (add_unsigned_checks=false)")
+	}
+
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		log.Printf("  triggers...")
 		if err := createTriggers(ctx, pool, schema, pgSchema); err != nil {
@@ -71,6 +81,82 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 	}
 
 	return nil
+}
+
+func addUnsignedChecks(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
+	for _, t := range schema.Tables {
+		for _, col := range t.Columns {
+			expr, ok := unsignedCheckExpr(col, typeMap)
+			if !ok {
+				continue
+			}
+
+			constraintName := unsignedConstraintName(t.PGName, col.PGName)
+			addSQL := fmt.Sprintf(
+				"ALTER TABLE %s.%s ADD CONSTRAINT %s CHECK (%s) NOT VALID",
+				pgIdent(pgSchema), pgIdent(t.PGName), pgIdent(constraintName), expr,
+			)
+			if err := execSQL(ctx, pool, constraintName, addSQL); err != nil {
+				return err
+			}
+
+			validateSQL := fmt.Sprintf(
+				"ALTER TABLE %s.%s VALIDATE CONSTRAINT %s",
+				pgIdent(pgSchema), pgIdent(t.PGName), pgIdent(constraintName),
+			)
+			if err := execSQL(ctx, pool, constraintName, validateSQL); err != nil {
+				return err
+			}
+
+			log.Printf("    constraint %s on %s.%s", constraintName, pgSchema, t.PGName)
+		}
+	}
+	return nil
+}
+
+func unsignedCheckExpr(col Column, typeMap TypeMappingConfig) (string, bool) {
+	if !strings.Contains(col.ColumnType, "unsigned") {
+		return "", false
+	}
+	if col.DataType == "tinyint" && col.Precision == 1 && typeMap.TinyInt1AsBoolean {
+		return "", false
+	}
+
+	ident := pgIdent(col.PGName)
+	switch col.DataType {
+	case "tinyint":
+		return fmt.Sprintf("%s >= 0 AND %s <= 255", ident, ident), true
+	case "smallint":
+		return fmt.Sprintf("%s >= 0 AND %s <= 65535", ident, ident), true
+	case "mediumint":
+		return fmt.Sprintf("%s >= 0 AND %s <= 16777215", ident, ident), true
+	case "int":
+		return fmt.Sprintf("%s >= 0 AND %s <= 4294967295", ident, ident), true
+	case "bigint":
+		return fmt.Sprintf("%s >= 0 AND %s <= 18446744073709551615", ident, ident), true
+	case "decimal", "float", "double":
+		return fmt.Sprintf("%s >= 0", ident), true
+	default:
+		return "", false
+	}
+}
+
+func unsignedConstraintName(table, col string) string {
+	base := fmt.Sprintf("ck_%s_%s", table, col)
+	suffix := "_unsigned"
+	full := base + suffix
+	if len(full) <= 63 {
+		return full
+	}
+
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(full))
+	hashSuffix := fmt.Sprintf("_%08x", h.Sum32())
+	maxBase := 63 - len(suffix) - len(hashSuffix)
+	if maxBase < 1 {
+		maxBase = 1
+	}
+	return base[:maxBase] + suffix + hashSuffix
 }
 
 // execSQL is a helper that runs a single statement and logs errors with context.

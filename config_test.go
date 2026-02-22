@@ -16,6 +16,7 @@ schema = "myschema"
 on_schema_exists = "recreate"
 unlogged_tables = true
 preserve_defaults = true
+add_unsigned_checks = true
 replicate_on_update_current_timestamp = true
 workers = 8
 
@@ -60,6 +61,9 @@ after_all = ["post.sql"]
 	}
 	if !cfg.PreserveDefaults {
 		t.Errorf("PreserveDefaults = %t, want true", cfg.PreserveDefaults)
+	}
+	if !cfg.AddUnsignedChecks {
+		t.Errorf("AddUnsignedChecks = %t, want true", cfg.AddUnsignedChecks)
 	}
 	if !cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("ReplicateOnUpdateCurrentTimestamp = %t, want true", cfg.ReplicateOnUpdateCurrentTimestamp)
@@ -106,6 +110,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.PreserveDefaults {
 		t.Errorf("default PreserveDefaults = %t, want false", cfg.PreserveDefaults)
+	}
+	if cfg.AddUnsignedChecks {
+		t.Errorf("default AddUnsignedChecks = %t, want false", cfg.AddUnsignedChecks)
 	}
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("default ReplicateOnUpdateCurrentTimestamp = %t, want false", cfg.ReplicateOnUpdateCurrentTimestamp)
