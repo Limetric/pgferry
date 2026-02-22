@@ -88,6 +88,9 @@ schema = "app"
 # What to do if the schema already exists: "error" (default) or "recreate"
 on_schema_exists = "error"
 
+# Source read consistency mode: "none" (default, parallel) or "single_tx" (single-transaction snapshot, sequential)
+source_snapshot_mode = "none"
+
 # Use UNLOGGED tables during bulk load, then SET LOGGED after (default: false)
 unlogged_tables = false
 
@@ -129,7 +132,7 @@ pgferry runs the following steps in order:
 1. **Introspect** &mdash; query MySQL `INFORMATION_SCHEMA` for tables, columns, indexes, and foreign keys
 2. **Create tables** &mdash; columns only, no constraints (optionally `UNLOGGED` for speed)
 3. **`before_data` hooks**
-4. **Stream data** &mdash; parallel workers, each opening a dedicated MySQL connection and streaming rows into PostgreSQL via `COPY`
+4. **Stream data** &mdash; either parallel workers (`source_snapshot_mode = "none"`) or a single read-only source transaction (`"single_tx"`) to keep all table reads in one MySQL snapshot
 5. **`after_data` hooks**
 6. **Post-migration:**
    - Convert `UNLOGGED` tables to `LOGGED` (if applicable)

@@ -124,7 +124,7 @@ after_all = []
 		t.Fatalf("before_data hooks: %v", err)
 	}
 
-	if err := migrateData(ctx, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping); err != nil {
+	if err := migrateData(ctx, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
 		t.Fatalf("migrateData: %v", err)
 	}
 
@@ -243,11 +243,12 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 	})
 
 	cfg := &MigrationConfig{
-		Schema:         pgSchema,
-		OnSchemaExists: "error",
-		UnloggedTables: false,
-		Workers:        2,
-		TypeMapping:    defaultTypeMappingConfig(),
+		Schema:             pgSchema,
+		OnSchemaExists:     "error",
+		SourceSnapshotMode: "none",
+		UnloggedTables:     false,
+		Workers:            2,
+		TypeMapping:        defaultTypeMappingConfig(),
 		Hooks: HooksConfig{
 			BeforeFk: []string{"testdata/cleanup.sql"},
 		},
@@ -256,7 +257,7 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
-	if err := migrateData(ctx, roDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping); err != nil {
+	if err := migrateData(ctx, roDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
 		t.Fatalf("migrateData with readonly user: %v", err)
 	}
 	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {

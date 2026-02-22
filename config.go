@@ -16,6 +16,7 @@ type MigrationConfig struct {
 	Postgres                          PostgresConfig    `toml:"postgres"`
 	Schema                            string            `toml:"schema"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
+	SourceSnapshotMode                string            `toml:"source_snapshot_mode"` // none|single_tx
 	UnloggedTables                    bool              `toml:"unlogged_tables"`
 	PreserveDefaults                  bool              `toml:"preserve_defaults"`
 	AddUnsignedChecks                 bool              `toml:"add_unsigned_checks"`
@@ -63,8 +64,9 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	}
 
 	cfg := MigrationConfig{
-		OnSchemaExists: "error",
-		TypeMapping:    defaultTypeMappingConfig(),
+		OnSchemaExists:     "error",
+		SourceSnapshotMode: "none",
+		TypeMapping:        defaultTypeMappingConfig(),
 	}
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -92,6 +94,11 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	case "error", "recreate":
 	default:
 		return nil, fmt.Errorf("on_schema_exists must be one of: error, recreate")
+	}
+	switch cfg.SourceSnapshotMode {
+	case "none", "single_tx":
+	default:
+		return nil, fmt.Errorf("source_snapshot_mode must be one of: none, single_tx")
 	}
 	switch cfg.TypeMapping.EnumMode {
 	case "text", "check":

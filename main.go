@@ -54,10 +54,11 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
 	log.Printf(
-		"config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t replicate_on_update_current_timestamp=%t",
+		"config: workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t replicate_on_update_current_timestamp=%t",
 		cfg.Workers,
 		cfg.Schema,
 		cfg.OnSchemaExists,
+		cfg.SourceSnapshotMode,
 		cfg.UnloggedTables,
 		cfg.PreserveDefaults,
 		cfg.AddUnsignedChecks,
@@ -146,9 +147,13 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("before_data hooks: %w", err)
 	}
 
-	// 7. Migrate data (parallel goroutines)
-	log.Printf("migrating data with %d workers...", cfg.Workers)
-	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping); err != nil {
+	// 7. Migrate data
+	if cfg.SourceSnapshotMode == "single_tx" {
+		log.Printf("migrating data with source_snapshot_mode=single_tx (sequential)")
+	} else {
+		log.Printf("migrating data with %d workers...", cfg.Workers)
+	}
+	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
 		return fmt.Errorf("migrate data: %w", err)
 	}
 

@@ -1,5 +1,6 @@
 schema = "sakila"
 on_schema_exists = "error"
+source_snapshot_mode = "none"
 unlogged_tables = false
 preserve_defaults = false
 add_unsigned_checks = false

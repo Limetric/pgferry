@@ -13,7 +13,16 @@ import (
 )
 
 // migrateData streams data from MySQL to PostgreSQL for all tables using parallel workers.
-func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig) error {
+func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig, sourceSnapshotMode string) error {
+	switch sourceSnapshotMode {
+	case "single_tx":
+		return migrateDataSingleTx(ctx, mysqlDSN, pool, schema, pgSchema, typeMap)
+	default:
+		return migrateDataParallel(ctx, mysqlDSN, pool, schema, pgSchema, workers, typeMap)
+	}
+}
+
+func migrateDataParallel(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig) error {
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(schema.Tables))
@@ -52,6 +61,46 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 	return nil
 }
 
+func migrateDataSingleTx(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
+	fullDSN, err := mysqlDSNWithReadOptions(mysqlDSN)
+	if err != nil {
+		return err
+	}
+
+	mysqlConn, err := sql.Open("mysql", fullDSN)
+	if err != nil {
+		return fmt.Errorf("open mysql: %w", err)
+	}
+	defer mysqlConn.Close()
+	mysqlConn.SetMaxOpenConns(1)
+	mysqlConn.SetMaxIdleConns(1)
+
+	if _, err := mysqlConn.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
+		return fmt.Errorf("set source transaction isolation: %w", err)
+	}
+
+	tx, err := mysqlConn.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
+	if err != nil {
+		return fmt.Errorf("begin source transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	log.Printf("source snapshot enabled: single_tx (sequential table copy)")
+	for _, t := range schema.Tables {
+		if err := migrateTableFromSource(ctx, tx, pool, t, pgSchema, typeMap); err != nil {
+			return fmt.Errorf("table %s: %w", t.MySQLName, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit source transaction: %w", err)
+	}
+	return nil
+}
+
 // migrateTable streams one table from MySQL to PG via COPY protocol.
 func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
 	// Own MySQL connection (short-lived)
@@ -61,10 +110,20 @@ func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, tabl
 	}
 	defer mysqlConn.Close()
 	mysqlConn.SetMaxOpenConns(1)
+	mysqlConn.SetMaxIdleConns(1)
 
+	return migrateTableFromSource(ctx, mysqlConn, pool, table, pgSchema, typeMap)
+}
+
+type mysqlSource interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func migrateTableFromSource(ctx context.Context, source mysqlSource, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
 	// Count rows for progress
 	var totalRows int64
-	err = mysqlConn.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM `%s`", table.MySQLName)).Scan(&totalRows)
+	err := source.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM `%s`", table.MySQLName)).Scan(&totalRows)
 	if err != nil {
 		return fmt.Errorf("count rows: %w", err)
 	}
@@ -89,7 +148,7 @@ func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, tabl
 	defer conn.Release()
 
 	// Stream MySQL rows via COPY protocol
-	rows, err := mysqlConn.QueryContext(ctx, fmt.Sprintf("SELECT * FROM `%s`", table.MySQLName))
+	rows, err := source.QueryContext(ctx, fmt.Sprintf("SELECT * FROM `%s`", table.MySQLName))
 	if err != nil {
 		return fmt.Errorf("select: %w", err)
 	}

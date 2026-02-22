@@ -14,6 +14,7 @@ func TestLoadConfig(t *testing.T) {
 	content := `
 schema = "myschema"
 on_schema_exists = "recreate"
+source_snapshot_mode = "single_tx"
 unlogged_tables = true
 preserve_defaults = true
 add_unsigned_checks = true
@@ -55,6 +56,9 @@ after_all = ["post.sql"]
 	}
 	if cfg.OnSchemaExists != "recreate" {
 		t.Errorf("OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "recreate")
+	}
+	if cfg.SourceSnapshotMode != "single_tx" {
+		t.Errorf("SourceSnapshotMode = %q, want %q", cfg.SourceSnapshotMode, "single_tx")
 	}
 	if !cfg.UnloggedTables {
 		t.Errorf("UnloggedTables = %t, want true", cfg.UnloggedTables)
@@ -104,6 +108,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.OnSchemaExists != "error" {
 		t.Errorf("default OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "error")
+	}
+	if cfg.SourceSnapshotMode != "none" {
+		t.Errorf("default SourceSnapshotMode = %q, want %q", cfg.SourceSnapshotMode, "none")
 	}
 	if cfg.UnloggedTables {
 		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
@@ -319,6 +326,30 @@ dsn = "postgres://u:p@h:5432/db"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for invalid on_schema_exists")
+	}
+}
+
+func TestLoadConfig_InvalidSourceSnapshotMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_snapshot_mode.toml")
+
+	content := `
+schema = "target"
+source_snapshot_mode = "repeatable_read"
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid source_snapshot_mode")
 	}
 }
 

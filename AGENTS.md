@@ -22,12 +22,12 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 
 **Migration pipeline** (orchestrated in `main.go:runMigration`):
 
-1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=false`, `add_unsigned_checks=false`, `replicate_on_update_current_timestamp=false`)
+1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=false`, `add_unsigned_checks=false`, `replicate_on_update_current_timestamp=false`)
 2. `introspectSchema` — MySQL INFORMATION_SCHEMA queries for tables, columns, indexes, FKs
    Also reports source views/routines/triggers that require manual migration.
 3. `createTables` — columns only, no constraints (UNLOGGED only when enabled, defaults only when `preserve_defaults=true`)
 4. `loadAndExecSQLFiles` — before_data hooks
-5. `migrateData` — parallel goroutines (semaphore pattern), each table gets own MySQL conn, streams rows through `pgx.CopyFrom`
+5. `migrateData` — either parallel goroutines per table (`source_snapshot_mode=none`) or a single read-only MySQL transaction for a consistent snapshot across tables (`source_snapshot_mode=single_tx`)
 6. `loadAndExecSQLFiles` — after_data hooks
 7. `postMigrate` — SET LOGGED → PKs → indexes → before_fk hooks → orphan cleanup → FKs → sequences → optional unsigned checks → optional triggers → after_all hooks
 
