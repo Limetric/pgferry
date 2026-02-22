@@ -52,7 +52,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
-	log.Printf("config: workers=%d batch_size=%d schema=%s on_schema_exists=%s unlogged_tables=%t", cfg.Workers, cfg.BatchSize, cfg.Schema, cfg.OnSchemaExists, cfg.UnloggedTables)
+	log.Printf("config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t", cfg.Workers, cfg.Schema, cfg.OnSchemaExists, cfg.UnloggedTables)
 
 	// 1. Connect to MySQL (for schema introspection only)
 	log.Printf("connecting to MySQL...")
@@ -138,7 +138,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 7. Migrate data (parallel goroutines)
 	log.Printf("migrating data with %d workers...", cfg.Workers)
-	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.BatchSize); err != nil {
+	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers); err != nil {
 		return fmt.Errorf("migrate data: %w", err)
 	}
 

@@ -89,7 +89,6 @@ func TestIntegration(t *testing.T) {
 
 	tomlContent := fmt.Sprintf(`schema = %q
 workers = 2
-batch_size = 1000
 
 [mysql]
 dsn = %q
@@ -123,7 +122,7 @@ after_all = []
 		t.Fatalf("before_data hooks: %v", err)
 	}
 
-	if err := migrateData(ctx, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.BatchSize); err != nil {
+	if err := migrateData(ctx, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers); err != nil {
 		t.Fatalf("migrateData: %v", err)
 	}
 

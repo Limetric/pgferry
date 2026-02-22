@@ -1,6 +1,5 @@
 schema = "sakila"
 workers = 4
-batch_size = 50000
 
 [mysql]
 dsn = "root:root@tcp(127.0.0.1:3306)/sakila"

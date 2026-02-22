@@ -14,7 +14,7 @@ import (
 )
 
 // migrateData streams data from MySQL to PostgreSQL for all tables using parallel workers.
-func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers, batchSize int) error {
+func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int) error {
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(schema.Tables))
@@ -28,10 +28,10 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if err := migrateTable(ctx, fullDSN, pool, t, pgSchema, batchSize); err != nil {
-				errCh <- fmt.Errorf("table %s: %w", t.MySQLName, err)
-			}
-		}(t)
+				if err := migrateTable(ctx, fullDSN, pool, t, pgSchema); err != nil {
+					errCh <- fmt.Errorf("table %s: %w", t.MySQLName, err)
+				}
+			}(t)
 	}
 
 	wg.Wait()
@@ -51,7 +51,7 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 }
 
 // migrateTable streams one table from MySQL to PG via COPY protocol.
-func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, table Table, pgSchema string, batchSize int) error {
+func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, table Table, pgSchema string) error {
 	// Own MySQL connection (short-lived)
 	mysqlConn, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {

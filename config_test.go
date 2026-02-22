@@ -15,7 +15,6 @@ schema = "myschema"
 on_schema_exists = "recreate"
 unlogged_tables = true
 workers = 8
-batch_size = 10000
 
 [mysql]
 dsn = "root:root@tcp(127.0.0.1:3306)/testdb"
@@ -56,9 +55,6 @@ after_all = ["post.sql"]
 	if !cfg.UnloggedTables {
 		t.Errorf("UnloggedTables = %t, want true", cfg.UnloggedTables)
 	}
-	if cfg.BatchSize != 10000 {
-		t.Errorf("BatchSize = %d, want 10000", cfg.BatchSize)
-	}
 	if len(cfg.Hooks.BeforeFk) != 1 || cfg.Hooks.BeforeFk[0] != "cleanup.sql" {
 		t.Errorf("Hooks.BeforeFk = %v", cfg.Hooks.BeforeFk)
 	}
@@ -80,7 +76,7 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 [postgres]
 dsn = "postgres://u:p@h:5432/db"
 `
-	// on_schema_exists, workers, batch_size omitted — defaults should apply
+	// on_schema_exists and workers omitted — defaults should apply
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -101,9 +97,6 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.Workers != 4 {
 		t.Errorf("default Workers = %d, want 4", cfg.Workers)
-	}
-	if cfg.BatchSize != 50000 {
-		t.Errorf("default BatchSize = %d, want 50000", cfg.BatchSize)
 	}
 }
 

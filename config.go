@@ -17,7 +17,6 @@ type MigrationConfig struct {
 	OnSchemaExists string         `toml:"on_schema_exists"`
 	UnloggedTables bool           `toml:"unlogged_tables"`
 	Workers        int            `toml:"workers"`
-	BatchSize      int            `toml:"batch_size"`
 	Hooks          HooksConfig    `toml:"hooks"`
 
 	// configDir is the directory containing the TOML file, used to resolve relative SQL paths.
@@ -59,9 +58,6 @@ func loadConfig(path string) (*MigrationConfig, error) {
 
 	if cfg.Workers <= 0 {
 		cfg.Workers = 4
-	}
-	if cfg.BatchSize <= 0 {
-		cfg.BatchSize = 50000
 	}
 
 	cfg.Schema = strings.TrimSpace(cfg.Schema)
