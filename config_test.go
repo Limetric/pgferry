@@ -13,6 +13,7 @@ func TestLoadConfig(t *testing.T) {
 	content := `
 schema = "myschema"
 on_schema_exists = "recreate"
+unlogged_tables = true
 workers = 8
 batch_size = 10000
 
@@ -51,6 +52,9 @@ after_all = ["post.sql"]
 	}
 	if cfg.OnSchemaExists != "recreate" {
 		t.Errorf("OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "recreate")
+	}
+	if !cfg.UnloggedTables {
+		t.Errorf("UnloggedTables = %t, want true", cfg.UnloggedTables)
 	}
 	if cfg.BatchSize != 10000 {
 		t.Errorf("BatchSize = %d, want 10000", cfg.BatchSize)
@@ -91,6 +95,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.OnSchemaExists != "error" {
 		t.Errorf("default OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "error")
+	}
+	if cfg.UnloggedTables {
+		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
 	}
 	if cfg.Workers != 4 {
 		t.Errorf("default Workers = %d, want 4", cfg.Workers)

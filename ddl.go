@@ -10,10 +10,10 @@ import (
 )
 
 // createTables generates and executes CREATE TABLE DDL for all tables.
-// Tables are created as UNLOGGED with no PKs, FKs, or indexes for speed.
-func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
+// Tables are created with no PKs, FKs, or indexes for speed.
+func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, unlogged bool) error {
 	for _, t := range schema.Tables {
-		ddl := generateCreateTable(t, pgSchema)
+		ddl := generateCreateTable(t, pgSchema, unlogged)
 		log.Printf("  creating %s.%s", pgSchema, t.PGName)
 		if _, err := pool.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("create table %s: %w\nDDL: %s", t.PGName, err, ddl)
@@ -22,10 +22,14 @@ func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 	return nil
 }
 
-// generateCreateTable produces a CREATE UNLOGGED TABLE statement.
-func generateCreateTable(t Table, pgSchema string) string {
+// generateCreateTable produces a CREATE TABLE statement.
+func generateCreateTable(t Table, pgSchema string, unlogged bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "CREATE UNLOGGED TABLE %s.%s (\n", pgIdent(pgSchema), pgIdent(t.PGName))
+	tableKind := "TABLE"
+	if unlogged {
+		tableKind = "UNLOGGED TABLE"
+	}
+	fmt.Fprintf(&b, "CREATE %s %s.%s (\n", tableKind, pgIdent(pgSchema), pgIdent(t.PGName))
 
 	for i, col := range t.Columns {
 		pgType := mapType(col)

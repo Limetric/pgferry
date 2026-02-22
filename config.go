@@ -15,6 +15,7 @@ type MigrationConfig struct {
 	Postgres       PostgresConfig `toml:"postgres"`
 	Schema         string         `toml:"schema"`
 	OnSchemaExists string         `toml:"on_schema_exists"`
+	UnloggedTables bool           `toml:"unlogged_tables"`
 	Workers        int            `toml:"workers"`
 	BatchSize      int            `toml:"batch_size"`
 	Hooks          HooksConfig    `toml:"hooks"`

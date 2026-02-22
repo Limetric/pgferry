@@ -16,11 +16,11 @@ func TestGenerateCreateTable(t *testing.T) {
 		},
 	}
 
-	ddl := generateCreateTable(table, "app")
+	ddl := generateCreateTable(table, "app", false)
 
-	// Should be UNLOGGED
-	if !strings.Contains(ddl, "UNLOGGED") {
-		t.Error("DDL should contain UNLOGGED")
+	// Should be logged by default
+	if strings.Contains(ddl, "UNLOGGED") {
+		t.Error("DDL should not contain UNLOGGED by default")
 	}
 
 	// Should have schema prefix
@@ -44,6 +44,20 @@ func TestGenerateCreateTable(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_Unlogged(t *testing.T) {
+	table := Table{
+		PGName: "users",
+		Columns: []Column{
+			{PGName: "id", DataType: "int", Nullable: false},
+		},
+	}
+
+	ddl := generateCreateTable(table, "app", true)
+	if !strings.Contains(ddl, "CREATE UNLOGGED TABLE app.users") {
+		t.Errorf("DDL should be unlogged when enabled, got:\n%s", ddl)
+	}
+}
+
 func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 	table := Table{
 		PGName: "user",
@@ -52,7 +66,7 @@ func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 		},
 	}
 
-	ddl := generateCreateTable(table, "app")
+	ddl := generateCreateTable(table, "app", false)
 
 	if !strings.Contains(ddl, `"user"`) {
 		t.Errorf("DDL should quote reserved word 'user', got:\n%s", ddl)

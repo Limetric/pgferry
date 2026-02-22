@@ -115,7 +115,7 @@ after_all = []
 	}
 
 	// --- Run pipeline ---
-	if err := createTables(ctx, pgPool, schema, pgSchema); err != nil {
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
 

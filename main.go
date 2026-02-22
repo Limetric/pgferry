@@ -52,7 +52,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
-	log.Printf("config: workers=%d batch_size=%d schema=%s on_schema_exists=%s", cfg.Workers, cfg.BatchSize, cfg.Schema, cfg.OnSchemaExists)
+	log.Printf("config: workers=%d batch_size=%d schema=%s on_schema_exists=%s unlogged_tables=%t", cfg.Workers, cfg.BatchSize, cfg.Schema, cfg.OnSchemaExists, cfg.UnloggedTables)
 
 	// 1. Connect to MySQL (for schema introspection only)
 	log.Printf("connecting to MySQL...")
@@ -127,7 +127,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 5. Create bare UNLOGGED tables (no PKs, FKs, indexes)
 	log.Printf("creating tables...")
-	if err := createTables(ctx, pgPool, schema, cfg.Schema); err != nil {
+	if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables); err != nil {
 		return fmt.Errorf("create tables: %w", err)
 	}
 
