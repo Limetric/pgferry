@@ -31,6 +31,10 @@ func TestPgIdent(t *testing.T) {
 		{"table", `"table"`},
 		{"users", "users"},
 		{"match_id", "match_id"},
+		{"chat_id-ended_at", `"chat_id-ended_at"`},
+		{"has space", `"has space"`},
+		{"Upper", `"Upper"`},
+		{"0start", `"0start"`},
 	}
 	for _, tt := range tests {
 		got := pgIdent(tt.in)

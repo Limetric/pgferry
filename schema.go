@@ -47,9 +47,25 @@ func toSnakeCase(s string) string {
 	return string(result)
 }
 
-// pgIdent returns a PG-safe identifier, quoting reserved words.
+// pgNeedsQuoting reports whether a PG identifier needs quoting beyond
+// reserved-word checks (e.g. contains hyphens, spaces, uppercase, etc.).
+func pgNeedsQuoting(name string) bool {
+	for i, r := range name {
+		if r >= 'a' && r <= 'z' || r == '_' {
+			continue
+		}
+		if i > 0 && (r >= '0' && r <= '9' || r == '$') {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// pgIdent returns a PG-safe identifier, quoting reserved words and names
+// that contain characters invalid in unquoted identifiers.
 func pgIdent(name string) string {
-	if pgReservedWords[name] {
+	if pgReservedWords[name] || pgNeedsQuoting(name) {
 		return `"` + name + `"`
 	}
 	return name
