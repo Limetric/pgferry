@@ -9,6 +9,14 @@ dsn = "root:root@tcp(127.0.0.1:3306)/sakila"
 [postgres]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/sakila"
 
+[type_mapping]
+tinyint1_as_boolean = false
+binary16_as_uuid = false
+datetime_as_timestamptz = false
+json_as_jsonb = false
+sanitize_json_null_bytes = true
+unknown_as_text = false
+
 [hooks]
 before_data = []
 after_data = []

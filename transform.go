@@ -7,104 +7,138 @@ import (
 )
 
 // mapType returns the PostgreSQL type for a given MySQL column.
-func mapType(col Column) string {
+func mapType(col Column, typeMap TypeMappingConfig) (string, error) {
+	isUnsigned := strings.Contains(col.ColumnType, "unsigned")
+
 	switch {
-	case col.DataType == "binary" && col.Precision == 16:
-		return "uuid"
-	case col.DataType == "tinyint" && col.Precision == 1:
-		return "boolean"
+	case col.DataType == "binary" && col.Precision == 16 && typeMap.Binary16AsUUID:
+		return "uuid", nil
+	case col.DataType == "tinyint" && col.Precision == 1 && typeMap.TinyInt1AsBoolean:
+		return "boolean", nil
 	case col.DataType == "tinyint":
-		return "smallint"
+		return "smallint", nil
 	case col.DataType == "smallint":
-		return "smallint"
+		if isUnsigned {
+			return "integer", nil
+		}
+		return "smallint", nil
 	case col.DataType == "mediumint":
-		return "integer"
+		return "integer", nil
 	case col.DataType == "int":
-		return "integer"
+		if isUnsigned {
+			return "bigint", nil
+		}
+		return "integer", nil
 	case col.DataType == "bigint":
-		return "bigint"
+		if isUnsigned {
+			return "numeric(20)", nil
+		}
+		return "bigint", nil
 	case col.DataType == "float":
-		return "real"
+		return "real", nil
 	case col.DataType == "double":
-		return "double precision"
+		return "double precision", nil
 	case col.DataType == "decimal":
-		return fmt.Sprintf("numeric(%d,%d)", col.Precision, col.Scale)
+		return fmt.Sprintf("numeric(%d,%d)", col.Precision, col.Scale), nil
 	case col.DataType == "varchar":
-		return fmt.Sprintf("varchar(%d)", col.CharMaxLen)
+		return fmt.Sprintf("varchar(%d)", col.CharMaxLen), nil
 	case col.DataType == "char":
-		return fmt.Sprintf("varchar(%d)", col.CharMaxLen) // char→varchar per pgloader convention
+		return fmt.Sprintf("varchar(%d)", col.CharMaxLen), nil // char→varchar per pgloader convention
 	case col.DataType == "text", col.DataType == "mediumtext", col.DataType == "longtext", col.DataType == "tinytext":
-		return "text"
+		return "text", nil
 	case col.DataType == "json":
-		return "jsonb"
+		if typeMap.JSONAsJSONB {
+			return "jsonb", nil
+		}
+		return "json", nil
 	case col.DataType == "enum":
-		return "text"
-	case col.DataType == "timestamp", col.DataType == "datetime":
-		return "timestamptz"
+		return "text", nil
+	case col.DataType == "timestamp":
+		return "timestamptz", nil
+	case col.DataType == "datetime":
+		if typeMap.DatetimeAsTimestamptz {
+			return "timestamptz", nil
+		}
+		return "timestamp", nil
 	case col.DataType == "date":
-		return "date"
+		return "date", nil
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
-		return "bytea"
+		return "bytea", nil
 	default:
-		return "text" // safe fallback
+		if typeMap.UnknownAsText {
+			return "text", nil
+		}
+		return "", fmt.Errorf("unsupported MySQL type %q (column_type=%q)", col.DataType, col.ColumnType)
 	}
 }
 
 // transformValue converts a MySQL row value to its PostgreSQL equivalent.
-func transformValue(val any, col Column) any {
+func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error) {
 	if val == nil {
-		return nil
+		return nil, nil
 	}
 
 	switch {
 	// binary(16) → uuid string
-	case col.DataType == "binary" && col.Precision == 16:
+	case col.DataType == "binary" && col.Precision == 16 && typeMap.Binary16AsUUID:
 		b, ok := val.([]byte)
 		if !ok || len(b) != 16 {
-			return nil
+			return nil, fmt.Errorf("expected 16-byte binary UUID payload, got %T", val)
 		}
-		return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+		return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 
 	// json → strip null bytes (MySQL allows \x00, PG doesn't)
-	case col.DataType == "json":
+	case col.DataType == "json" && typeMap.SanitizeJSONNullBytes:
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", "")
+			return strings.ReplaceAll(string(v), "\x00", ""), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", "")
+			return strings.ReplaceAll(v, "\x00", ""), nil
 		}
-		return val
+		return val, nil
 
 	// tinyint(1) → bool
-	case col.DataType == "tinyint" && col.Precision == 1:
+	case col.DataType == "tinyint" && col.Precision == 1 && typeMap.TinyInt1AsBoolean:
 		switch v := val.(type) {
 		case int64:
-			return v != 0
+			if v == 0 {
+				return false, nil
+			}
+			if v == 1 {
+				return true, nil
+			}
+			return nil, fmt.Errorf("cannot coerce tinyint(1) value %d to boolean", v)
 		case []byte:
-			return string(v) != "0"
+			if string(v) == "0" {
+				return false, nil
+			}
+			if string(v) == "1" {
+				return true, nil
+			}
+			return nil, fmt.Errorf("cannot coerce tinyint(1) value %q to boolean", string(v))
 		case bool:
-			return v
+			return v, nil
 		}
-		return val
+		return nil, fmt.Errorf("cannot coerce tinyint(1) value of type %T to boolean", val)
 
 	// date → zero dates to null
 	case col.DataType == "date":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
-			return nil
+			return nil, nil
 		}
-		return val
+		return val, nil
 
 	// timestamp/datetime → zero dates to null
 	case col.DataType == "timestamp" || col.DataType == "datetime":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
-			return nil
+			return nil, nil
 		}
-		return val
+		return val, nil
 
 	default:
-		return val
+		return val, nil
 	}
 }

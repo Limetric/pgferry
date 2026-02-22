@@ -106,6 +106,74 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.Workers != wantWorkers {
 		t.Errorf("default Workers = %d, want %d", cfg.Workers, wantWorkers)
 	}
+	if cfg.TypeMapping.TinyInt1AsBoolean {
+		t.Errorf("default TypeMapping.TinyInt1AsBoolean = %t, want false", cfg.TypeMapping.TinyInt1AsBoolean)
+	}
+	if cfg.TypeMapping.Binary16AsUUID {
+		t.Errorf("default TypeMapping.Binary16AsUUID = %t, want false", cfg.TypeMapping.Binary16AsUUID)
+	}
+	if cfg.TypeMapping.DatetimeAsTimestamptz {
+		t.Errorf("default TypeMapping.DatetimeAsTimestamptz = %t, want false", cfg.TypeMapping.DatetimeAsTimestamptz)
+	}
+	if cfg.TypeMapping.JSONAsJSONB {
+		t.Errorf("default TypeMapping.JSONAsJSONB = %t, want false", cfg.TypeMapping.JSONAsJSONB)
+	}
+	if !cfg.TypeMapping.SanitizeJSONNullBytes {
+		t.Errorf("default TypeMapping.SanitizeJSONNullBytes = %t, want true", cfg.TypeMapping.SanitizeJSONNullBytes)
+	}
+	if cfg.TypeMapping.UnknownAsText {
+		t.Errorf("default TypeMapping.UnknownAsText = %t, want false", cfg.TypeMapping.UnknownAsText)
+	}
+}
+
+func TestLoadConfig_TypeMappingOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "type_mapping.toml")
+
+	content := `
+schema = "target"
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+tinyint1_as_boolean = true
+binary16_as_uuid = true
+datetime_as_timestamptz = true
+json_as_jsonb = true
+sanitize_json_null_bytes = false
+unknown_as_text = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if !cfg.TypeMapping.TinyInt1AsBoolean {
+		t.Errorf("TypeMapping.TinyInt1AsBoolean = %t, want true", cfg.TypeMapping.TinyInt1AsBoolean)
+	}
+	if !cfg.TypeMapping.Binary16AsUUID {
+		t.Errorf("TypeMapping.Binary16AsUUID = %t, want true", cfg.TypeMapping.Binary16AsUUID)
+	}
+	if !cfg.TypeMapping.DatetimeAsTimestamptz {
+		t.Errorf("TypeMapping.DatetimeAsTimestamptz = %t, want true", cfg.TypeMapping.DatetimeAsTimestamptz)
+	}
+	if !cfg.TypeMapping.JSONAsJSONB {
+		t.Errorf("TypeMapping.JSONAsJSONB = %t, want true", cfg.TypeMapping.JSONAsJSONB)
+	}
+	if cfg.TypeMapping.SanitizeJSONNullBytes {
+		t.Errorf("TypeMapping.SanitizeJSONNullBytes = %t, want false", cfg.TypeMapping.SanitizeJSONNullBytes)
+	}
+	if !cfg.TypeMapping.UnknownAsText {
+		t.Errorf("TypeMapping.UnknownAsText = %t, want true", cfg.TypeMapping.UnknownAsText)
+	}
 }
 
 func TestLoadConfig_WorkersNonPositiveUsesDefault(t *testing.T) {

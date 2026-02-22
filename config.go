@@ -12,13 +12,14 @@ import (
 
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
-	MySQL          MySQLConfig    `toml:"mysql"`
-	Postgres       PostgresConfig `toml:"postgres"`
-	Schema         string         `toml:"schema"`
-	OnSchemaExists string         `toml:"on_schema_exists"`
-	UnloggedTables bool           `toml:"unlogged_tables"`
-	Workers        int            `toml:"workers"`
-	Hooks          HooksConfig    `toml:"hooks"`
+	MySQL          MySQLConfig       `toml:"mysql"`
+	Postgres       PostgresConfig    `toml:"postgres"`
+	Schema         string            `toml:"schema"`
+	OnSchemaExists string            `toml:"on_schema_exists"`
+	UnloggedTables bool              `toml:"unlogged_tables"`
+	Workers        int               `toml:"workers"`
+	Hooks          HooksConfig       `toml:"hooks"`
+	TypeMapping    TypeMappingConfig `toml:"type_mapping"`
 
 	// configDir is the directory containing the TOML file, used to resolve relative SQL paths.
 	configDir string
@@ -39,6 +40,16 @@ type HooksConfig struct {
 	AfterAll   []string `toml:"after_all"`
 }
 
+// TypeMappingConfig controls non-lossless type coercions.
+type TypeMappingConfig struct {
+	TinyInt1AsBoolean     bool `toml:"tinyint1_as_boolean"`
+	Binary16AsUUID        bool `toml:"binary16_as_uuid"`
+	DatetimeAsTimestamptz bool `toml:"datetime_as_timestamptz"`
+	JSONAsJSONB           bool `toml:"json_as_jsonb"`
+	SanitizeJSONNullBytes bool `toml:"sanitize_json_null_bytes"`
+	UnknownAsText         bool `toml:"unknown_as_text"`
+}
+
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
 func loadConfig(path string) (*MigrationConfig, error) {
 	data, err := os.ReadFile(path)
@@ -46,7 +57,10 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	var cfg MigrationConfig
+	cfg := MigrationConfig{
+		OnSchemaExists: "error",
+		TypeMapping:    defaultTypeMappingConfig(),
+	}
 	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
@@ -102,4 +116,15 @@ func defaultWorkers() int {
 		return 8
 	}
 	return n
+}
+
+func defaultTypeMappingConfig() TypeMappingConfig {
+	return TypeMappingConfig{
+		TinyInt1AsBoolean:     false,
+		Binary16AsUUID:        false,
+		DatetimeAsTimestamptz: false,
+		JSONAsJSONB:           false,
+		SanitizeJSONNullBytes: true,
+		UnknownAsText:         false,
+	}
 }

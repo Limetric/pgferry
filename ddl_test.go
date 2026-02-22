@@ -16,7 +16,10 @@ func TestGenerateCreateTable(t *testing.T) {
 		},
 	}
 
-	ddl := generateCreateTable(table, "app", false)
+	ddl, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
 
 	// Should be logged by default
 	if strings.Contains(ddl, "UNLOGGED") {
@@ -29,13 +32,13 @@ func TestGenerateCreateTable(t *testing.T) {
 	}
 
 	// uuid type for binary(16)
-	if !strings.Contains(ddl, "identifier uuid NOT NULL") {
-		t.Errorf("DDL should map binary(16) to uuid, got:\n%s", ddl)
+	if !strings.Contains(ddl, "identifier bytea NOT NULL") {
+		t.Errorf("DDL should map binary(16) to bytea by default, got:\n%s", ddl)
 	}
 
 	// boolean for tinyint(1)
-	if !strings.Contains(ddl, "enabled boolean NOT NULL") {
-		t.Errorf("DDL should map tinyint(1) to boolean, got:\n%s", ddl)
+	if !strings.Contains(ddl, "enabled smallint NOT NULL") {
+		t.Errorf("DDL should map tinyint(1) to smallint by default, got:\n%s", ddl)
 	}
 
 	// nullable column should not have NOT NULL
@@ -52,7 +55,10 @@ func TestGenerateCreateTable_Unlogged(t *testing.T) {
 		},
 	}
 
-	ddl := generateCreateTable(table, "app", true)
+	ddl, err := generateCreateTable(table, "app", true, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
 	if !strings.Contains(ddl, "CREATE UNLOGGED TABLE app.users") {
 		t.Errorf("DDL should be unlogged when enabled, got:\n%s", ddl)
 	}
@@ -66,7 +72,10 @@ func TestGenerateCreateTable_DefaultLoggedPrefix(t *testing.T) {
 		},
 	}
 
-	ddl := generateCreateTable(table, "app", false)
+	ddl, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
 	if !strings.HasPrefix(ddl, "CREATE TABLE app.accounts (") {
 		t.Fatalf("expected logged CREATE TABLE prefix, got:\n%s", ddl)
 	}
@@ -80,12 +89,29 @@ func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 		},
 	}
 
-	ddl := generateCreateTable(table, "app", false)
+	ddl, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
 
 	if !strings.Contains(ddl, `"user"`) {
 		t.Errorf("DDL should quote reserved word 'user', got:\n%s", ddl)
 	}
 	if !strings.Contains(ddl, `"order"`) {
 		t.Errorf("DDL should quote reserved word 'order', got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_UnknownTypeErrors(t *testing.T) {
+	table := Table{
+		PGName: "mystery",
+		Columns: []Column{
+			{PGName: "shape", DataType: "geometry", ColumnType: "geometry", Nullable: true},
+		},
+	}
+
+	_, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected error for unsupported MySQL type")
 	}
 }

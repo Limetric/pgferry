@@ -11,9 +11,12 @@ import (
 
 // createTables generates and executes CREATE TABLE DDL for all tables.
 // Tables are created with no PKs, FKs, or indexes for speed.
-func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, unlogged bool) error {
+func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, unlogged bool, typeMap TypeMappingConfig) error {
 	for _, t := range schema.Tables {
-		ddl := generateCreateTable(t, pgSchema, unlogged)
+		ddl, err := generateCreateTable(t, pgSchema, unlogged, typeMap)
+		if err != nil {
+			return fmt.Errorf("build create table %s: %w", t.PGName, err)
+		}
 		log.Printf("  creating %s.%s", pgSchema, t.PGName)
 		if _, err := pool.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("create table %s: %w\nDDL: %s", t.PGName, err, ddl)
@@ -23,7 +26,7 @@ func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 }
 
 // generateCreateTable produces a CREATE TABLE statement.
-func generateCreateTable(t Table, pgSchema string, unlogged bool) string {
+func generateCreateTable(t Table, pgSchema string, unlogged bool, typeMap TypeMappingConfig) (string, error) {
 	var b strings.Builder
 	tableKind := "TABLE"
 	if unlogged {
@@ -32,7 +35,10 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool) string {
 	fmt.Fprintf(&b, "CREATE %s %s.%s (\n", tableKind, pgIdent(pgSchema), pgIdent(t.PGName))
 
 	for i, col := range t.Columns {
-		pgType := mapType(col)
+		pgType, err := mapType(col, typeMap)
+		if err != nil {
+			return "", fmt.Errorf("column %s: %w", col.PGName, err)
+		}
 		fmt.Fprintf(&b, "  %s %s", pgIdent(col.PGName), pgType)
 
 		if !col.Nullable {
@@ -46,5 +52,5 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool) string {
 	}
 
 	b.WriteString(")")
-	return b.String()
+	return b.String(), nil
 }

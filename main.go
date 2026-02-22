@@ -114,7 +114,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 5. Create bare UNLOGGED tables (no PKs, FKs, indexes)
 	log.Printf("creating tables...")
-	if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables); err != nil {
+	if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.TypeMapping); err != nil {
 		return fmt.Errorf("create tables: %w", err)
 	}
 
@@ -125,7 +125,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 7. Migrate data (parallel goroutines)
 	log.Printf("migrating data with %d workers...", cfg.Workers)
-	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers); err != nil {
+	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping); err != nil {
 		return fmt.Errorf("migrate data: %w", err)
 	}
 

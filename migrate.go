@@ -13,7 +13,7 @@ import (
 )
 
 // migrateData streams data from MySQL to PostgreSQL for all tables using parallel workers.
-func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int) error {
+func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig) error {
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(schema.Tables))
@@ -30,7 +30,7 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if err := migrateTable(ctx, fullDSN, pool, t, pgSchema); err != nil {
+			if err := migrateTable(ctx, fullDSN, pool, t, pgSchema, typeMap); err != nil {
 				errCh <- fmt.Errorf("table %s: %w", t.MySQLName, err)
 			}
 		}(t)
@@ -53,7 +53,7 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 }
 
 // migrateTable streams one table from MySQL to PG via COPY protocol.
-func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, table Table, pgSchema string) error {
+func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
 	// Own MySQL connection (short-lived)
 	mysqlConn, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
@@ -96,10 +96,11 @@ func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, tabl
 	defer rows.Close()
 
 	src := &rowSource{
-		rows:   rows,
-		table:  table,
-		copied: new(atomic.Int64),
-		total:  totalRows,
+		rows:        rows,
+		table:       table,
+		copied:      new(atomic.Int64),
+		total:       totalRows,
+		typeMapping: typeMap,
 	}
 
 	count, err := conn.Conn().CopyFrom(
@@ -118,12 +119,13 @@ func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, tabl
 
 // rowSource implements pgx.CopyFromSource by reading from MySQL rows.
 type rowSource struct {
-	rows   *sql.Rows
-	table  Table
-	values []any
-	err    error
-	copied *atomic.Int64
-	total  int64
+	rows        *sql.Rows
+	table       Table
+	values      []any
+	err         error
+	copied      *atomic.Int64
+	total       int64
+	typeMapping TypeMappingConfig
 }
 
 func (r *rowSource) Next() bool {
@@ -148,7 +150,12 @@ func (r *rowSource) Next() bool {
 	// Transform values
 	r.values = make([]any, numCols)
 	for i, col := range r.table.Columns {
-		r.values[i] = transformValue(dest[i], col)
+		v, err := transformValue(dest[i], col, r.typeMapping)
+		if err != nil {
+			r.err = fmt.Errorf("column %s: %w", col.MySQLName, err)
+			return false
+		}
+		r.values[i] = v
 	}
 
 	r.copied.Add(1)
