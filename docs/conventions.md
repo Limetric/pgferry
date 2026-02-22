@@ -2,18 +2,18 @@
 
 ## Naming
 
-MySQL identifiers are converted to `snake_case` before creating PostgreSQL objects.
+Source database identifiers are converted to `snake_case` before creating PostgreSQL objects.
 For example, `parentUserId` becomes `parent_user_id`.
 
 PostgreSQL reserved words are automatically double-quoted in all generated DDL.
-For example, a MySQL column named `user` becomes `"user"` in PostgreSQL.
+For example, a source column named `user` becomes `"user"` in PostgreSQL.
 
 Identifiers containing special characters (dots, spaces, etc.) are also quoted.
 
 ## Auto-increment &rarr; sequences
 
-MySQL `auto_increment` columns are migrated as plain integer columns during table
-creation. After data is loaded, pgferry:
+MySQL `auto_increment` and SQLite `AUTOINCREMENT` / `INTEGER PRIMARY KEY` columns are
+migrated as plain integer columns during table creation. After data is loaded, pgferry:
 
 1. Creates a PostgreSQL sequence (`schema.table_column_seq`)
 2. Sets the sequence value to `max(column) + 1`
@@ -63,13 +63,15 @@ introspection. pgferry:
 
 ### Column types
 
-Unsupported MySQL column types are detected before any DDL runs. pgferry reports
+Unsupported source column types are detected before any DDL runs. pgferry reports
 the full list of unsupported columns and aborts. Set `type_mapping.unknown_as_text = true`
 to coerce unknown types to `text` instead.
 
 ### Index types
 
-The following MySQL index features are reported and skipped (migration continues):
+The following index features are reported and skipped (migration continues):
+
+**MySQL:**
 
 | Feature | Example | Reason |
 |---|---|---|
@@ -78,24 +80,49 @@ The following MySQL index features are reported and skipped (migration continues
 | Prefix indexes | `INDEX (col(10))` | PostgreSQL does not support `SUB_PART` |
 | Expression indexes | `INDEX ((col + 1))` | Expression key-parts not currently translated |
 
+**SQLite:**
+
+| Feature | Example | Reason |
+|---|---|---|
+| Partial indexes | `CREATE INDEX ... WHERE condition` | WHERE clause not translated |
+| Expression indexes | `CREATE INDEX ... (expr)` | Expression not translated |
+
 Unsupported indexes are logged as warnings but do not block the migration.
 
 ### Source objects
 
-pgferry detects MySQL views, routines (functions/procedures), and triggers in the
+pgferry detects views, routines (functions/procedures, MySQL only), and triggers in the
 source database and reports them as warnings. These are **not migrated
 automatically** and require manual recreation in PostgreSQL.
 
+## Source-specific notes
+
+### MySQL
+
+- `enum_mode` and `set_mode` control enum/set handling
+- `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz` enable semantic coercions
+- `source_snapshot_mode = "single_tx"` enables consistent snapshots
+- Unsigned integer ranges can be enforced via `add_unsigned_checks`
+
+### SQLite
+
+- All integer types map to `bigint` (SQLite stores up to 64-bit integers)
+- Always runs with 1 worker (sequential data streaming)
+- `source_snapshot_mode = "single_tx"` is not supported
+- MySQL-only type mapping options are rejected at config validation
+- In-memory databases (`:memory:`) are not supported
+- The database is opened in read-only mode
+
 ## Enum handling
 
-Enum behavior is controlled by `type_mapping.enum_mode`:
+Enum behavior is controlled by `type_mapping.enum_mode` (MySQL only):
 
 - **`text`** (default) &mdash; the column is created as `text` with no constraint. Any string value is accepted.
 - **`check`** &mdash; the column is created as `text` with a `CHECK` constraint restricting values to the original MySQL enum's allowed set.
 
 ## Set handling
 
-Set behavior is controlled by `type_mapping.set_mode`:
+Set behavior is controlled by `type_mapping.set_mode` (MySQL only):
 
 - **`text`** (default) &mdash; the comma-separated set value is stored as a single `text` string (e.g. `"a,b,c"`).
 - **`text_array`** &mdash; the value is split on commas and stored as a PostgreSQL `text[]` array (e.g. `{"a","b","c"}`).
@@ -122,7 +149,7 @@ Example constraints:
 
 ## Column defaults
 
-By default, pgferry omits MySQL column defaults from the PostgreSQL schema.
+By default, pgferry omits source column defaults from the PostgreSQL schema.
 Set `preserve_defaults = true` to include them in the `CREATE TABLE` DDL.
 
 ## UNLOGGED tables

@@ -42,20 +42,49 @@ Any MySQL type not in this table is unsupported by default. Set
 `type_mapping.unknown_as_text = true` to coerce unknown types to `text`
 instead of aborting.
 
+## SQLite &rarr; PostgreSQL type table
+
+SQLite uses dynamic typing with [type affinity](https://www.sqlite.org/datatype3.html).
+pgferry uses conservative mappings &mdash; all integer types map to `bigint` since
+SQLite integers can be up to 64-bit.
+
+| SQLite type | PG type | Notes |
+|---|---|---|
+| `INTEGER`, `INT`, `SMALLINT`, `TINYINT`, `MEDIUMINT`, `BIGINT` | `bigint` | All integers → bigint (SQLite stores up to 64-bit) |
+| `REAL`, `DOUBLE`, `FLOAT` | `double precision` | |
+| `TEXT`, `VARCHAR(N)`, `CHAR(N)`, `CLOB` | `text` | Length constraints are not enforced by SQLite |
+| `BLOB` | `bytea` | |
+| `NUMERIC` | `numeric` | |
+| `NUMERIC(P,S)` / `DECIMAL(P,S)` | `numeric(P,S)` | Precision/scale preserved when declared |
+| `BOOLEAN` | `boolean` | |
+| `DATETIME`, `TIMESTAMP` | `timestamp` | |
+| `DATE` | `date` | |
+| `JSON` | `json` | `jsonb` with `json_as_jsonb = true` |
+
+Any SQLite type not in this table is unsupported by default. Set
+`type_mapping.unknown_as_text = true` to coerce unknown types to `text`
+instead of aborting.
+
+### SQLite type mapping notes
+
+- **No unsigned integers**: SQLite has no unsigned concept, so `add_unsigned_checks` has no effect.
+- **No enums or sets**: SQLite has no native enum or set types, so `enum_mode` and `set_mode` must remain at their defaults (`"text"`).
+- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `enum_mode = "check"`, and `set_mode = "text_array"` produce a config error when used with a SQLite source.
+
 ## Type mapping options
 
 All options live under `[type_mapping]` in your TOML config:
 
 ```toml
 [type_mapping]
-tinyint1_as_boolean = false       # tinyint(1) → boolean
-binary16_as_uuid = false          # binary(16) → uuid
-datetime_as_timestamptz = false   # datetime → timestamptz
+tinyint1_as_boolean = false       # tinyint(1) → boolean (MySQL only)
+binary16_as_uuid = false          # binary(16) → uuid (MySQL only)
+datetime_as_timestamptz = false   # datetime → timestamptz (MySQL only)
 json_as_jsonb = false             # json → jsonb
 sanitize_json_null_bytes = true   # strip \x00 from JSON values
 unknown_as_text = false           # unknown types → text (instead of error)
-enum_mode = "text"                # "text" or "check"
-set_mode = "text"                 # "text" or "text_array"
+enum_mode = "text"                # "text" or "check" (MySQL only)
+set_mode = "text"                 # "text" or "text_array" (MySQL only)
 ```
 
 ### Enum mode
@@ -113,3 +142,16 @@ Unsigned MySQL integers are mapped to the next-wider PostgreSQL integer type
 Optionally, `add_unsigned_checks = true` adds `CHECK` constraints that enforce
 the original unsigned range (e.g. `CHECK (col >= 0 AND col <= 4294967295)` for
 unsigned `int`).
+
+### SQLite default values
+
+SQLite default values are mapped to PostgreSQL equivalents:
+
+| SQLite default | PostgreSQL default |
+|---|---|
+| `NULL` / `null` | Omitted (no default) |
+| `CURRENT_TIMESTAMP` | `CURRENT_TIMESTAMP` |
+| `CURRENT_DATE` | `CURRENT_DATE` |
+| Numeric literal (`42`, `3.14`) | Passed through |
+| `0`/`1` on boolean column | `FALSE`/`TRUE` |
+| String literal (`'hello'`) | Passed through as-is |
