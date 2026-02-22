@@ -31,16 +31,19 @@ func TestMapType(t *testing.T) {
 		{"text", Column{DataType: "text", ColumnType: "text"}, defaultTypeMappingConfig(), "text", false},
 		{"mediumtext", Column{DataType: "mediumtext", ColumnType: "mediumtext"}, defaultTypeMappingConfig(), "text", false},
 		{"json→json default", Column{DataType: "json", ColumnType: "json"}, defaultTypeMappingConfig(), "json", false},
-		{"json→jsonb opt-in", Column{DataType: "json", ColumnType: "json"}, TypeMappingConfig{JSONAsJSONB: true, SanitizeJSONNullBytes: true}, "jsonb", false},
+		{"json→jsonb opt-in", Column{DataType: "json", ColumnType: "json"}, TypeMappingConfig{JSONAsJSONB: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "jsonb", false},
 		{"enum→text", Column{DataType: "enum", ColumnType: "enum('a','b')"}, defaultTypeMappingConfig(), "text", false},
+		{"enum→text check mode", Column{DataType: "enum", ColumnType: "enum('a','b')"}, TypeMappingConfig{EnumMode: "check", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
+		{"set→text default", Column{DataType: "set", ColumnType: "set('a','b')"}, defaultTypeMappingConfig(), "text", false},
+		{"set→text[] opt-in", Column{DataType: "set", ColumnType: "set('a','b')"}, TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}, "text[]", false},
 		{"timestamp→timestamptz", Column{DataType: "timestamp", ColumnType: "timestamp"}, defaultTypeMappingConfig(), "timestamptz", false},
 		{"datetime→timestamp default", Column{DataType: "datetime", ColumnType: "datetime"}, defaultTypeMappingConfig(), "timestamp", false},
-		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, SanitizeJSONNullBytes: true}, "timestamptz", false},
+		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "timestamptz", false},
 		{"date", Column{DataType: "date", ColumnType: "date"}, defaultTypeMappingConfig(), "date", false},
 		{"binary→bytea", Column{DataType: "binary", ColumnType: "binary(32)", Precision: 32}, defaultTypeMappingConfig(), "bytea", false},
 		{"varbinary→bytea", Column{DataType: "varbinary", ColumnType: "varbinary(32)"}, defaultTypeMappingConfig(), "bytea", false},
 		{"unknown→error default", Column{DataType: "geometry", ColumnType: "geometry"}, defaultTypeMappingConfig(), "", true},
-		{"unknown→text opt-in", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{UnknownAsText: true, SanitizeJSONNullBytes: true}, "text", false},
+		{"unknown→text opt-in", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{UnknownAsText: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -113,6 +116,35 @@ func TestTransformValue_BoolNoOptInPassthrough(t *testing.T) {
 	}
 	if got != int64(2) {
 		t.Fatalf("transformValue default tinyint(1) = %v, want %v", got, int64(2))
+	}
+}
+
+func TestTransformValue_SetTextArray(t *testing.T) {
+	col := Column{DataType: "set"}
+	optIn := TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}
+
+	got, err := transformValue([]byte("a,b"), col, optIn)
+	if err != nil {
+		t.Fatalf("transformValue(set) error: %v", err)
+	}
+	vals, ok := got.([]string)
+	if !ok {
+		t.Fatalf("transformValue(set) type = %T, want []string", got)
+	}
+	if len(vals) != 2 || vals[0] != "a" || vals[1] != "b" {
+		t.Fatalf("transformValue(set) = %#v, want [a b]", vals)
+	}
+
+	got, err = transformValue([]byte(""), col, optIn)
+	if err != nil {
+		t.Fatalf("transformValue(empty set) error: %v", err)
+	}
+	vals, ok = got.([]string)
+	if !ok {
+		t.Fatalf("transformValue(empty set) type = %T, want []string", got)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("transformValue(empty set) = %#v, want empty slice", vals)
 	}
 }
 

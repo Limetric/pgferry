@@ -52,7 +52,21 @@ func mapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		}
 		return "json", nil
 	case col.DataType == "enum":
-		return "text", nil
+		switch typeMap.EnumMode {
+		case "text", "check":
+			return "text", nil
+		default:
+			return "", fmt.Errorf("unsupported enum_mode %q", typeMap.EnumMode)
+		}
+	case col.DataType == "set":
+		switch typeMap.SetMode {
+		case "text":
+			return "text", nil
+		case "text_array":
+			return "text[]", nil
+		default:
+			return "", fmt.Errorf("unsupported set_mode %q", typeMap.SetMode)
+		}
 	case col.DataType == "timestamp":
 		return "timestamptz", nil
 	case col.DataType == "datetime":
@@ -121,6 +135,23 @@ func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error)
 			return v, nil
 		}
 		return nil, fmt.Errorf("cannot coerce tinyint(1) value of type %T to boolean", val)
+
+	// set → text[] (optional)
+	case col.DataType == "set" && typeMap.SetMode == "text_array":
+		var raw string
+		switch v := val.(type) {
+		case []byte:
+			raw = string(v)
+		case string:
+			raw = v
+		default:
+			return nil, fmt.Errorf("cannot coerce set value of type %T to text[]", val)
+		}
+		if raw == "" {
+			return []string{}, nil
+		}
+		parts := strings.Split(raw, ",")
+		return parts, nil
 
 	// date → zero dates to null
 	case col.DataType == "date":

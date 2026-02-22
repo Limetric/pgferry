@@ -45,12 +45,14 @@ type HooksConfig struct {
 
 // TypeMappingConfig controls non-lossless type coercions.
 type TypeMappingConfig struct {
-	TinyInt1AsBoolean     bool `toml:"tinyint1_as_boolean"`
-	Binary16AsUUID        bool `toml:"binary16_as_uuid"`
-	DatetimeAsTimestamptz bool `toml:"datetime_as_timestamptz"`
-	JSONAsJSONB           bool `toml:"json_as_jsonb"`
-	SanitizeJSONNullBytes bool `toml:"sanitize_json_null_bytes"`
-	UnknownAsText         bool `toml:"unknown_as_text"`
+	TinyInt1AsBoolean     bool   `toml:"tinyint1_as_boolean"`
+	Binary16AsUUID        bool   `toml:"binary16_as_uuid"`
+	DatetimeAsTimestamptz bool   `toml:"datetime_as_timestamptz"`
+	JSONAsJSONB           bool   `toml:"json_as_jsonb"`
+	EnumMode              string `toml:"enum_mode"` // text|check
+	SetMode               string `toml:"set_mode"`  // text|text_array
+	SanitizeJSONNullBytes bool   `toml:"sanitize_json_null_bytes"`
+	UnknownAsText         bool   `toml:"unknown_as_text"`
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -91,6 +93,16 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	default:
 		return nil, fmt.Errorf("on_schema_exists must be one of: error, recreate")
 	}
+	switch cfg.TypeMapping.EnumMode {
+	case "text", "check":
+	default:
+		return nil, fmt.Errorf("type_mapping.enum_mode must be one of: text, check")
+	}
+	switch cfg.TypeMapping.SetMode {
+	case "text", "text_array":
+	default:
+		return nil, fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
+	}
 
 	if cfg.MySQL.DSN == "" {
 		return nil, fmt.Errorf("mysql.dsn is required")
@@ -127,6 +139,8 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		Binary16AsUUID:        false,
 		DatetimeAsTimestamptz: false,
 		JSONAsJSONB:           false,
+		EnumMode:              "text",
+		SetMode:               "text",
 		SanitizeJSONNullBytes: true,
 		UnknownAsText:         false,
 	}

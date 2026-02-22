@@ -139,6 +139,12 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.TypeMapping.JSONAsJSONB {
 		t.Errorf("default TypeMapping.JSONAsJSONB = %t, want false", cfg.TypeMapping.JSONAsJSONB)
 	}
+	if cfg.TypeMapping.EnumMode != "text" {
+		t.Errorf("default TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "text")
+	}
+	if cfg.TypeMapping.SetMode != "text" {
+		t.Errorf("default TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text")
+	}
 	if !cfg.TypeMapping.SanitizeJSONNullBytes {
 		t.Errorf("default TypeMapping.SanitizeJSONNullBytes = %t, want true", cfg.TypeMapping.SanitizeJSONNullBytes)
 	}
@@ -165,6 +171,8 @@ tinyint1_as_boolean = true
 binary16_as_uuid = true
 datetime_as_timestamptz = true
 json_as_jsonb = true
+enum_mode = "check"
+set_mode = "text_array"
 sanitize_json_null_bytes = false
 unknown_as_text = true
 `
@@ -188,6 +196,12 @@ unknown_as_text = true
 	}
 	if !cfg.TypeMapping.JSONAsJSONB {
 		t.Errorf("TypeMapping.JSONAsJSONB = %t, want true", cfg.TypeMapping.JSONAsJSONB)
+	}
+	if cfg.TypeMapping.EnumMode != "check" {
+		t.Errorf("TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "check")
+	}
+	if cfg.TypeMapping.SetMode != "text_array" {
+		t.Errorf("TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text_array")
 	}
 	if cfg.TypeMapping.SanitizeJSONNullBytes {
 		t.Errorf("TypeMapping.SanitizeJSONNullBytes = %t, want false", cfg.TypeMapping.SanitizeJSONNullBytes)
@@ -305,6 +319,58 @@ dsn = "postgres://u:p@h:5432/db"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for invalid on_schema_exists")
+	}
+}
+
+func TestLoadConfig_InvalidEnumMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_enum_mode.toml")
+
+	content := `
+schema = "target"
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+enum_mode = "native"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid type_mapping.enum_mode")
+	}
+}
+
+func TestLoadConfig_InvalidSetMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_set_mode.toml")
+
+	content := `
+schema = "target"
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+set_mode = "array"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid type_mapping.set_mode")
 	}
 }
 

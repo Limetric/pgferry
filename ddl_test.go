@@ -180,6 +180,44 @@ func TestGenerateCreateTable_NoPreserveDefaultsSkipsDefaults(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_EnumCheckMode(t *testing.T) {
+	table := Table{
+		PGName: "enum_demo",
+		Columns: []Column{
+			{PGName: "status", DataType: "enum", ColumnType: "enum('new','used')", Nullable: false},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.EnumMode = "check"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, "CHECK (status IN ('new', 'used'))") {
+		t.Fatalf("expected enum CHECK clause, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_SetArrayDefault(t *testing.T) {
+	table := Table{
+		PGName: "set_demo",
+		Columns: []Column{
+			{PGName: "flags", DataType: "set", ColumnType: "set('a','b','c')", Nullable: false, Default: strPtr("a,c")},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.SetMode = "text_array"
+
+	ddl, err := generateCreateTable(table, "app", false, true, tm)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, "flags text[] DEFAULT ARRAY['a', 'c']::text[] NOT NULL") {
+		t.Fatalf("expected set text[] default, got:\n%s", ddl)
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }

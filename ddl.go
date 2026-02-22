@@ -52,6 +52,15 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 			}
 		}
 
+		checkClause, err := enumCheckClause(col, typeMap)
+		if err != nil {
+			return "", fmt.Errorf("column %s enum check: %w", col.PGName, err)
+		}
+		if checkClause != "" {
+			b.WriteByte(' ')
+			b.WriteString(checkClause)
+		}
+
 		if !col.Nullable {
 			b.WriteString(" NOT NULL")
 		}
@@ -111,6 +120,17 @@ func mapDefault(col Column, pgType string, typeMap TypeMappingConfig) (string, e
 	case pgType == "bytea":
 		return "", fmt.Errorf("bytea defaults are not supported (value %q)", raw)
 
+	case pgType == "text[]":
+		vals := parseMySQLSetDefault(unquoted)
+		if len(vals) == 0 {
+			return "ARRAY[]::text[]", nil
+		}
+		items := make([]string, len(vals))
+		for i, v := range vals {
+			items[i] = pgLiteral(v)
+		}
+		return fmt.Sprintf("ARRAY[%s]::text[]", strings.Join(items, ", ")), nil
+
 	case strings.HasPrefix(pgType, "timestamp"), pgType == "date", strings.HasPrefix(pgType, "time"):
 		return pgLiteral(unquoted), nil
 
@@ -148,4 +168,22 @@ func isNumericType(pgType string) bool {
 	default:
 		return false
 	}
+}
+
+func enumCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
+	if col.DataType != "enum" || typeMap.EnumMode != "check" {
+		return "", nil
+	}
+	values, err := parseMySQLEnumSetValues(col.ColumnType)
+	if err != nil {
+		return "", err
+	}
+	if len(values) == 0 {
+		return "", nil
+	}
+	lits := make([]string, len(values))
+	for i, v := range values {
+		lits[i] = pgLiteral(v)
+	}
+	return fmt.Sprintf("CHECK (%s IN (%s))", pgIdent(col.PGName), strings.Join(lits, ", ")), nil
 }

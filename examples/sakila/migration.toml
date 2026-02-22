@@ -17,6 +17,8 @@ tinyint1_as_boolean = false
 binary16_as_uuid = false
 datetime_as_timestamptz = false
 json_as_jsonb = false
+enum_mode = "text"
+set_mode = "text"
 sanitize_json_null_bytes = true
 unknown_as_text = false
 
