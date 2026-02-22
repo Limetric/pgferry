@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,7 +18,10 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(schema.Tables))
 
-	fullDSN := mysqlDSN + "?parseTime=true&loc=UTC&interpolateParams=true"
+	fullDSN, err := mysqlDSNWithReadOptions(mysqlDSN)
+	if err != nil {
+		return err
+	}
 
 	for _, t := range schema.Tables {
 		wg.Add(1)

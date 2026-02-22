@@ -12,8 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
-
-	_ "github.com/go-sql-driver/mysql"
 )
 
 var configPath string
@@ -59,7 +57,12 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 1. Connect to MySQL (for schema introspection only)
 	log.Printf("connecting to MySQL...")
-	mysqlDB, err := sql.Open("mysql", cfg.MySQL.DSN+"?parseTime=true&loc=UTC&interpolateParams=true")
+	mysqlDSN, err := mysqlDSNWithReadOptions(cfg.MySQL.DSN)
+	if err != nil {
+		return err
+	}
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN)
 	if err != nil {
 		return fmt.Errorf("open mysql: %w", err)
 	}
