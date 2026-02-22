@@ -190,6 +190,7 @@ func addPrimaryKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 		if err := execSQL(ctx, pool, t.PGName+" PK", q); err != nil {
 			return err
 		}
+		log.Printf("    pk %s on %s.%s", cols, pgSchema, t.PGName)
 	}
 	return nil
 }
@@ -214,6 +215,7 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 			if err := execSQL(ctx, pool, idxName, q); err != nil {
 				return err
 			}
+			log.Printf("    index %s on %s.%s (%s)", idxName, pgSchema, t.PGName, cols)
 		}
 	}
 	return nil
@@ -237,6 +239,7 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 			if err := execSQL(ctx, pool, fk.Name, q); err != nil {
 				return err
 			}
+			log.Printf("    fk %s on %s.%s → %s", fk.Name, pgSchema, t.PGName, fk.RefPGTable)
 		}
 	}
 	return nil
