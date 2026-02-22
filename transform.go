@@ -152,6 +152,7 @@ func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error)
 		default:
 			return nil, fmt.Errorf("cannot coerce set value of type %T to text[]", val)
 		}
+		raw = strings.ReplaceAll(raw, "\x00", "")
 		if raw == "" {
 			return []string{}, nil
 		}
@@ -191,6 +192,19 @@ func transformValue(val any, col Column, typeMap TypeMappingConfig) (any, error)
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
 			return nil, nil
+		}
+		return val, nil
+
+	// text-type columns → strip null bytes (MySQL allows \x00, PG doesn't)
+	case col.DataType == "varchar" || col.DataType == "char" ||
+		col.DataType == "text" || col.DataType == "mediumtext" ||
+		col.DataType == "longtext" || col.DataType == "tinytext" ||
+		col.DataType == "enum" || col.DataType == "set":
+		switch v := val.(type) {
+		case []byte:
+			return strings.ReplaceAll(string(v), "\x00", ""), nil
+		case string:
+			return strings.ReplaceAll(v, "\x00", ""), nil
 		}
 		return val, nil
 

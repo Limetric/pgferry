@@ -216,6 +216,44 @@ func TestTransformValue_Passthrough(t *testing.T) {
 	}
 }
 
+func TestTransformValue_TextNullByteStripping(t *testing.T) {
+	for _, dt := range []string{"varchar", "char", "text", "mediumtext", "longtext", "tinytext", "enum", "set"} {
+		col := Column{DataType: dt}
+		// string input
+		got, err := transformValue("hello\x00world", col, defaultTypeMappingConfig())
+		if err != nil {
+			t.Fatalf("transformValue(%s string) error: %v", dt, err)
+		}
+		if got != "helloworld" {
+			t.Errorf("transformValue(%s string with null byte) = %q, want %q", dt, got, "helloworld")
+		}
+		// []byte input
+		got, err = transformValue([]byte("foo\x00bar"), col, defaultTypeMappingConfig())
+		if err != nil {
+			t.Fatalf("transformValue(%s []byte) error: %v", dt, err)
+		}
+		if got != "foobar" {
+			t.Errorf("transformValue(%s []byte with null byte) = %q, want %q", dt, got, "foobar")
+		}
+	}
+}
+
+func TestTransformValue_SetTextArrayNullByteStripping(t *testing.T) {
+	col := Column{DataType: "set"}
+	optIn := TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}
+	got, err := transformValue([]byte("a\x00b,c"), col, optIn)
+	if err != nil {
+		t.Fatalf("transformValue(set text_array) error: %v", err)
+	}
+	arr, ok := got.([]string)
+	if !ok {
+		t.Fatalf("transformValue(set text_array) type = %T, want []string", got)
+	}
+	if len(arr) != 2 || arr[0] != "ab" || arr[1] != "c" {
+		t.Errorf("transformValue(set text_array with null byte) = %v, want [ab c]", arr)
+	}
+}
+
 func TestTransformValue_BitPassthrough(t *testing.T) {
 	col := Column{DataType: "bit", Precision: 8}
 	in := []byte{0x01}
