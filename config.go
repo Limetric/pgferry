@@ -22,6 +22,7 @@ type MigrationConfig struct {
 	UnloggedTables                    bool              `toml:"unlogged_tables"`
 	PreserveDefaults                  bool              `toml:"preserve_defaults"`
 	AddUnsignedChecks                 bool              `toml:"add_unsigned_checks"`
+	CleanOrphans                      bool              `toml:"clean_orphans"`
 	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
 	Workers                           int               `toml:"workers"`
 	Hooks                             HooksConfig       `toml:"hooks"`
@@ -68,6 +69,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	cfg := MigrationConfig{
 		OnSchemaExists:     "error",
 		SourceSnapshotMode: "none",
+		CleanOrphans:       true,
 		TypeMapping:        defaultTypeMappingConfig(),
 	}
 	if err := toml.Unmarshal(data, &cfg); err != nil {

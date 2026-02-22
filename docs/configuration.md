@@ -47,6 +47,11 @@ preserve_defaults = false
 # Default: false
 add_unsigned_checks = false
 
+# Clean orphaned rows (child rows referencing non-existent parents) before FK creation
+# When false, FK creation fails naturally if orphans exist — use before_fk hooks to handle manually
+# Default: true
+clean_orphans = true
+
 # Emulate MySQL ON UPDATE CURRENT_TIMESTAMP via PG triggers
 # Default: false
 replicate_on_update_current_timestamp = false
@@ -115,6 +120,7 @@ Fields omitted from the TOML file use these defaults:
 | `unlogged_tables` | `false` |
 | `preserve_defaults` | `false` |
 | `add_unsigned_checks` | `false` |
+| `clean_orphans` | `true` |
 | `replicate_on_update_current_timestamp` | `false` |
 | `workers` | `min(NumCPU, 8)` |
 | `tinyint1_as_boolean` | `false` |

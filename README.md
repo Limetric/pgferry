@@ -18,8 +18,8 @@ more robust out of the box:
   coercions like `tinyint1_as_boolean`, `binary16_as_uuid`, `json_as_jsonb`,
   enum-to-check-constraint, and more &mdash; useful for making the PostgreSQL
   schema feel native rather than a 1:1 MySQL clone
-- **Automatic orphan cleanup** &mdash; detects and removes rows that would
-  violate FK constraints, so migrations don't fail halfway through
+- **Configurable orphan cleanup** &mdash; detects and removes rows that would
+  violate FK constraints (on by default, disable with `clean_orphans = false`)
 - **SQL hooks** &mdash; run your own SQL at 4 phases (`before_data`, `after_data`,
   `before_fk`, `after_all`) with `{{schema}}` templating
 - **CI-tested against real databases** &mdash; every change is verified with

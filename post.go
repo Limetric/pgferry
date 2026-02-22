@@ -50,12 +50,14 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 		return fmt.Errorf("before_fk hooks: %w", err)
 	}
 
-	// schema_only: skip orphan cleanup (no data to clean)
-	if !cfg.SchemaOnly {
+	// orphan cleanup: opt-in via clean_orphans, skipped in schema_only (no data to clean)
+	if cfg.CleanOrphans && !cfg.SchemaOnly {
 		log.Printf("  orphan cleanup...")
 		if err := cleanOrphans(ctx, pool, schema, pgSchema); err != nil {
 			return fmt.Errorf("orphan cleanup: %w", err)
 		}
+	} else if !cfg.SchemaOnly {
+		log.Printf("  orphan cleanup skipped (clean_orphans=false)")
 	}
 
 	log.Printf("  foreign keys...")

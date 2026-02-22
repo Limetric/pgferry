@@ -124,6 +124,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("default ReplicateOnUpdateCurrentTimestamp = %t, want false", cfg.ReplicateOnUpdateCurrentTimestamp)
 	}
+	if !cfg.CleanOrphans {
+		t.Errorf("default CleanOrphans = %t, want true", cfg.CleanOrphans)
+	}
 	wantWorkers := runtime.NumCPU()
 	if wantWorkers < 1 {
 		wantWorkers = 1

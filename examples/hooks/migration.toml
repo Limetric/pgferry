@@ -2,6 +2,7 @@ schema = "app"
 on_schema_exists = "error"
 source_snapshot_mode = "none"
 unlogged_tables = false
+clean_orphans = false
 preserve_defaults = false
 add_unsigned_checks = false
 replicate_on_update_current_timestamp = false

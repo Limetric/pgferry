@@ -33,8 +33,9 @@ MySQL allows orphaned rows (child rows referencing non-existent parent rows) whe
 `FOREIGN_KEY_CHECKS = 0` is used. PostgreSQL rejects these when FK constraints
 are added.
 
-pgferry automatically detects and cleans orphaned rows before creating foreign
-keys. The cleanup action depends on the FK's `ON DELETE` rule:
+When `clean_orphans = true`, pgferry automatically detects and cleans orphaned
+rows before creating foreign keys. The cleanup action depends on the FK's
+`ON DELETE` rule:
 
 - **`SET NULL`** &rarr; the FK columns on orphaned rows are set to `NULL`
 - **All other rules** (`CASCADE`, `RESTRICT`, `NO ACTION`) &rarr; orphaned rows are deleted
@@ -42,6 +43,11 @@ keys. The cleanup action depends on the FK's `ON DELETE` rule:
 For each FK, pgferry checks for child rows where at least one FK column is
 non-null and the referenced parent row does not exist. Affected row counts are
 logged.
+
+Orphan cleanup is **enabled by default** (`clean_orphans = true`). Set
+`clean_orphans = false` to disable it &mdash; FK creation will fail if orphaned
+rows exist, which is useful when you want to investigate data integrity issues
+or handle cleanup manually via `before_fk` hooks.
 
 Orphan cleanup runs only in `full` mode (skipped in `schema_only` and `data_only`).
 

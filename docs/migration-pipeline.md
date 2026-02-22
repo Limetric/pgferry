@@ -16,7 +16,7 @@ migration mode (`schema_only` or `data_only`).
 | 7 | **Primary keys** | Yes | Yes | &mdash; |
 | 8 | **Indexes** &mdash; unsupported index types (FULLTEXT, SPATIAL, prefix, expression) are reported and skipped | Yes | Yes | &mdash; |
 | 9 | **`before_fk` hooks** | Yes | Yes | &mdash; |
-| 10 | **Orphan cleanup** &mdash; auto-detect and remove/nullify rows that would violate FK constraints | Yes | &mdash; | &mdash; |
+| 10 | **Orphan cleanup** &mdash; auto-detect and remove/nullify rows that would violate FK constraints (when `clean_orphans = true`) | Yes | &mdash; | &mdash; |
 | 11 | **Foreign keys** | Yes | Yes | &mdash; |
 | 12 | **Sequences** &mdash; create auto-increment sequences and set to `max(col) + 1` | Yes | Yes | Yes |
 | 13 | **Unsigned checks** &mdash; add CHECK constraints for unsigned ranges (when `add_unsigned_checks = true`) | Yes | Yes | &mdash; |
