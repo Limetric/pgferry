@@ -10,7 +10,7 @@ import (
 )
 
 // postMigrate runs all post-migration steps in order:
-// 1. SET LOGGED, 2. PKs, 3. Indexes, 4. before_fk hooks, 5. orphan cleanup, 6. FKs, 7. Sequences, 8. Triggers, 9. after_all hooks
+// 1. SET LOGGED, 2. PKs, 3. Indexes, 4. before_fk hooks, 5. orphan cleanup, 6. FKs, 7. Sequences, 8. optional triggers, 9. after_all hooks
 func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *MigrationConfig) error {
 	pgSchema := cfg.Schema
 
@@ -47,7 +47,6 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 	}{
 		{"foreign keys", addForeignKeys},
 		{"sequences", resetSequences},
-		{"triggers", createTriggers},
 	}
 
 	for _, step := range steps2 {
@@ -55,6 +54,15 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 		if err := step.fn(ctx, pool, schema, pgSchema); err != nil {
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
+	}
+
+	if cfg.ReplicateOnUpdateCurrentTimestamp {
+		log.Printf("  triggers...")
+		if err := createTriggers(ctx, pool, schema, pgSchema); err != nil {
+			return fmt.Errorf("triggers: %w", err)
+		}
+	} else {
+		log.Printf("  triggers skipped (replicate_on_update_current_timestamp=false)")
 	}
 
 	// after_all hooks

@@ -53,7 +53,14 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	start := time.Now()
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
-	log.Printf("config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t", cfg.Workers, cfg.Schema, cfg.OnSchemaExists, cfg.UnloggedTables)
+	log.Printf(
+		"config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t replicate_on_update_current_timestamp=%t",
+		cfg.Workers,
+		cfg.Schema,
+		cfg.OnSchemaExists,
+		cfg.UnloggedTables,
+		cfg.ReplicateOnUpdateCurrentTimestamp,
+	)
 
 	// 1. Connect to MySQL (for schema introspection only)
 	log.Printf("connecting to MySQL...")

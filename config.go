@@ -12,14 +12,15 @@ import (
 
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
-	MySQL          MySQLConfig       `toml:"mysql"`
-	Postgres       PostgresConfig    `toml:"postgres"`
-	Schema         string            `toml:"schema"`
-	OnSchemaExists string            `toml:"on_schema_exists"`
-	UnloggedTables bool              `toml:"unlogged_tables"`
-	Workers        int               `toml:"workers"`
-	Hooks          HooksConfig       `toml:"hooks"`
-	TypeMapping    TypeMappingConfig `toml:"type_mapping"`
+	MySQL                             MySQLConfig       `toml:"mysql"`
+	Postgres                          PostgresConfig    `toml:"postgres"`
+	Schema                            string            `toml:"schema"`
+	OnSchemaExists                    string            `toml:"on_schema_exists"`
+	UnloggedTables                    bool              `toml:"unlogged_tables"`
+	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
+	Workers                           int               `toml:"workers"`
+	Hooks                             HooksConfig       `toml:"hooks"`
+	TypeMapping                       TypeMappingConfig `toml:"type_mapping"`
 
 	// configDir is the directory containing the TOML file, used to resolve relative SQL paths.
 	configDir string

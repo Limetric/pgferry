@@ -15,6 +15,7 @@ func TestLoadConfig(t *testing.T) {
 schema = "myschema"
 on_schema_exists = "recreate"
 unlogged_tables = true
+replicate_on_update_current_timestamp = true
 workers = 8
 
 [mysql]
@@ -56,6 +57,9 @@ after_all = ["post.sql"]
 	if !cfg.UnloggedTables {
 		t.Errorf("UnloggedTables = %t, want true", cfg.UnloggedTables)
 	}
+	if !cfg.ReplicateOnUpdateCurrentTimestamp {
+		t.Errorf("ReplicateOnUpdateCurrentTimestamp = %t, want true", cfg.ReplicateOnUpdateCurrentTimestamp)
+	}
 	if len(cfg.Hooks.BeforeFk) != 1 || cfg.Hooks.BeforeFk[0] != "cleanup.sql" {
 		t.Errorf("Hooks.BeforeFk = %v", cfg.Hooks.BeforeFk)
 	}
@@ -95,6 +99,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.UnloggedTables {
 		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
+	}
+	if cfg.ReplicateOnUpdateCurrentTimestamp {
+		t.Errorf("default ReplicateOnUpdateCurrentTimestamp = %t, want false", cfg.ReplicateOnUpdateCurrentTimestamp)
 	}
 	wantWorkers := runtime.NumCPU()
 	if wantWorkers < 1 {

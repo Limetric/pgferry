@@ -1,6 +1,7 @@
 schema = "app"
 on_schema_exists = "error"
 unlogged_tables = false
+replicate_on_update_current_timestamp = false
 
 [mysql]
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
