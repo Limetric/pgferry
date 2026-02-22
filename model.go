@@ -1,8 +1,8 @@
 package main
 
-// Column represents a single column from MySQL INFORMATION_SCHEMA.
+// Column represents a single column from the source database.
 type Column struct {
-	MySQLName  string
+	SourceName string
 	PGName     string
 	DataType   string // e.g. "binary", "int", "varchar"
 	ColumnType string // full type e.g. "tinyint(1)", "enum('a','b')"
@@ -15,10 +15,10 @@ type Column struct {
 	OrdinalPos int
 }
 
-// Index represents a MySQL index (may span multiple columns).
+// Index represents a source database index (may span multiple columns).
 type Index struct {
 	Name          string
-	MySQLName     string
+	SourceName    string
 	Columns       []string // PG column names, ordered by SEQ_IN_INDEX
 	ColumnOrders  []string // ASC/DESC order per column
 	Unique        bool
@@ -28,7 +28,7 @@ type Index struct {
 	HasExpression bool   // expression/key-part index not representable as plain column list
 }
 
-// ForeignKey represents a MySQL foreign key constraint.
+// ForeignKey represents a source database foreign key constraint.
 type ForeignKey struct {
 	Name       string
 	Columns    []string // local PG column names
@@ -39,9 +39,9 @@ type ForeignKey struct {
 	DeleteRule string   // CASCADE, SET NULL, etc.
 }
 
-// Table holds the full introspected definition of a MySQL table.
+// Table holds the full introspected definition of a source database table.
 type Table struct {
-	MySQLName   string
+	SourceName  string
 	PGName      string
 	Columns     []Column
 	PrimaryKey  *Index
@@ -49,7 +49,7 @@ type Table struct {
 	ForeignKeys []ForeignKey
 }
 
-// Schema holds all introspected tables for a MySQL database.
+// Schema holds all introspected tables for a source database.
 type Schema struct {
 	Tables []Table
 }

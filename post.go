@@ -213,7 +213,7 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 	for _, t := range schema.Tables {
 		for _, idx := range t.Indexes {
 			if reason, unsupported := indexUnsupportedReason(idx); unsupported {
-				log.Printf("    skipping index %s on %s.%s: %s", idx.MySQLName, pgSchema, t.PGName, reason)
+				log.Printf("    skipping index %s on %s.%s: %s", idx.SourceName, pgSchema, t.PGName, reason)
 				continue
 			}
 
