@@ -15,6 +15,7 @@ func TestLoadConfig(t *testing.T) {
 schema = "myschema"
 on_schema_exists = "recreate"
 unlogged_tables = true
+preserve_defaults = true
 replicate_on_update_current_timestamp = true
 workers = 8
 
@@ -56,6 +57,9 @@ after_all = ["post.sql"]
 	}
 	if !cfg.UnloggedTables {
 		t.Errorf("UnloggedTables = %t, want true", cfg.UnloggedTables)
+	}
+	if !cfg.PreserveDefaults {
+		t.Errorf("PreserveDefaults = %t, want true", cfg.PreserveDefaults)
 	}
 	if !cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("ReplicateOnUpdateCurrentTimestamp = %t, want true", cfg.ReplicateOnUpdateCurrentTimestamp)
@@ -99,6 +103,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.UnloggedTables {
 		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
+	}
+	if cfg.PreserveDefaults {
+		t.Errorf("default PreserveDefaults = %t, want false", cfg.PreserveDefaults)
 	}
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("default ReplicateOnUpdateCurrentTimestamp = %t, want false", cfg.ReplicateOnUpdateCurrentTimestamp)

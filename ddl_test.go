@@ -16,7 +16,7 @@ func TestGenerateCreateTable(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestGenerateCreateTable_Unlogged(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", true, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", true, false, defaultTypeMappingConfig())
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestGenerateCreateTable_DefaultLoggedPrefix(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -110,8 +110,76 @@ func TestGenerateCreateTable_UnknownTypeErrors(t *testing.T) {
 		},
 	}
 
-	_, err := generateCreateTable(table, "app", false, defaultTypeMappingConfig())
+	_, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
 	if err == nil {
 		t.Fatal("expected error for unsupported MySQL type")
 	}
+}
+
+func TestGenerateCreateTable_PreserveDefaults(t *testing.T) {
+	table := Table{
+		PGName: "defaults_demo",
+		Columns: []Column{
+			{PGName: "count", DataType: "int", ColumnType: "int", Nullable: false, Default: strPtr("0")},
+			{PGName: "status", DataType: "varchar", ColumnType: "varchar(20)", CharMaxLen: 20, Nullable: false, Default: strPtr("new")},
+			{PGName: "created_at", DataType: "timestamp", ColumnType: "timestamp", Nullable: false, Default: strPtr("CURRENT_TIMESTAMP")},
+			{PGName: "metadata", DataType: "json", ColumnType: "json", Nullable: true, Default: strPtr("{}")},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.JSONAsJSONB = true
+
+	ddl, err := generateCreateTable(table, "app", false, true, tm)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	if !strings.Contains(ddl, "count integer DEFAULT 0 NOT NULL") {
+		t.Fatalf("expected numeric default in DDL, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "status varchar(20) DEFAULT 'new' NOT NULL") {
+		t.Fatalf("expected text default in DDL, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL") {
+		t.Fatalf("expected timestamp default in DDL, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "metadata jsonb DEFAULT '{}'::jsonb") {
+		t.Fatalf("expected jsonb default in DDL, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_PreserveDefaultsUnsupported(t *testing.T) {
+	table := Table{
+		PGName: "bad_defaults",
+		Columns: []Column{
+			{PGName: "enabled", DataType: "tinyint", ColumnType: "tinyint(1)", Precision: 1, Nullable: false, Default: strPtr("2")},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.TinyInt1AsBoolean = true
+
+	_, err := generateCreateTable(table, "app", false, true, tm)
+	if err == nil {
+		t.Fatal("expected error for unsupported boolean default")
+	}
+}
+
+func TestGenerateCreateTable_NoPreserveDefaultsSkipsDefaults(t *testing.T) {
+	table := Table{
+		PGName: "no_defaults",
+		Columns: []Column{
+			{PGName: "name", DataType: "varchar", ColumnType: "varchar(20)", CharMaxLen: 20, Nullable: false, Default: strPtr("alice")},
+		},
+	}
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if strings.Contains(ddl, "DEFAULT") {
+		t.Fatalf("expected defaults to be skipped when preserve_defaults=false, got:\n%s", ddl)
+	}
+}
+
+func strPtr(s string) *string {
+	return &s
 }

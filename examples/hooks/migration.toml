@@ -1,6 +1,7 @@
 schema = "app"
 on_schema_exists = "error"
 unlogged_tables = false
+preserve_defaults = false
 replicate_on_update_current_timestamp = false
 
 [mysql]

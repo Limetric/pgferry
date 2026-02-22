@@ -116,7 +116,7 @@ after_all = []
 	}
 
 	// --- Run pipeline ---
-	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.TypeMapping); err != nil {
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
 
@@ -253,7 +253,7 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 		},
 	}
 
-	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.TypeMapping); err != nil {
+	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
 	if err := migrateData(ctx, roDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping); err != nil {

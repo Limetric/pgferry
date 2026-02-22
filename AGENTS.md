@@ -22,9 +22,9 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 
 **Migration pipeline** (orchestrated in `main.go:runMigration`):
 
-1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `replicate_on_update_current_timestamp=false`)
+1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=false`, `replicate_on_update_current_timestamp=false`)
 2. `introspectSchema` — MySQL INFORMATION_SCHEMA queries for tables, columns, indexes, FKs
-3. `createTables` — columns only, no constraints (UNLOGGED only when enabled)
+3. `createTables` — columns only, no constraints (UNLOGGED only when enabled, defaults only when `preserve_defaults=true`)
 4. `loadAndExecSQLFiles` — before_data hooks
 5. `migrateData` — parallel goroutines (semaphore pattern), each table gets own MySQL conn, streams rows through `pgx.CopyFrom`
 6. `loadAndExecSQLFiles` — after_data hooks

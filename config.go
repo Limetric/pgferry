@@ -17,6 +17,7 @@ type MigrationConfig struct {
 	Schema                            string            `toml:"schema"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	UnloggedTables                    bool              `toml:"unlogged_tables"`
+	PreserveDefaults                  bool              `toml:"preserve_defaults"`
 	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
 	Workers                           int               `toml:"workers"`
 	Hooks                             HooksConfig       `toml:"hooks"`

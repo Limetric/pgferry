@@ -1,6 +1,7 @@
 schema = "app"
 on_schema_exists = "recreate"
 unlogged_tables = true
+preserve_defaults = false
 replicate_on_update_current_timestamp = false
 workers = 8
 

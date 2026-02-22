@@ -54,11 +54,12 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	log.Printf("pgferry — MySQL → PostgreSQL migration")
 	log.Printf(
-		"config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t replicate_on_update_current_timestamp=%t",
+		"config: workers=%d schema=%s on_schema_exists=%s unlogged_tables=%t preserve_defaults=%t replicate_on_update_current_timestamp=%t",
 		cfg.Workers,
 		cfg.Schema,
 		cfg.OnSchemaExists,
 		cfg.UnloggedTables,
+		cfg.PreserveDefaults,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 	)
 
@@ -121,7 +122,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 5. Create bare UNLOGGED tables (no PKs, FKs, indexes)
 	log.Printf("creating tables...")
-	if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.TypeMapping); err != nil {
+	if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
 		return fmt.Errorf("create tables: %w", err)
 	}
 
