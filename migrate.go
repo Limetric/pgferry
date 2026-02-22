@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -160,6 +161,8 @@ func migrateTableFromSource(ctx context.Context, source mysqlSource, pool *pgxpo
 		copied:      new(atomic.Int64),
 		total:       totalRows,
 		typeMapping: typeMap,
+		tableName:   table.MySQLName,
+		lastLog:     time.Now(),
 	}
 
 	count, err := conn.Conn().CopyFrom(
@@ -185,6 +188,8 @@ type rowSource struct {
 	copied      *atomic.Int64
 	total       int64
 	typeMapping TypeMappingConfig
+	tableName   string
+	lastLog     time.Time
 }
 
 func (r *rowSource) Next() bool {
@@ -217,7 +222,12 @@ func (r *rowSource) Next() bool {
 		r.values[i] = v
 	}
 
-	r.copied.Add(1)
+	n := r.copied.Add(1)
+	if now := time.Now(); now.Sub(r.lastLog) >= 10*time.Second {
+		pct := float64(n) / float64(r.total) * 100
+		log.Printf("  [%s] progress: %d/%d rows (%.1f%%)", r.tableName, n, r.total, pct)
+		r.lastLog = now
+	}
 	return true
 }
 
