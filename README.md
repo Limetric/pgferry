@@ -152,6 +152,7 @@ pgferry runs the following steps in order:
 - `auto_increment` columns get PostgreSQL sequences
 - Zero dates (`0000-00-00`) are converted to `NULL`
 - All type mappings default to conservative, lossless conversions &mdash; opt in to semantic mappings like `boolean` or `uuid` explicitly
+- Unsupported MySQL column types are reported before table creation with a full list and a fallback hint (`type_mapping.unknown_as_text = true`)
 - Generated columns are copied as materialized values; generation expressions are not recreated automatically (pgferry reports these columns before migration)
 
 ## Type mapping

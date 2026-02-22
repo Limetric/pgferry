@@ -40,5 +40,6 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
 - `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`)
 - Unsupported MySQL index features (e.g. FULLTEXT/SPATIAL/prefix/expression indexes) are reported and skipped so migration can proceed safely
+- Unsupported MySQL column types are detected up front with a complete error list before table creation starts
 - Generated columns are migrated as materialized values; expression semantics are reported for manual follow-up
 - Integration tests use build tag `//go:build integration`

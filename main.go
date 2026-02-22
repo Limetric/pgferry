@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -119,6 +120,17 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		for _, w := range warnings {
 			log.Printf("  WARN: %s", w)
 		}
+	}
+	if typeErrs := collectUnsupportedTypeErrors(schema, cfg.TypeMapping); len(typeErrs) > 0 {
+		var b strings.Builder
+		b.WriteString("unsupported MySQL column types detected:\n")
+		for _, e := range typeErrs {
+			b.WriteString("  - ")
+			b.WriteString(e)
+			b.WriteByte('\n')
+		}
+		b.WriteString("Hint: set [type_mapping].unknown_as_text = true to coerce unknown types to text.")
+		return fmt.Errorf("%s", b.String())
 	}
 
 	// Close introspection connection — data migration opens its own per-table connections
