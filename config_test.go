@@ -218,6 +218,93 @@ unknown_as_text = true
 	}
 }
 
+func TestLoadConfig_SchemaOnly(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "schema_only.toml")
+
+	content := `
+schema = "target"
+schema_only = true
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if !cfg.SchemaOnly {
+		t.Errorf("SchemaOnly = %t, want true", cfg.SchemaOnly)
+	}
+	if cfg.DataOnly {
+		t.Errorf("DataOnly = %t, want false", cfg.DataOnly)
+	}
+}
+
+func TestLoadConfig_DataOnly(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "data_only.toml")
+
+	content := `
+schema = "target"
+data_only = true
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.SchemaOnly {
+		t.Errorf("SchemaOnly = %t, want false", cfg.SchemaOnly)
+	}
+	if !cfg.DataOnly {
+		t.Errorf("DataOnly = %t, want true", cfg.DataOnly)
+	}
+}
+
+func TestLoadConfig_SchemaOnlyAndDataOnlyConflict(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "conflict.toml")
+
+	content := `
+schema = "target"
+schema_only = true
+data_only = true
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error when both schema_only and data_only are true")
+	}
+}
+
 func TestLoadConfig_WorkersNonPositiveUsesDefault(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "workers.toml")
