@@ -1,6 +1,6 @@
 # AGENTS.md
 
-MySQL-to-PostgreSQL migration CLI. Reads MySQL schema via INFORMATION_SCHEMA, creates UNLOGGED tables in PG, streams data via the COPY protocol with parallel workers, then adds constraints/indexes/sequences/triggers in post-migration.
+MySQL-to-PostgreSQL migration CLI. Reads MySQL schema via INFORMATION_SCHEMA, creates tables in PG (optionally UNLOGGED), streams data via the COPY protocol with parallel workers, then adds constraints/indexes/sequences/triggers in post-migration.
 
 ## Commands
 
@@ -22,9 +22,9 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 
 **Migration pipeline** (orchestrated in `main.go:runMigration`):
 
-1. `loadConfig` — TOML config with defaults (schema="app", workers=4, batch_size=50000)
+1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`)
 2. `introspectSchema` — MySQL INFORMATION_SCHEMA queries for tables, columns, indexes, FKs
-3. `createTables` — UNLOGGED tables, columns only, no constraints
+3. `createTables` — columns only, no constraints (UNLOGGED only when enabled)
 4. `loadAndExecSQLFiles` — before_data hooks
 5. `migrateData` — parallel goroutines (semaphore pattern), each table gets own MySQL conn, streams rows through `pgx.CopyFrom`
 6. `loadAndExecSQLFiles` — after_data hooks
@@ -35,6 +35,6 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 ## Conventions
 
 - MySQL names are converted to snake_case via `toSnakeCase`; PostgreSQL reserved words are quoted via `pgIdent`
-- Tables are created as UNLOGGED during migration for speed, then SET LOGGED in post-migration
+- Tables are created as regular logged tables by default; set `unlogged_tables=true` to use UNLOGGED during bulk load
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get triggers
 - Integration tests use build tag `//go:build integration`

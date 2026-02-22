@@ -1,4 +1,6 @@
 schema = "sakila"
+on_schema_exists = "error"
+unlogged_tables = false
 workers = 4
 
 [mysql]

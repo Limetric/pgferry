@@ -28,10 +28,10 @@ func migrateData(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, schem
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-				if err := migrateTable(ctx, fullDSN, pool, t, pgSchema); err != nil {
-					errCh <- fmt.Errorf("table %s: %w", t.MySQLName, err)
-				}
-			}(t)
+			if err := migrateTable(ctx, fullDSN, pool, t, pgSchema); err != nil {
+				errCh <- fmt.Errorf("table %s: %w", t.MySQLName, err)
+			}
+		}(t)
 	}
 
 	wg.Wait()
@@ -94,10 +94,10 @@ func migrateTable(ctx context.Context, mysqlDSN string, pool *pgxpool.Pool, tabl
 	defer rows.Close()
 
 	src := &rowSource{
-		rows:    rows,
-		table:   table,
-		copied:  new(atomic.Int64),
-		total:   totalRows,
+		rows:   rows,
+		table:  table,
+		copied: new(atomic.Int64),
+		total:  totalRows,
 	}
 
 	count, err := conn.Conn().CopyFrom(
