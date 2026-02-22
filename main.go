@@ -114,6 +114,12 @@ func runMigration(cmd *cobra.Command, args []string) error {
 			log.Printf("  WARN: %s", w)
 		}
 	}
+	if warnings := collectGeneratedColumnWarnings(schema); len(warnings) > 0 {
+		log.Printf("generated column report: %d generated column(s) need manual expression migration", len(warnings))
+		for _, w := range warnings {
+			log.Printf("  WARN: %s", w)
+		}
+	}
 
 	// Close introspection connection — data migration opens its own per-table connections
 	mysqlDB.Close()

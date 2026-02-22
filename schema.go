@@ -162,6 +162,11 @@ func introspectColumns(db *sql.DB, dbName, tableName string) ([]Column, error) {
 	return cols, rows.Err()
 }
 
+func isGeneratedColumn(col Column) bool {
+	extra := strings.ToLower(col.Extra)
+	return strings.Contains(extra, "virtual generated") || strings.Contains(extra, "stored generated")
+}
+
 func introspectIndexes(db *sql.DB, dbName, tableName string) ([]Index, error) {
 	rows, err := db.Query(
 		`SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX, INDEX_TYPE, COLLATION, SUB_PART
