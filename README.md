@@ -176,6 +176,7 @@ pgferry runs the following steps in order:
 | `datetime` | `timestamp` | `timestamptz` |
 | `year` | `integer` | |
 | `date` | `date` | |
+| `bit(n)` | `bytea` | |
 | `binary(16)` | `bytea` | `uuid` |
 | `blob` / `mediumblob` / `longblob` | `bytea` | |
 

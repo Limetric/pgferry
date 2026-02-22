@@ -79,6 +79,8 @@ func mapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		return "integer", nil
 	case col.DataType == "date":
 		return "date", nil
+	case col.DataType == "bit":
+		return "bytea", nil
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
 		return "bytea", nil

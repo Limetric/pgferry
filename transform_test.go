@@ -41,6 +41,7 @@ func TestMapType(t *testing.T) {
 		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "timestamptz", false},
 		{"year→integer", Column{DataType: "year", ColumnType: "year"}, defaultTypeMappingConfig(), "integer", false},
 		{"date", Column{DataType: "date", ColumnType: "date"}, defaultTypeMappingConfig(), "date", false},
+		{"bit→bytea", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, defaultTypeMappingConfig(), "bytea", false},
 		{"binary→bytea", Column{DataType: "binary", ColumnType: "binary(32)", Precision: 32}, defaultTypeMappingConfig(), "bytea", false},
 		{"varbinary→bytea", Column{DataType: "varbinary", ColumnType: "varbinary(32)"}, defaultTypeMappingConfig(), "bytea", false},
 		{"unknown→error default", Column{DataType: "geometry", ColumnType: "geometry"}, defaultTypeMappingConfig(), "", true},
@@ -212,5 +213,21 @@ func TestTransformValue_Passthrough(t *testing.T) {
 	col := Column{DataType: "varchar"}
 	if got, err := transformValue("hello", col, defaultTypeMappingConfig()); err != nil || got != "hello" {
 		t.Errorf("transformValue(varchar) = %v, want %q", got, "hello")
+	}
+}
+
+func TestTransformValue_BitPassthrough(t *testing.T) {
+	col := Column{DataType: "bit", Precision: 8}
+	in := []byte{0x01}
+	got, err := transformValue(in, col, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("transformValue(bit) unexpected error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("transformValue(bit) type = %T, want []byte", got)
+	}
+	if len(out) != 1 || out[0] != 0x01 {
+		t.Fatalf("transformValue(bit) = %#v, want %#v", out, in)
 	}
 }
