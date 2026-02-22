@@ -108,6 +108,35 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_WorkersNonPositiveUsesDefault(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "workers.toml")
+
+	content := `
+schema = "target"
+workers = 0
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	wantWorkers := defaultWorkers()
+	if cfg.Workers != wantWorkers {
+		t.Errorf("Workers = %d, want %d", cfg.Workers, wantWorkers)
+	}
+}
+
 func TestLoadConfig_MissingDSN(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "bad.toml")
@@ -140,6 +169,29 @@ dsn = "postgres://u:p@h:5432/db"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for missing schema")
+	}
+}
+
+func TestLoadConfig_WhitespaceSchemaRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_schema_ws.toml")
+
+	content := `
+schema = "   "
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for whitespace schema")
 	}
 }
 
@@ -180,5 +232,23 @@ func TestResolvePath(t *testing.T) {
 	want = "/absolute/path.sql"
 	if got != want {
 		t.Errorf("resolvePath(absolute) = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultWorkers(t *testing.T) {
+	got := defaultWorkers()
+	if got < 1 || got > 8 {
+		t.Fatalf("defaultWorkers() out of bounds: %d", got)
+	}
+
+	want := runtime.NumCPU()
+	if want < 1 {
+		want = 1
+	}
+	if want > 8 {
+		want = 8
+	}
+	if got != want {
+		t.Fatalf("defaultWorkers() = %d, want %d", got, want)
 	}
 }
