@@ -58,6 +58,20 @@ func TestGenerateCreateTable_Unlogged(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_DefaultLoggedPrefix(t *testing.T) {
+	table := Table{
+		PGName: "accounts",
+		Columns: []Column{
+			{PGName: "id", DataType: "int", Nullable: false},
+		},
+	}
+
+	ddl := generateCreateTable(table, "app", false)
+	if !strings.HasPrefix(ddl, "CREATE TABLE app.accounts (") {
+		t.Fatalf("expected logged CREATE TABLE prefix, got:\n%s", ddl)
+	}
+}
+
 func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 	table := Table{
 		PGName: "user",
