@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/build/": true
+		},
+		"editor.formatOnSave": true,
+		"files.eol": "\n",
+		"editor.quickSuggestions": {
+			"strings": "on"
+		}
+	}
+}
