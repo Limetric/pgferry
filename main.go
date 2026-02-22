@@ -13,31 +13,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type Config struct {
-	MySQLDSN    string
-	PostgresDSN string
-	Workers     int
-	BatchSize   int
-	Schema      string
-}
-
-var cfg Config
+var configPath string
 
 var rootCmd = &cobra.Command{
-	Use:   "pgferry",
+	Use:   "pgferry [config.toml]",
 	Short: "MySQL to PostgreSQL migration tool",
+	Args:  cobra.MaximumNArgs(1),
 	RunE:  runMigration,
 }
 
 func init() {
-	rootCmd.Flags().StringVar(&cfg.MySQLDSN, "mysql", "", "MySQL DSN (e.g. root:root@tcp(127.0.0.1:3306)/dbname)")
-	rootCmd.Flags().StringVar(&cfg.PostgresDSN, "postgres", "", "PostgreSQL DSN (e.g. postgres://user:pass@host:5432/dbname)")
-	rootCmd.Flags().IntVar(&cfg.Workers, "workers", 4, "number of parallel table migrations")
-	rootCmd.Flags().IntVar(&cfg.BatchSize, "batch-size", 50000, "rows per SELECT batch")
-	rootCmd.Flags().StringVar(&cfg.Schema, "schema", "app", "target PostgreSQL schema")
-
-	rootCmd.MarkFlagRequired("mysql")
-	rootCmd.MarkFlagRequired("postgres")
+	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 }
 
 func main() {
@@ -48,6 +34,20 @@ func main() {
 }
 
 func runMigration(cmd *cobra.Command, args []string) error {
+	// Resolve config path: positional arg takes precedence over --config flag
+	cfgPath := configPath
+	if len(args) > 0 {
+		cfgPath = args[0]
+	}
+	if cfgPath == "" {
+		return fmt.Errorf("config file required: pgferry <config.toml> or pgferry --config <config.toml>")
+	}
+
+	cfg, err := loadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+
 	ctx := context.Background()
 	start := time.Now()
 
@@ -56,7 +56,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 1. Connect to MySQL (for schema introspection only)
 	log.Printf("connecting to MySQL...")
-	mysqlDB, err := sql.Open("mysql", cfg.MySQLDSN+"?parseTime=true&loc=UTC&interpolateParams=true")
+	mysqlDB, err := sql.Open("mysql", cfg.MySQL.DSN+"?parseTime=true&loc=UTC&interpolateParams=true")
 	if err != nil {
 		return fmt.Errorf("open mysql: %w", err)
 	}
@@ -68,7 +68,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 
 	// Extract database name from DSN for INFORMATION_SCHEMA queries
-	dbName, err := extractMySQLDBName(cfg.MySQLDSN)
+	dbName, err := extractMySQLDBName(cfg.MySQL.DSN)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 3. Connect to PostgreSQL
 	log.Printf("connecting to PostgreSQL...")
-	pgPool, err := pgxpool.New(ctx, cfg.PostgresDSN)
+	pgPool, err := pgxpool.New(ctx, cfg.Postgres.DSN)
 	if err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
@@ -115,15 +115,25 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create tables: %w", err)
 	}
 
-	// 6. Migrate data (parallel goroutines)
+	// 6. before_data hooks
+	if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data"); err != nil {
+		return fmt.Errorf("before_data hooks: %w", err)
+	}
+
+	// 7. Migrate data (parallel goroutines)
 	log.Printf("migrating data with %d workers...", cfg.Workers)
-	if err := migrateData(ctx, cfg.MySQLDSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.BatchSize); err != nil {
+	if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.BatchSize); err != nil {
 		return fmt.Errorf("migrate data: %w", err)
 	}
 
-	// 7. Post-migration: SET LOGGED, PKs, indexes, orphan cleanup, FKs, sequences, triggers
+	// 8. after_data hooks
+	if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data"); err != nil {
+		return fmt.Errorf("after_data hooks: %w", err)
+	}
+
+	// 9. Post-migration: SET LOGGED, PKs, indexes, hooks, FKs, sequences, triggers
 	log.Printf("running post-migration steps...")
-	if err := postMigrate(ctx, pgPool, schema, cfg.Schema); err != nil {
+	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
 		return fmt.Errorf("post-migrate: %w", err)
 	}
 

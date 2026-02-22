@@ -1,0 +1,15 @@
+schema = "sakila"
+workers = 4
+batch_size = 50000
+
+[mysql]
+dsn = "root:root@tcp(127.0.0.1:3306)/sakila"
+
+[postgres]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/sakila"
+
+[hooks]
+before_data = []
+after_data = []
+before_fk = ["cleanup.sql"]
+after_all = ["post.sql"]

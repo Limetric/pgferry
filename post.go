@@ -10,8 +10,10 @@ import (
 )
 
 // postMigrate runs all post-migration steps in order:
-// 1. SET LOGGED, 2. PKs, 3. Indexes, 4. Orphan cleanup, 5. FKs, 6. Sequences, 7. Triggers
-func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
+// 1. SET LOGGED, 2. PKs, 3. Indexes, 4. before_fk hooks, 5. FKs, 6. Sequences, 7. Triggers, 8. after_all hooks
+func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *MigrationConfig) error {
+	pgSchema := cfg.Schema
+
 	steps := []struct {
 		name string
 		fn   func(context.Context, *pgxpool.Pool, *Schema, string) error
@@ -19,10 +21,6 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSche
 		{"SET LOGGED", setLogged},
 		{"primary keys", addPrimaryKeys},
 		{"indexes", addIndexes},
-		{"orphan cleanup", runOrphanCleanup},
-		{"foreign keys", addForeignKeys},
-		{"sequences", resetSequences},
-		{"triggers", createTriggers},
 	}
 
 	for _, step := range steps {
@@ -31,6 +29,33 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSche
 			return fmt.Errorf("%s: %w", step.name, err)
 		}
 	}
+
+	// before_fk hooks (orphan cleanup goes here)
+	if err := loadAndExecSQLFiles(ctx, pool, cfg, cfg.Hooks.BeforeFk, "before_fk"); err != nil {
+		return fmt.Errorf("before_fk hooks: %w", err)
+	}
+
+	steps2 := []struct {
+		name string
+		fn   func(context.Context, *pgxpool.Pool, *Schema, string) error
+	}{
+		{"foreign keys", addForeignKeys},
+		{"sequences", resetSequences},
+		{"triggers", createTriggers},
+	}
+
+	for _, step := range steps2 {
+		log.Printf("  %s...", step.name)
+		if err := step.fn(ctx, pool, schema, pgSchema); err != nil {
+			return fmt.Errorf("%s: %w", step.name, err)
+		}
+	}
+
+	// after_all hooks
+	if err := loadAndExecSQLFiles(ctx, pool, cfg, cfg.Hooks.AfterAll, "after_all"); err != nil {
+		return fmt.Errorf("after_all hooks: %w", err)
+	}
+
 	return nil
 }
 
@@ -182,21 +207,6 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 	}
 	return nil
 }
-
-// runOrphanCleanup is a hook for database-specific orphan cleanup queries.
-// It delegates to the registered cleanup function if one exists.
-func runOrphanCleanup(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
-	fn := orphanCleanupFuncs[pgSchema]
-	if fn == nil {
-		log.Printf("    no orphan cleanup registered for schema '%s', skipping", pgSchema)
-		return nil
-	}
-	return fn(ctx, pool)
-}
-
-// orphanCleanupFuncs maps schema names to their cleanup functions.
-// Populated by database-specific config files.
-var orphanCleanupFuncs = map[string]func(context.Context, *pgxpool.Pool) error{}
 
 // quotedColumnList joins column names with proper quoting.
 func quotedColumnList(cols []string) string {
