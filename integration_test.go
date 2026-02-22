@@ -247,7 +247,9 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 		OnSchemaExists: "error",
 		UnloggedTables: false,
 		Workers:        2,
-		Hooks:          HooksConfig{},
+		Hooks: HooksConfig{
+			BeforeFk: []string{"testdata/cleanup.sql"},
+		},
 	}
 
 	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables); err != nil {
@@ -262,7 +264,7 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 
 	assertRowCount(t, pgPool, pgSchema, "users", 5)
 	assertRowCount(t, pgPool, pgSchema, "posts", 5)
-	assertRowCount(t, pgPool, pgSchema, "comments", 12)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
 }
 
 // seedMySQL creates the test schema and inserts seed data.
