@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+pgferry
 
 # Test binary, built with `go test -c`
 *.test
@@ -33,3 +34,6 @@ go.work.sum
 
 # Reference
 reference/
+
+# Agent
+.claude/settings.local.json
