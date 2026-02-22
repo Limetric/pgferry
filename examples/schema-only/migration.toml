@@ -2,7 +2,8 @@ schema = "app"
 on_schema_exists = "recreate"
 schema_only = true
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [postgres]

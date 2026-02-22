@@ -12,7 +12,7 @@ import (
 
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
-	MySQL                             MySQLConfig       `toml:"mysql"`
+	Source                            SourceConfig      `toml:"source"`
 	Postgres                          PostgresConfig    `toml:"postgres"`
 	Schema                            string            `toml:"schema"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
@@ -32,8 +32,10 @@ type MigrationConfig struct {
 	configDir string
 }
 
-type MySQLConfig struct {
-	DSN string `toml:"dsn"`
+// SourceConfig identifies the source database engine and connection string.
+type SourceConfig struct {
+	Type string `toml:"type"` // "mysql" or "sqlite"
+	DSN  string `toml:"dsn"`
 }
 
 type PostgresConfig struct {
@@ -119,9 +121,33 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		return nil, fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
 
-	if cfg.MySQL.DSN == "" {
-		return nil, fmt.Errorf("mysql.dsn is required")
+	// Source validation
+	if cfg.Source.Type == "" {
+		return nil, fmt.Errorf("source.type is required (must be mysql or sqlite)")
 	}
+	src, err := newSourceDB(cfg.Source.Type)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Source.DSN == "" {
+		return nil, fmt.Errorf("source.dsn is required")
+	}
+
+	// Source-specific snapshot validation
+	if cfg.SourceSnapshotMode == "single_tx" && !src.SupportsSnapshotMode() {
+		return nil, fmt.Errorf("source_snapshot_mode \"single_tx\" is not supported for %s sources", cfg.Source.Type)
+	}
+
+	// Source-specific type mapping validation
+	if err := src.ValidateTypeMapping(cfg.TypeMapping); err != nil {
+		return nil, err
+	}
+
+	// Cap workers based on source limits
+	if max := src.MaxWorkers(); max > 0 && cfg.Workers > max {
+		cfg.Workers = max
+	}
+
 	if cfg.Postgres.DSN == "" {
 		return nil, fmt.Errorf("postgres.dsn is required")
 	}

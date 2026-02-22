@@ -21,7 +21,8 @@ add_unsigned_checks = true
 replicate_on_update_current_timestamp = true
 workers = 8
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/testdb"
 
 [postgres]
@@ -42,8 +43,11 @@ after_all = ["post.sql"]
 		t.Fatalf("loadConfig() error: %v", err)
 	}
 
-	if cfg.MySQL.DSN != "root:root@tcp(127.0.0.1:3306)/testdb" {
-		t.Errorf("MySQL.DSN = %q", cfg.MySQL.DSN)
+	if cfg.Source.Type != "mysql" {
+		t.Errorf("Source.Type = %q", cfg.Source.Type)
+	}
+	if cfg.Source.DSN != "root:root@tcp(127.0.0.1:3306)/testdb" {
+		t.Errorf("Source.DSN = %q", cfg.Source.DSN)
 	}
 	if cfg.Postgres.DSN != "postgres://user:pass@localhost:5432/testdb" {
 		t.Errorf("Postgres.DSN = %q", cfg.Postgres.DSN)
@@ -87,7 +91,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	content := `
 schema = "target"
 
-	[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -170,7 +175,8 @@ func TestLoadConfig_TypeMappingOverride(t *testing.T) {
 	content := `
 schema = "target"
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -229,7 +235,8 @@ func TestLoadConfig_SchemaOnly(t *testing.T) {
 schema = "target"
 schema_only = true
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -260,7 +267,8 @@ func TestLoadConfig_DataOnly(t *testing.T) {
 schema = "target"
 data_only = true
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -292,7 +300,8 @@ schema = "target"
 schema_only = true
 data_only = true
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -316,7 +325,8 @@ func TestLoadConfig_WorkersNonPositiveUsesDefault(t *testing.T) {
 schema = "target"
 workers = 0
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -341,7 +351,11 @@ func TestLoadConfig_MissingDSN(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "bad.toml")
 
-	if err := os.WriteFile(cfgFile, []byte(`schema = "x"`+"\n"+`[mysql]`), 0644); err != nil {
+	content := `schema = "x"
+[source]
+type = "mysql"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -356,7 +370,8 @@ func TestLoadConfig_MissingSchema(t *testing.T) {
 	cfgFile := filepath.Join(dir, "bad_schema.toml")
 
 	content := `
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -379,7 +394,8 @@ func TestLoadConfig_WhitespaceSchemaRejected(t *testing.T) {
 	content := `
 schema = "   "
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -403,7 +419,8 @@ func TestLoadConfig_InvalidOnSchemaExists(t *testing.T) {
 schema = "target"
 on_schema_exists = "merge"
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -427,7 +444,8 @@ func TestLoadConfig_InvalidSourceSnapshotMode(t *testing.T) {
 schema = "target"
 source_snapshot_mode = "repeatable_read"
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -450,7 +468,8 @@ func TestLoadConfig_InvalidEnumMode(t *testing.T) {
 	content := `
 schema = "target"
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -476,7 +495,8 @@ func TestLoadConfig_InvalidSetMode(t *testing.T) {
 	content := `
 schema = "target"
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [postgres]
@@ -492,6 +512,87 @@ set_mode = "array"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for invalid type_mapping.set_mode")
+	}
+}
+
+func TestLoadConfig_SQLiteSingleTxRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_single_tx.toml")
+
+	content := `
+schema = "target"
+source_snapshot_mode = "single_tx"
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for SQLite + single_tx")
+	}
+}
+
+func TestLoadConfig_SQLiteWorkersCapped(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_workers.toml")
+
+	content := `
+schema = "target"
+workers = 8
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.Workers != 1 {
+		t.Errorf("Workers = %d, want 1 (SQLite caps at 1)", cfg.Workers)
+	}
+}
+
+func TestLoadConfig_SQLiteMySQLOnlyTypeMappingRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_bad_mapping.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+tinyint1_as_boolean = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for MySQL-only type mapping option with SQLite source")
 	}
 }
 
