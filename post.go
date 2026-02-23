@@ -128,7 +128,7 @@ func addUnsignedChecks(ctx context.Context, pool *pgxpool.Pool, schema *Schema, 
 }
 
 func unsignedCheckExpr(col Column, typeMap TypeMappingConfig) (string, bool) {
-	if !strings.Contains(col.ColumnType, "unsigned") {
+	if !strings.Contains(strings.ToLower(col.ColumnType), "unsigned") {
 		return "", false
 	}
 	if isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean {

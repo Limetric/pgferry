@@ -176,7 +176,6 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 			c.Default = &dflt.String
 		}
 		c.DataType = strings.ToLower(c.DataType)
-		c.ColumnType = strings.ToLower(c.ColumnType)
 		cols = append(cols, c)
 	}
 	return cols, rows.Err()
@@ -391,7 +390,7 @@ func mysqlColumnTypeLength(columnType, baseType string) (int64, bool) {
 }
 
 func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
-	isUnsigned := strings.Contains(col.ColumnType, "unsigned")
+	isUnsigned := strings.Contains(strings.ToLower(col.ColumnType), "unsigned")
 
 	switch {
 	case isBinary16Column(col) && typeMap.Binary16AsUUID:
