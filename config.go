@@ -73,8 +73,9 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	cfg := MigrationConfig{
 		OnSchemaExists:     "error",
 		SourceSnapshotMode: "none",
-		PreserveDefaults:   true,
-		CleanOrphans:       true,
+		PreserveDefaults:     true,
+		CleanOrphans:         true,
+		SnakeCaseIdentifiers: true,
 		TypeMapping:        defaultTypeMappingConfig(),
 	}
 	md, err := toml.Decode(string(data), &cfg)

@@ -35,8 +35,8 @@ source_snapshot_mode = "none"
 # snake_case is the de facto standard for PostgreSQL identifiers.
 # Enable this for idiomatic PG naming. When disabled, source names are
 # lowercased to match PostgreSQL's default case folding.
-# Default: false
-snake_case_identifiers = false
+# Default: true
+snake_case_identifiers = true
 
 # Use UNLOGGED tables during bulk load, then SET LOGGED after
 # Faster writes because WAL is skipped, but data is lost on crash during migration
@@ -154,7 +154,7 @@ Fields omitted from the TOML file use these defaults:
 | Field | Default |
 |---|---|
 | `on_schema_exists` | `"error"` |
-| `snake_case_identifiers` | `false` |
+| `snake_case_identifiers` | `true` |
 | `schema_only` | `false` |
 | `data_only` | `false` |
 | `source_snapshot_mode` | `"none"` |
