@@ -149,8 +149,8 @@ Example constraints:
 
 ## Column defaults
 
-By default, pgferry omits source column defaults from the PostgreSQL schema.
-Set `preserve_defaults = true` to include them in the `CREATE TABLE` DDL.
+By default, pgferry preserves source column defaults in the PostgreSQL schema.
+Set `preserve_defaults = false` to omit them from the `CREATE TABLE` DDL.
 
 ## UNLOGGED tables
 

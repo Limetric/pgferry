@@ -38,9 +38,9 @@ source_snapshot_mode = "none"
 unlogged_tables = false
 
 # Preserve source column DEFAULT values in the PostgreSQL schema
-# When false (default), defaults are omitted from CREATE TABLE
-# Default: false
-preserve_defaults = false
+# When false, defaults are omitted from CREATE TABLE
+# Default: true
+preserve_defaults = true
 
 # Add CHECK constraints that enforce MySQL unsigned integer ranges
 # e.g. CHECK (col >= 0 AND col <= 4294967295) for unsigned int
@@ -149,7 +149,7 @@ Fields omitted from the TOML file use these defaults:
 | `data_only` | `false` |
 | `source_snapshot_mode` | `"none"` |
 | `unlogged_tables` | `false` |
-| `preserve_defaults` | `false` |
+| `preserve_defaults` | `true` |
 | `add_unsigned_checks` | `false` |
 | `clean_orphans` | `true` |
 | `replicate_on_update_current_timestamp` | `false` |

@@ -120,8 +120,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.UnloggedTables {
 		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
 	}
-	if cfg.PreserveDefaults {
-		t.Errorf("default PreserveDefaults = %t, want false", cfg.PreserveDefaults)
+	if !cfg.PreserveDefaults {
+		t.Errorf("default PreserveDefaults = %t, want true", cfg.PreserveDefaults)
 	}
 	if cfg.AddUnsignedChecks {
 		t.Errorf("default AddUnsignedChecks = %t, want false", cfg.AddUnsignedChecks)

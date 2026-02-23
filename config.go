@@ -71,6 +71,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	cfg := MigrationConfig{
 		OnSchemaExists:     "error",
 		SourceSnapshotMode: "none",
+		PreserveDefaults:   true,
 		CleanOrphans:       true,
 		TypeMapping:        defaultTypeMappingConfig(),
 	}

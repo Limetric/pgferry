@@ -8,7 +8,7 @@ migration mode (`schema_only` or `data_only`).
 | # | Step | `full` | `schema_only` | `data_only` |
 |---|---|---|---|---|
 | 1 | **Introspect** &mdash; query source database for tables, columns, indexes, FKs. Report views, routines, triggers that need manual migration. Detect unsupported index types and generated columns. Abort if unsupported column types are found. | Yes | Yes | Yes |
-| 2 | **Create tables** &mdash; columns only, no constraints. Optionally `UNLOGGED` for faster writes. Column defaults included only when `preserve_defaults = true`. | Yes | Yes | &mdash; |
+| 2 | **Create tables** &mdash; columns only, no constraints. Optionally `UNLOGGED` for faster writes. Column defaults included by default; set `preserve_defaults = false` to omit. | Yes | Yes | &mdash; |
 | 3 | **`before_data` hooks** | Yes | &mdash; | Yes |
 | 4 | **Stream data** &mdash; parallel `COPY` workers per table (or sequential inside a single read-only transaction when `source_snapshot_mode = "single_tx"`, MySQL only). SQLite always uses 1 worker. In `data_only` mode, triggers are disabled before COPY and re-enabled after. | Yes | &mdash; | Yes |
 | 5 | **`after_data` hooks** | Yes | &mdash; | Yes |
