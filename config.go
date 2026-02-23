@@ -77,8 +77,16 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		CleanOrphans:       true,
 		TypeMapping:        defaultTypeMappingConfig(),
 	}
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	md, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if unknown := md.Undecoded(); len(unknown) > 0 {
+		keys := make([]string, len(unknown))
+		for i, k := range unknown {
+			keys[i] = k.String()
+		}
+		return nil, fmt.Errorf("unknown config keys: %s", strings.Join(keys, ", "))
 	}
 
 	absPath, err := filepath.Abs(path)

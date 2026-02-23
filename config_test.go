@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -599,6 +600,95 @@ tinyint1_as_boolean = true
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for MySQL-only type mapping option with SQLite source")
+	}
+}
+
+func TestLoadConfig_UnknownKeysRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "unknown_keys.toml")
+
+	content := `
+schema = "target"
+bogus_option = true
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for unknown config key")
+	}
+	if !strings.Contains(err.Error(), "bogus_option") {
+		t.Errorf("error should mention the unknown key, got: %v", err)
+	}
+}
+
+func TestLoadConfig_UnknownNestedKeysRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "unknown_nested.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+json_as_jsonb = true
+made_up_flag = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for unknown nested config key")
+	}
+	if !strings.Contains(err.Error(), "type_mapping.made_up_flag") {
+		t.Errorf("error should mention the unknown key, got: %v", err)
+	}
+}
+
+func TestLoadConfig_UnknownSectionRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "unknown_section.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[postgres]
+dsn = "postgres://u:p@h:5432/db"
+
+[advanced]
+turbo = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for unknown section")
+	}
+	if !strings.Contains(err.Error(), "advanced") {
+		t.Errorf("error should mention the unknown section, got: %v", err)
 	}
 }
 
