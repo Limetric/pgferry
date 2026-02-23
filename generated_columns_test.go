@@ -44,16 +44,16 @@ func TestCollectGeneratedColumnWarnings(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
 			{
-				MySQLName: "orders",
+				SourceName: "orders",
 				Columns: []Column{
-					{MySQLName: "id", Extra: "auto_increment"},
-					{MySQLName: "total", Extra: "VIRTUAL GENERATED"},
+					{SourceName: "id", Extra: "auto_increment"},
+					{SourceName: "total", Extra: "VIRTUAL GENERATED"},
 				},
 			},
 			{
-				MySQLName: "customers",
+				SourceName: "customers",
 				Columns: []Column{
-					{MySQLName: "full_name", Extra: "STORED GENERATED"},
+					{SourceName: "full_name", Extra: "STORED GENERATED"},
 				},
 			},
 		},

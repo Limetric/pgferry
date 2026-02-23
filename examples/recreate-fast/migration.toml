@@ -8,7 +8,8 @@ add_unsigned_checks = false
 replicate_on_update_current_timestamp = false
 workers = 8
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [postgres]

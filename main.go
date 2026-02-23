@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
@@ -19,7 +18,7 @@ var configPath string
 
 var rootCmd = &cobra.Command{
 	Use:   "pgferry [config.toml]",
-	Short: "MySQL to PostgreSQL migration tool",
+	Short: "Source database to PostgreSQL migration tool",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runMigration,
 }
@@ -70,7 +69,13 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		cfg.UnloggedTables = false
 	}
 
-	log.Printf("pgferry — MySQL → PostgreSQL migration")
+	// Initialize source database backend
+	src, err := newSourceDB(cfg.Source.Type)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("pgferry — %s → PostgreSQL migration", src.Name())
 	mode := "full"
 	if cfg.SchemaOnly {
 		mode = "schema_only"
@@ -90,42 +95,36 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 	)
 
-	// 1. Connect to MySQL (for schema introspection only)
-	log.Printf("connecting to MySQL...")
-	mysqlDSN, err := mysqlDSNWithReadOptions(cfg.MySQL.DSN)
+	// 1. Connect to source (for schema introspection only)
+	log.Printf("connecting to %s...", src.Name())
+	sourceDB, err := src.OpenDB(cfg.Source.DSN)
+	if err != nil {
+		return err
+	}
+	defer sourceDB.Close()
+	sourceDB.SetMaxOpenConns(1)
+
+	if err := sourceDB.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping %s: %w", strings.ToLower(src.Name()), err)
+	}
+
+	dbName, err := src.ExtractDBName(cfg.Source.DSN)
 	if err != nil {
 		return err
 	}
 
-	mysqlDB, err := sql.Open("mysql", mysqlDSN)
-	if err != nil {
-		return fmt.Errorf("open mysql: %w", err)
-	}
-	defer mysqlDB.Close()
-	mysqlDB.SetMaxOpenConns(1)
-
-	if err := mysqlDB.PingContext(ctx); err != nil {
-		return fmt.Errorf("ping mysql: %w", err)
-	}
-
-	// Extract database name from DSN for INFORMATION_SCHEMA queries
-	dbName, err := extractMySQLDBName(cfg.MySQL.DSN)
-	if err != nil {
-		return err
-	}
-
-	// 2. Introspect MySQL schema
-	log.Printf("introspecting MySQL schema '%s'...", dbName)
-	schema, err := introspectSchema(mysqlDB, dbName)
+	// 2. Introspect source schema
+	log.Printf("introspecting %s schema '%s'...", src.Name(), dbName)
+	schema, err := src.IntrospectSchema(sourceDB, dbName)
 	if err != nil {
 		return fmt.Errorf("introspect schema: %w", err)
 	}
 	log.Printf("found %d tables", len(schema.Tables))
 	for _, t := range schema.Tables {
 		log.Printf("  %s → %s (%d cols, %d indexes, %d fks)",
-			t.MySQLName, t.PGName, len(t.Columns), len(t.Indexes), len(t.ForeignKeys))
+			t.SourceName, t.PGName, len(t.Columns), len(t.Indexes), len(t.ForeignKeys))
 	}
-	if sourceObjects, err := introspectSourceObjects(mysqlDB, dbName); err != nil {
+	if sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName); err != nil {
 		log.Printf("WARN: failed to introspect non-table source objects: %v", err)
 	} else if warnings := sourceObjectWarnings(sourceObjects); len(warnings) > 0 {
 		log.Printf("source object report:")
@@ -145,9 +144,9 @@ func runMigration(cmd *cobra.Command, args []string) error {
 			log.Printf("  WARN: %s", w)
 		}
 	}
-	if typeErrs := collectUnsupportedTypeErrors(schema, cfg.TypeMapping); len(typeErrs) > 0 {
+	if typeErrs := collectUnsupportedTypeErrors(schema, cfg.TypeMapping, src.MapType); len(typeErrs) > 0 {
 		var b strings.Builder
-		b.WriteString("unsupported MySQL column types detected:\n")
+		b.WriteString("unsupported source column types detected:\n")
 		for _, e := range typeErrs {
 			b.WriteString("  - ")
 			b.WriteString(e)
@@ -157,8 +156,8 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s", b.String())
 	}
 
-	// Close introspection connection — data migration opens its own per-table connections
-	mysqlDB.Close()
+	// Close introspection connection — data migration opens its own connections
+	sourceDB.Close()
 
 	// 3. Connect to PostgreSQL
 	log.Printf("connecting to PostgreSQL...")
@@ -181,7 +180,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 		// 5. Create bare tables (no PKs, FKs, indexes)
 		log.Printf("creating tables...")
-		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping); err != nil {
+		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
 			return fmt.Errorf("create tables: %w", err)
 		}
 	}
@@ -207,7 +206,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		} else {
 			log.Printf("migrating data with %d workers...", cfg.Workers)
 		}
-		if err := migrateData(ctx, cfg.MySQL.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+		if err := migrateData(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
 			return fmt.Errorf("migrate data: %w", err)
 		}
 

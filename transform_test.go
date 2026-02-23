@@ -53,18 +53,18 @@ func TestMapType(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := mapType(tt.col, tt.tm)
+			got, err := mysqlMapType(tt.col, tt.tm)
 			if tt.err {
 				if err == nil {
-					t.Fatalf("mapType(%+v) expected error", tt.col)
+					t.Fatalf("mysqlMapType(%+v) expected error", tt.col)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("mapType(%+v) unexpected error: %v", tt.col, err)
+				t.Fatalf("mysqlMapType(%+v) unexpected error: %v", tt.col, err)
 			}
 			if got != tt.want {
-				t.Errorf("mapType(%+v) = %q, want %q", tt.col, got, tt.want)
+				t.Errorf("mysqlMapType(%+v) = %q, want %q", tt.col, got, tt.want)
 			}
 		})
 	}
@@ -76,23 +76,23 @@ func TestTransformValue_UUID(t *testing.T) {
 
 	// Valid 16-byte UUID
 	input := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
-	got, err := transformValue(input, col, optIn)
+	got, err := mysqlTransformValue(input, col, optIn)
 	if err != nil {
-		t.Fatalf("transformValue(uuid) error: %v", err)
+		t.Fatalf("mysqlTransformValue(uuid) error: %v", err)
 	}
 	want := "01020304-0506-0708-090a-0b0c0d0e0f10"
 	if got != want {
-		t.Errorf("transformValue(uuid) = %q, want %q", got, want)
+		t.Errorf("mysqlTransformValue(uuid) = %q, want %q", got, want)
 	}
 
 	// Nil input
-	if got, err := transformValue(nil, col, optIn); err != nil || got != nil {
-		t.Errorf("transformValue(nil, uuid) = %v, want nil", got)
+	if got, err := mysqlTransformValue(nil, col, optIn); err != nil || got != nil {
+		t.Errorf("mysqlTransformValue(nil, uuid) = %v, want nil", got)
 	}
 
 	// Wrong length
-	if _, err := transformValue([]byte{0x01, 0x02}, col, optIn); err == nil {
-		t.Fatal("transformValue(short bytes, uuid) expected error")
+	if _, err := mysqlTransformValue([]byte{0x01, 0x02}, col, optIn); err == nil {
+		t.Fatal("mysqlTransformValue(short bytes, uuid) expected error")
 	}
 }
 
@@ -101,16 +101,16 @@ func TestTransformValue_UUIDOptInNonBinary16Passthrough(t *testing.T) {
 	optIn := TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}
 
 	in := []byte{0x01, 0x02, 0x03}
-	got, err := transformValue(in, col, optIn)
+	got, err := mysqlTransformValue(in, col, optIn)
 	if err != nil {
-		t.Fatalf("transformValue(non-binary16) unexpected error: %v", err)
+		t.Fatalf("mysqlTransformValue(non-binary16) unexpected error: %v", err)
 	}
 	out, ok := got.([]byte)
 	if !ok {
-		t.Fatalf("transformValue(non-binary16) type = %T, want []byte", got)
+		t.Fatalf("mysqlTransformValue(non-binary16) type = %T, want []byte", got)
 	}
 	if len(out) != len(in) || out[0] != in[0] || out[1] != in[1] || out[2] != in[2] {
-		t.Fatalf("transformValue(non-binary16) = %#v, want %#v", out, in)
+		t.Fatalf("mysqlTransformValue(non-binary16) = %#v, want %#v", out, in)
 	}
 }
 
@@ -118,40 +118,40 @@ func TestTransformValue_Bool(t *testing.T) {
 	col := Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(1)"}
 	optIn := TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}
 
-	if got, err := transformValue(int64(1), col, optIn); err != nil || got != true {
-		t.Errorf("transformValue(1, bool) = %v, want true", got)
+	if got, err := mysqlTransformValue(int64(1), col, optIn); err != nil || got != true {
+		t.Errorf("mysqlTransformValue(1, bool) = %v, want true", got)
 	}
-	if got, err := transformValue(int64(0), col, optIn); err != nil || got != false {
-		t.Errorf("transformValue(0, bool) = %v, want false", got)
+	if got, err := mysqlTransformValue(int64(0), col, optIn); err != nil || got != false {
+		t.Errorf("mysqlTransformValue(0, bool) = %v, want false", got)
 	}
-	if got, err := transformValue(nil, col, optIn); err != nil || got != nil {
-		t.Errorf("transformValue(nil, bool) = %v, want nil", got)
+	if got, err := mysqlTransformValue(nil, col, optIn); err != nil || got != nil {
+		t.Errorf("mysqlTransformValue(nil, bool) = %v, want nil", got)
 	}
-	if _, err := transformValue(int64(2), col, optIn); err == nil {
-		t.Fatal("transformValue(2, bool) expected error")
+	if _, err := mysqlTransformValue(int64(2), col, optIn); err == nil {
+		t.Fatal("mysqlTransformValue(2, bool) expected error")
 	}
 }
 
 func TestTransformValue_BoolNoOptInPassthrough(t *testing.T) {
 	col := Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(1)"}
-	got, err := transformValue(int64(2), col, defaultTypeMappingConfig())
+	got, err := mysqlTransformValue(int64(2), col, defaultTypeMappingConfig())
 	if err != nil {
-		t.Fatalf("transformValue default tinyint(1) unexpected error: %v", err)
+		t.Fatalf("mysqlTransformValue default tinyint(1) unexpected error: %v", err)
 	}
 	if got != int64(2) {
-		t.Fatalf("transformValue default tinyint(1) = %v, want %v", got, int64(2))
+		t.Fatalf("mysqlTransformValue default tinyint(1) = %v, want %v", got, int64(2))
 	}
 }
 
 func TestTransformValue_BoolOptInNonTinyInt1Passthrough(t *testing.T) {
 	col := Column{DataType: "tinyint", Precision: 1, ColumnType: "tinyint(2)"}
 	optIn := TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}
-	got, err := transformValue(int64(2), col, optIn)
+	got, err := mysqlTransformValue(int64(2), col, optIn)
 	if err != nil {
-		t.Fatalf("transformValue(non-tinyint1) unexpected error: %v", err)
+		t.Fatalf("mysqlTransformValue(non-tinyint1) unexpected error: %v", err)
 	}
 	if got != int64(2) {
-		t.Fatalf("transformValue(non-tinyint1) = %v, want %v", got, int64(2))
+		t.Fatalf("mysqlTransformValue(non-tinyint1) = %v, want %v", got, int64(2))
 	}
 }
 
@@ -159,28 +159,28 @@ func TestTransformValue_SetTextArray(t *testing.T) {
 	col := Column{DataType: "set"}
 	optIn := TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}
 
-	got, err := transformValue([]byte("a,b"), col, optIn)
+	got, err := mysqlTransformValue([]byte("a,b"), col, optIn)
 	if err != nil {
-		t.Fatalf("transformValue(set) error: %v", err)
+		t.Fatalf("mysqlTransformValue(set) error: %v", err)
 	}
 	vals, ok := got.([]string)
 	if !ok {
-		t.Fatalf("transformValue(set) type = %T, want []string", got)
+		t.Fatalf("mysqlTransformValue(set) type = %T, want []string", got)
 	}
 	if len(vals) != 2 || vals[0] != "a" || vals[1] != "b" {
-		t.Fatalf("transformValue(set) = %#v, want [a b]", vals)
+		t.Fatalf("mysqlTransformValue(set) = %#v, want [a b]", vals)
 	}
 
-	got, err = transformValue([]byte(""), col, optIn)
+	got, err = mysqlTransformValue([]byte(""), col, optIn)
 	if err != nil {
-		t.Fatalf("transformValue(empty set) error: %v", err)
+		t.Fatalf("mysqlTransformValue(empty set) error: %v", err)
 	}
 	vals, ok = got.([]string)
 	if !ok {
-		t.Fatalf("transformValue(empty set) type = %T, want []string", got)
+		t.Fatalf("mysqlTransformValue(empty set) type = %T, want []string", got)
 	}
 	if len(vals) != 0 {
-		t.Fatalf("transformValue(empty set) = %#v, want empty slice", vals)
+		t.Fatalf("mysqlTransformValue(empty set) = %#v, want empty slice", vals)
 	}
 }
 
@@ -188,16 +188,16 @@ func TestTransformValue_JSON(t *testing.T) {
 	col := Column{DataType: "json"}
 
 	input := []byte("hello\x00world")
-	got, err := transformValue(input, col, defaultTypeMappingConfig())
+	got, err := mysqlTransformValue(input, col, defaultTypeMappingConfig())
 	if err != nil {
-		t.Fatalf("transformValue(json) error: %v", err)
+		t.Fatalf("mysqlTransformValue(json) error: %v", err)
 	}
 	if got != "helloworld" {
-		t.Errorf("transformValue(json with null byte) = %q, want %q", got, "helloworld")
+		t.Errorf("mysqlTransformValue(json with null byte) = %q, want %q", got, "helloworld")
 	}
 
-	if got, err := transformValue(nil, col, defaultTypeMappingConfig()); err != nil || got != nil {
-		t.Errorf("transformValue(nil, json) = %v, want nil", got)
+	if got, err := mysqlTransformValue(nil, col, defaultTypeMappingConfig()); err != nil || got != nil {
+		t.Errorf("mysqlTransformValue(nil, json) = %v, want nil", got)
 	}
 }
 
@@ -206,19 +206,19 @@ func TestTransformValue_ZeroDates(t *testing.T) {
 		col := Column{DataType: dt}
 
 		// Zero time → nil
-		if got, err := transformValue(time.Time{}, col, defaultTypeMappingConfig()); err != nil || got != nil {
-			t.Errorf("transformValue(zero %s) = %v, want nil", dt, got)
+		if got, err := mysqlTransformValue(time.Time{}, col, defaultTypeMappingConfig()); err != nil || got != nil {
+			t.Errorf("mysqlTransformValue(zero %s) = %v, want nil", dt, got)
 		}
 
 		// Valid time → pass through
 		valid := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
-		if got, err := transformValue(valid, col, defaultTypeMappingConfig()); err != nil || got != valid {
-			t.Errorf("transformValue(valid %s) = %v, want %v", dt, got, valid)
+		if got, err := mysqlTransformValue(valid, col, defaultTypeMappingConfig()); err != nil || got != valid {
+			t.Errorf("mysqlTransformValue(valid %s) = %v, want %v", dt, got, valid)
 		}
 
 		// Nil → nil
-		if got, err := transformValue(nil, col, defaultTypeMappingConfig()); err != nil || got != nil {
-			t.Errorf("transformValue(nil, %s) = %v, want nil", dt, got)
+		if got, err := mysqlTransformValue(nil, col, defaultTypeMappingConfig()); err != nil || got != nil {
+			t.Errorf("mysqlTransformValue(nil, %s) = %v, want nil", dt, got)
 		}
 	}
 }
@@ -226,27 +226,27 @@ func TestTransformValue_ZeroDates(t *testing.T) {
 func TestTransformValue_Year(t *testing.T) {
 	col := Column{DataType: "year"}
 
-	if got, err := transformValue([]byte("2024"), col, defaultTypeMappingConfig()); err != nil || got != int64(2024) {
-		t.Fatalf("transformValue([]byte(\"2024\"), year) = %v, err=%v; want 2024", got, err)
+	if got, err := mysqlTransformValue([]byte("2024"), col, defaultTypeMappingConfig()); err != nil || got != int64(2024) {
+		t.Fatalf("mysqlTransformValue([]byte(\"2024\"), year) = %v, err=%v; want 2024", got, err)
 	}
 
-	if got, err := transformValue("1999", col, defaultTypeMappingConfig()); err != nil || got != int64(1999) {
-		t.Fatalf("transformValue(\"1999\", year) = %v, err=%v; want 1999", got, err)
+	if got, err := mysqlTransformValue("1999", col, defaultTypeMappingConfig()); err != nil || got != int64(1999) {
+		t.Fatalf("mysqlTransformValue(\"1999\", year) = %v, err=%v; want 1999", got, err)
 	}
 
-	if got, err := transformValue(int64(2001), col, defaultTypeMappingConfig()); err != nil || got != int64(2001) {
-		t.Fatalf("transformValue(int64(2001), year) = %v, err=%v; want 2001", got, err)
+	if got, err := mysqlTransformValue(int64(2001), col, defaultTypeMappingConfig()); err != nil || got != int64(2001) {
+		t.Fatalf("mysqlTransformValue(int64(2001), year) = %v, err=%v; want 2001", got, err)
 	}
 
-	if _, err := transformValue("not-a-year", col, defaultTypeMappingConfig()); err == nil {
-		t.Fatal("transformValue(invalid year) expected error")
+	if _, err := mysqlTransformValue("not-a-year", col, defaultTypeMappingConfig()); err == nil {
+		t.Fatal("mysqlTransformValue(invalid year) expected error")
 	}
 }
 
 func TestTransformValue_Passthrough(t *testing.T) {
 	col := Column{DataType: "varchar"}
-	if got, err := transformValue("hello", col, defaultTypeMappingConfig()); err != nil || got != "hello" {
-		t.Errorf("transformValue(varchar) = %v, want %q", got, "hello")
+	if got, err := mysqlTransformValue("hello", col, defaultTypeMappingConfig()); err != nil || got != "hello" {
+		t.Errorf("mysqlTransformValue(varchar) = %v, want %q", got, "hello")
 	}
 }
 
@@ -254,20 +254,20 @@ func TestTransformValue_TextNullByteStripping(t *testing.T) {
 	for _, dt := range []string{"varchar", "char", "text", "mediumtext", "longtext", "tinytext", "enum", "set"} {
 		col := Column{DataType: dt}
 		// string input
-		got, err := transformValue("hello\x00world", col, defaultTypeMappingConfig())
+		got, err := mysqlTransformValue("hello\x00world", col, defaultTypeMappingConfig())
 		if err != nil {
-			t.Fatalf("transformValue(%s string) error: %v", dt, err)
+			t.Fatalf("mysqlTransformValue(%s string) error: %v", dt, err)
 		}
 		if got != "helloworld" {
-			t.Errorf("transformValue(%s string with null byte) = %q, want %q", dt, got, "helloworld")
+			t.Errorf("mysqlTransformValue(%s string with null byte) = %q, want %q", dt, got, "helloworld")
 		}
 		// []byte input
-		got, err = transformValue([]byte("foo\x00bar"), col, defaultTypeMappingConfig())
+		got, err = mysqlTransformValue([]byte("foo\x00bar"), col, defaultTypeMappingConfig())
 		if err != nil {
-			t.Fatalf("transformValue(%s []byte) error: %v", dt, err)
+			t.Fatalf("mysqlTransformValue(%s []byte) error: %v", dt, err)
 		}
 		if got != "foobar" {
-			t.Errorf("transformValue(%s []byte with null byte) = %q, want %q", dt, got, "foobar")
+			t.Errorf("mysqlTransformValue(%s []byte with null byte) = %q, want %q", dt, got, "foobar")
 		}
 	}
 }
@@ -275,31 +275,31 @@ func TestTransformValue_TextNullByteStripping(t *testing.T) {
 func TestTransformValue_SetTextArrayNullByteStripping(t *testing.T) {
 	col := Column{DataType: "set"}
 	optIn := TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}
-	got, err := transformValue([]byte("a\x00b,c"), col, optIn)
+	got, err := mysqlTransformValue([]byte("a\x00b,c"), col, optIn)
 	if err != nil {
-		t.Fatalf("transformValue(set text_array) error: %v", err)
+		t.Fatalf("mysqlTransformValue(set text_array) error: %v", err)
 	}
 	arr, ok := got.([]string)
 	if !ok {
-		t.Fatalf("transformValue(set text_array) type = %T, want []string", got)
+		t.Fatalf("mysqlTransformValue(set text_array) type = %T, want []string", got)
 	}
 	if len(arr) != 2 || arr[0] != "ab" || arr[1] != "c" {
-		t.Errorf("transformValue(set text_array with null byte) = %v, want [ab c]", arr)
+		t.Errorf("mysqlTransformValue(set text_array with null byte) = %v, want [ab c]", arr)
 	}
 }
 
 func TestTransformValue_BitPassthrough(t *testing.T) {
 	col := Column{DataType: "bit", Precision: 8}
 	in := []byte{0x01}
-	got, err := transformValue(in, col, defaultTypeMappingConfig())
+	got, err := mysqlTransformValue(in, col, defaultTypeMappingConfig())
 	if err != nil {
-		t.Fatalf("transformValue(bit) unexpected error: %v", err)
+		t.Fatalf("mysqlTransformValue(bit) unexpected error: %v", err)
 	}
 	out, ok := got.([]byte)
 	if !ok {
-		t.Fatalf("transformValue(bit) type = %T, want []byte", got)
+		t.Fatalf("mysqlTransformValue(bit) type = %T, want []byte", got)
 	}
 	if len(out) != 1 || out[0] != 0x01 {
-		t.Fatalf("transformValue(bit) = %#v, want %#v", out, in)
+		t.Fatalf("mysqlTransformValue(bit) = %#v, want %#v", out, in)
 	}
 }

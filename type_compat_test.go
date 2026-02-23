@@ -6,23 +6,23 @@ func TestCollectUnsupportedTypeErrors(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
 			{
-				MySQLName: "users",
+				SourceName: "users",
 				Columns: []Column{
-					{MySQLName: "id", DataType: "int", ColumnType: "int"},
-					{MySQLName: "shape", DataType: "geometry", ColumnType: "geometry"},
+					{SourceName: "id", DataType: "int", ColumnType: "int"},
+					{SourceName: "shape", DataType: "geometry", ColumnType: "geometry"},
 				},
 			},
 			{
-				MySQLName: "events",
+				SourceName: "events",
 				Columns: []Column{
-					{MySQLName: "payload", DataType: "json", ColumnType: "json"},
-					{MySQLName: "point", DataType: "point", ColumnType: "point"},
+					{SourceName: "payload", DataType: "json", ColumnType: "json"},
+					{SourceName: "point", DataType: "point", ColumnType: "point"},
 				},
 			},
 		},
 	}
 
-	errs := collectUnsupportedTypeErrors(schema, defaultTypeMappingConfig())
+	errs := collectUnsupportedTypeErrors(schema, defaultTypeMappingConfig(), mysqlMapType)
 	if len(errs) != 2 {
 		t.Fatalf("collectUnsupportedTypeErrors len = %d, want 2 (%v)", len(errs), errs)
 	}
@@ -32,9 +32,9 @@ func TestCollectUnsupportedTypeErrors_UnknownAsText(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
 			{
-				MySQLName: "users",
+				SourceName: "users",
 				Columns: []Column{
-					{MySQLName: "shape", DataType: "geometry", ColumnType: "geometry"},
+					{SourceName: "shape", DataType: "geometry", ColumnType: "geometry"},
 				},
 			},
 		},
@@ -43,7 +43,7 @@ func TestCollectUnsupportedTypeErrors_UnknownAsText(t *testing.T) {
 	tm := defaultTypeMappingConfig()
 	tm.UnknownAsText = true
 
-	errs := collectUnsupportedTypeErrors(schema, tm)
+	errs := collectUnsupportedTypeErrors(schema, tm, mysqlMapType)
 	if len(errs) != 0 {
 		t.Fatalf("collectUnsupportedTypeErrors len = %d, want 0 (%v)", len(errs), errs)
 	}

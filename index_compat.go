@@ -24,7 +24,7 @@ func collectIndexCompatibilityWarnings(schema *Schema) []string {
 		for _, idx := range t.Indexes {
 			if reason, unsupported := indexUnsupportedReason(idx); unsupported {
 				warnings = append(warnings,
-					fmt.Sprintf("%s.%s (%s): %s", t.MySQLName, idx.MySQLName, idx.Name, reason),
+					fmt.Sprintf("%s.%s (%s): %s", t.SourceName, idx.SourceName, idx.Name, reason),
 				)
 			}
 		}

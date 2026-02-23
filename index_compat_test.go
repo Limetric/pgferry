@@ -11,11 +11,11 @@ func TestIndexUnsupportedReason(t *testing.T) {
 		idx  Index
 		ok   bool
 	}{
-		{"plain btree", Index{MySQLName: "idx_a", Type: "BTREE", Columns: []string{"a"}}, false},
-		{"prefix index", Index{MySQLName: "idx_p", Type: "BTREE", Columns: []string{"a"}, HasPrefix: true}, true},
-		{"expression index", Index{MySQLName: "idx_e", Type: "BTREE", HasExpression: true}, true},
-		{"fulltext", Index{MySQLName: "idx_f", Type: "FULLTEXT", Columns: []string{"body"}}, true},
-		{"no columns", Index{MySQLName: "idx_n", Type: "BTREE"}, true},
+		{"plain btree", Index{SourceName: "idx_a", Type: "BTREE", Columns: []string{"a"}}, false},
+		{"prefix index", Index{SourceName: "idx_p", Type: "BTREE", Columns: []string{"a"}, HasPrefix: true}, true},
+		{"expression index", Index{SourceName: "idx_e", Type: "BTREE", HasExpression: true}, true},
+		{"fulltext", Index{SourceName: "idx_f", Type: "FULLTEXT", Columns: []string{"body"}}, true},
+		{"no columns", Index{SourceName: "idx_n", Type: "BTREE"}, true},
 	}
 
 	for _, tt := range tests {
@@ -31,10 +31,10 @@ func TestIndexUnsupportedReason(t *testing.T) {
 func TestCollectIndexCompatibilityWarnings(t *testing.T) {
 	schema := &Schema{Tables: []Table{
 		{
-			MySQLName: "posts",
+			SourceName: "posts",
 			Indexes: []Index{
-				{Name: "posts_title", MySQLName: "idx_title", Type: "BTREE", Columns: []string{"title"}},
-				{Name: "posts_body_ft", MySQLName: "idx_body", Type: "FULLTEXT", Columns: []string{"body"}},
+				{Name: "posts_title", SourceName: "idx_title", Type: "BTREE", Columns: []string{"title"}},
+				{Name: "posts_body_ft", SourceName: "idx_body", Type: "FULLTEXT", Columns: []string{"body"}},
 			},
 		},
 	}}

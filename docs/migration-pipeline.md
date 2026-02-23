@@ -7,14 +7,14 @@ migration mode (`schema_only` or `data_only`).
 
 | # | Step | `full` | `schema_only` | `data_only` |
 |---|---|---|---|---|
-| 1 | **Introspect** &mdash; query MySQL `INFORMATION_SCHEMA` for tables, columns, indexes, FKs. Report views, routines, triggers that need manual migration. Detect unsupported index types and generated columns. Abort if unsupported column types are found. | Yes | Yes | Yes |
+| 1 | **Introspect** &mdash; query source database for tables, columns, indexes, FKs. Report views, routines, triggers that need manual migration. Detect unsupported index types and generated columns. Abort if unsupported column types are found. | Yes | Yes | Yes |
 | 2 | **Create tables** &mdash; columns only, no constraints. Optionally `UNLOGGED` for faster writes. Column defaults included only when `preserve_defaults = true`. | Yes | Yes | &mdash; |
 | 3 | **`before_data` hooks** | Yes | &mdash; | Yes |
-| 4 | **Stream data** &mdash; parallel `COPY` workers per table (or sequential inside a single MySQL transaction when `source_snapshot_mode = "single_tx"`). In `data_only` mode, triggers are disabled before COPY and re-enabled after. | Yes | &mdash; | Yes |
+| 4 | **Stream data** &mdash; parallel `COPY` workers per table (or sequential inside a single read-only transaction when `source_snapshot_mode = "single_tx"`, MySQL only). SQLite always uses 1 worker. In `data_only` mode, triggers are disabled before COPY and re-enabled after. | Yes | &mdash; | Yes |
 | 5 | **`after_data` hooks** | Yes | &mdash; | Yes |
 | 6 | **SET LOGGED** &mdash; convert `UNLOGGED` tables back to `LOGGED` | Yes | &mdash; | &mdash; |
 | 7 | **Primary keys** | Yes | Yes | &mdash; |
-| 8 | **Indexes** &mdash; unsupported index types (FULLTEXT, SPATIAL, prefix, expression) are reported and skipped | Yes | Yes | &mdash; |
+| 8 | **Indexes** &mdash; unsupported index types (MySQL FULLTEXT, SPATIAL, prefix, expression; SQLite partial, expression) are reported and skipped | Yes | Yes | &mdash; |
 | 9 | **`before_fk` hooks** | Yes | Yes | &mdash; |
 | 10 | **Orphan cleanup** &mdash; auto-detect and remove/nullify rows that would violate FK constraints (when `clean_orphans = true`) | Yes | &mdash; | &mdash; |
 | 11 | **Foreign keys** | Yes | Yes | &mdash; |
@@ -79,11 +79,11 @@ inspect or modify the schema before loading data.
 ## Snapshot modes
 
 The `source_snapshot_mode` setting controls read consistency when streaming data
-from MySQL.
+from the source database.
 
 ### `none` (default)
 
-Each table is read in its own MySQL connection using parallel workers. This is
+Each table is read in its own connection using parallel workers. This is
 the fastest option but does not guarantee a consistent snapshot across tables &mdash;
 if the source database is being written to during migration, different tables may
 reflect different points in time.
@@ -93,7 +93,11 @@ source_snapshot_mode = "none"
 workers = 4
 ```
 
-### `single_tx`
+For SQLite sources, workers are automatically capped at 1 regardless of the setting,
+since SQLite does not support concurrent readers across multiple connections in the
+same way as MySQL.
+
+### `single_tx` (MySQL only)
 
 All table reads happen inside a single read-only MySQL transaction with
 `REPEATABLE READ` isolation. This guarantees a consistent snapshot across all
@@ -106,3 +110,6 @@ source_snapshot_mode = "single_tx"
 
 Use `single_tx` when your source database has active writes and you need
 referential consistency in the migrated data.
+
+**Note:** `single_tx` is not supported for SQLite sources and produces a config
+validation error.

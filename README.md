@@ -1,10 +1,17 @@
 # pgferry
 
-A MySQL-to-PostgreSQL migration CLI. Single binary, zero runtime dependencies.
+A MySQL/SQLite-to-PostgreSQL migration CLI. Single binary, zero runtime dependencies.
 
-pgferry reads your MySQL schema, creates matching PostgreSQL tables, streams data
+pgferry reads your source database schema, creates matching PostgreSQL tables, streams data
 in parallel via the COPY protocol, then wires up constraints, indexes, sequences,
 and (optionally) triggers.
+
+## Supported sources
+
+| Source | Driver | Workers | Snapshot mode |
+|---|---|---|---|
+| MySQL | `go-sql-driver/mysql` | Parallel (configurable) | `none`, `single_tx` |
+| SQLite | `modernc.org/sqlite` (pure Go, no CGO) | Sequential (1 worker) | `none` only |
 
 ## How does this compare to pgloader?
 
@@ -18,12 +25,14 @@ more robust out of the box:
   coercions like `tinyint1_as_boolean`, `binary16_as_uuid`, `json_as_jsonb`,
   enum-to-check-constraint, and more &mdash; useful for making the PostgreSQL
   schema feel native rather than a 1:1 MySQL clone
+- **SQLite support** &mdash; migrate SQLite databases to PostgreSQL with the same
+  CLI and config format
 - **Configurable orphan cleanup** &mdash; detects and removes rows that would
   violate FK constraints (on by default, disable with `clean_orphans = false`)
 - **SQL hooks** &mdash; run your own SQL at 4 phases (`before_data`, `after_data`,
   `before_fk`, `after_all`) with `{{schema}}` templating
 - **CI-tested against real databases** &mdash; every change is verified with
-  integration tests against MySQL and PostgreSQL
+  integration tests against MySQL, SQLite, and PostgreSQL
 
 > We also maintain a [pgloader fork](https://github.com/Limetric/pgloader)
 > that patches some common upstream issues &mdash; worth a look if you need
@@ -41,25 +50,39 @@ go install github.com/Limetric/pgferry@latest
 
 ## Quick start
 
-1. Create a config file (or copy one from [`examples/`](examples/)):
+### MySQL &rarr; PostgreSQL
 
 ```toml
 schema = "app"
 
-[mysql]
+[source]
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [postgres]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
-2. Run the migration:
+### SQLite &rarr; PostgreSQL
+
+```toml
+schema = "app"
+
+[source]
+type = "sqlite"
+dsn = "/path/to/database.db"
+
+[postgres]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+```
+
+Run the migration:
 
 ```bash
 pgferry migration.toml
 ```
 
-That's it. pgferry will introspect your MySQL database, create tables in
+That's it. pgferry will introspect your source database, create tables in
 PostgreSQL under the `app` schema, stream all data, then add primary keys,
 indexes, foreign keys, and auto-increment sequences.
 
@@ -70,6 +93,18 @@ pgferry --version
 # or
 pgferry version
 ```
+
+### SQLite DSN formats
+
+SQLite accepts file paths or file URIs:
+
+| Format | Example |
+|---|---|
+| Plain path | `/data/app.db`, `./relative.db` |
+| File URI | `file:/data/app.db?cache=shared` |
+
+In-memory databases (`:memory:`, `file::memory:`, `mode=memory`) are not supported &mdash;
+pgferry requires a real file to open in read-only mode.
 
 ## Examples
 
@@ -90,7 +125,7 @@ common scenarios:
 | Topic                                            | Description                                            |
 | ------------------------------------------------ | ------------------------------------------------------ |
 | [Configuration](docs/configuration.md)           | All TOML settings, defaults, validation                |
-| [Type mapping](docs/type-mapping.md)             | MySQL&rarr;PG type table, coercion options, edge cases |
+| [Type mapping](docs/type-mapping.md)             | Source&rarr;PG type tables, coercion options, edge cases |
 | [Migration pipeline](docs/migration-pipeline.md) | Step-by-step pipeline, modes, snapshots                |
 | [Hooks](docs/hooks.md)                           | 4-phase SQL hook system, templating                    |
 | [Conventions & limitations](docs/conventions.md) | Naming, orphan cleanup, unsupported features           |
@@ -102,10 +137,14 @@ go build -o build/pgferry .          # build
 go vet ./...                         # lint
 go test ./... -count=1               # unit tests (no DB required)
 
-# integration tests (requires MySQL on :3306 and PostgreSQL on :5432)
+# integration tests — MySQL (requires MySQL on :3306 and PostgreSQL on :5432)
 MYSQL_DSN="root:root@tcp(127.0.0.1:3306)/pgferry_test" \
 POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
 go test -tags integration -count=1 -v ./...
+
+# integration tests — SQLite (requires only PostgreSQL on :5432)
+POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
+go test -tags integration -run TestIntegration_SQLite -count=1 -v ./...
 ```
 
 ## License

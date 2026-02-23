@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+var mysqlSrc = &mysqlSourceDB{}
+
 func TestGenerateCreateTable(t *testing.T) {
 	table := Table{
 		PGName: "users",
@@ -16,7 +18,7 @@ func TestGenerateCreateTable(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -55,7 +57,7 @@ func TestGenerateCreateTable_Unlogged(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", true, false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", true, false, defaultTypeMappingConfig(), mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -72,7 +74,7 @@ func TestGenerateCreateTable_DefaultLoggedPrefix(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 		},
 	}
 
-	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -110,7 +112,7 @@ func TestGenerateCreateTable_UnknownTypeErrors(t *testing.T) {
 		},
 	}
 
-	_, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
+	_, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
 	if err == nil {
 		t.Fatal("expected error for unsupported MySQL type")
 	}
@@ -129,7 +131,7 @@ func TestGenerateCreateTable_PreserveDefaults(t *testing.T) {
 	tm := defaultTypeMappingConfig()
 	tm.JSONAsJSONB = true
 
-	ddl, err := generateCreateTable(table, "app", false, true, tm)
+	ddl, err := generateCreateTable(table, "app", false, true, tm, mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -158,7 +160,7 @@ func TestGenerateCreateTable_PreserveDefaultsUnsupported(t *testing.T) {
 	tm := defaultTypeMappingConfig()
 	tm.TinyInt1AsBoolean = true
 
-	_, err := generateCreateTable(table, "app", false, true, tm)
+	_, err := generateCreateTable(table, "app", false, true, tm, mysqlSrc)
 	if err == nil {
 		t.Fatal("expected error for unsupported boolean default")
 	}
@@ -171,7 +173,7 @@ func TestGenerateCreateTable_NoPreserveDefaultsSkipsDefaults(t *testing.T) {
 			{PGName: "name", DataType: "varchar", ColumnType: "varchar(20)", CharMaxLen: 20, Nullable: false, Default: strPtr("alice")},
 		},
 	}
-	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig())
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -190,7 +192,7 @@ func TestGenerateCreateTable_EnumCheckMode(t *testing.T) {
 	tm := defaultTypeMappingConfig()
 	tm.EnumMode = "check"
 
-	ddl, err := generateCreateTable(table, "app", false, false, tm)
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
@@ -209,7 +211,7 @@ func TestGenerateCreateTable_SetArrayDefault(t *testing.T) {
 	tm := defaultTypeMappingConfig()
 	tm.SetMode = "text_array"
 
-	ddl, err := generateCreateTable(table, "app", false, true, tm)
+	ddl, err := generateCreateTable(table, "app", false, true, tm, mysqlSrc)
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}

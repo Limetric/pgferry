@@ -28,7 +28,7 @@ data_only = false
 
 # Source read consistency mode:
 #   "none"      — each table is read in its own connection (parallel, default)
-#   "single_tx" — all tables read inside one read-only MySQL transaction (sequential)
+#   "single_tx" — all tables read inside one read-only transaction (sequential, MySQL only)
 source_snapshot_mode = "none"
 
 # Use UNLOGGED tables during bulk load, then SET LOGGED after
@@ -37,7 +37,7 @@ source_snapshot_mode = "none"
 # Default: false
 unlogged_tables = false
 
-# Preserve MySQL column DEFAULT values in the PostgreSQL schema
+# Preserve source column DEFAULT values in the PostgreSQL schema
 # When false (default), defaults are omitted from CREATE TABLE
 # Default: false
 preserve_defaults = false
@@ -58,28 +58,33 @@ replicate_on_update_current_timestamp = false
 
 # Parallel worker count for data streaming
 # Default: min(runtime.NumCPU, 8)
+# SQLite sources are capped at 1 worker regardless of this setting
 workers = 4
 
-[mysql]
-dsn = "user:pass@tcp(host:port)/dbname"
+# Source database configuration (required)
+[source]
+type = "mysql"                                       # "mysql" or "sqlite"
+dsn = "user:pass@tcp(host:port)/dbname"              # MySQL DSN
+# dsn = "/path/to/database.db"                       # SQLite file path
+# dsn = "file:/path/to/database.db?cache=shared"     # SQLite file URI
 
 [postgres]
 dsn = "postgres://user:pass@host:port/dbname?sslmode=disable"
 
 [type_mapping]
-tinyint1_as_boolean = false       # tinyint(1) → boolean instead of smallint
-binary16_as_uuid = false          # binary(16) → uuid instead of bytea
-datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp
+tinyint1_as_boolean = false       # tinyint(1) → boolean instead of smallint (MySQL only)
+binary16_as_uuid = false          # binary(16) → uuid instead of bytea (MySQL only)
+datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp (MySQL only)
 json_as_jsonb = false             # json → jsonb instead of json
 sanitize_json_null_bytes = true   # strip \x00 from JSON values (PG rejects them)
-unknown_as_text = false           # map unrecognized MySQL types to text instead of erroring
+unknown_as_text = false           # map unrecognized source types to text instead of erroring
 
-# Enum handling: "text" (default) stores as plain text;
-#                "check" stores as text with a CHECK constraint on allowed values
+# Enum handling (MySQL only): "text" (default) stores as plain text;
+#                              "check" stores as text with a CHECK constraint on allowed values
 enum_mode = "text"
 
-# Set handling: "text" (default) stores as comma-separated text;
-#               "text_array" stores as text[] (PostgreSQL array)
+# Set handling (MySQL only): "text" (default) stores as comma-separated text;
+#                             "text_array" stores as text[] (PostgreSQL array)
 set_mode = "text"
 
 [hooks]
@@ -91,6 +96,30 @@ after_all = []     # after everything (views, ANALYZE, etc.)
 
 See [Hooks](hooks.md) for details on the hook system.
 
+## SQLite DSN formats
+
+SQLite accepts file paths or file URIs. pgferry opens the database in **read-only mode**.
+
+| Format | Example | Notes |
+|---|---|---|
+| Plain path | `/data/app.db` | Normalized to `file:/data/app.db?mode=ro` |
+| Relative path | `./relative.db` | Normalized to `file:./relative.db?mode=ro` |
+| File URI | `file:/data/app.db?cache=shared` | `mode=ro` appended to existing params |
+
+**Not supported:** `:memory:`, `file::memory:`, `mode=memory` — pgferry requires a real file.
+
+## Source-specific constraints
+
+| Constraint | MySQL | SQLite |
+|---|---|---|
+| `source_snapshot_mode = "single_tx"` | Supported | Not supported (config error) |
+| Workers | Configurable (`workers` setting) | Always 1 (capped internally) |
+| `tinyint1_as_boolean` | Supported | Config error |
+| `binary16_as_uuid` | Supported | Config error |
+| `datetime_as_timestamptz` | Supported | Config error |
+| `enum_mode = "check"` | Supported | Config error |
+| `set_mode = "text_array"` | Supported | Config error |
+
 ## Validation rules
 
 pgferry validates the config at load time and reports errors before connecting to either database:
@@ -100,12 +129,14 @@ pgferry validates the config at load time and reports errors before connecting t
 | `schema` | Required, must be non-empty after trimming whitespace |
 | `on_schema_exists` | Must be `"error"` or `"recreate"` |
 | `source_snapshot_mode` | Must be `"none"` or `"single_tx"` |
+| `source.type` | Required, must be `"mysql"` or `"sqlite"` |
+| `source.dsn` | Required |
 | `type_mapping.enum_mode` | Must be `"text"` or `"check"` |
 | `type_mapping.set_mode` | Must be `"text"` or `"text_array"` |
 | `schema_only` + `data_only` | Mutually exclusive &mdash; cannot both be `true` |
-| `mysql.dsn` | Required |
 | `postgres.dsn` | Required |
-| `workers` | Defaults to `min(NumCPU, 8)` if &le; 0 |
+| `workers` | Defaults to `min(NumCPU, 8)` if &le; 0; capped at 1 for SQLite |
+| Source-specific type mappings | MySQL-only options rejected for SQLite sources |
 
 ## Defaults
 
