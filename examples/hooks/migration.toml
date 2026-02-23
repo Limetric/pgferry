@@ -11,7 +11,7 @@ replicate_on_update_current_timestamp = false
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
-[postgres]
+[target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 
 [type_mapping]

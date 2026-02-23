@@ -26,7 +26,7 @@ workers = 8
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/testdb"
 
-[postgres]
+[target]
 dsn = "postgres://user:pass@localhost:5432/testdb"
 
 [hooks]
@@ -50,8 +50,8 @@ after_all = ["post.sql"]
 	if cfg.Source.DSN != "root:root@tcp(127.0.0.1:3306)/testdb" {
 		t.Errorf("Source.DSN = %q", cfg.Source.DSN)
 	}
-	if cfg.Postgres.DSN != "postgres://user:pass@localhost:5432/testdb" {
-		t.Errorf("Postgres.DSN = %q", cfg.Postgres.DSN)
+	if cfg.Target.DSN != "postgres://user:pass@localhost:5432/testdb" {
+		t.Errorf("Postgres.DSN = %q", cfg.Target.DSN)
 	}
 	if cfg.Schema != "myschema" {
 		t.Errorf("Schema = %q, want %q", cfg.Schema, "myschema")
@@ -96,7 +96,7 @@ schema = "target"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	// on_schema_exists and workers omitted — defaults should apply
@@ -186,7 +186,7 @@ schema = "target"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
@@ -246,7 +246,7 @@ schema_only = true
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -278,7 +278,7 @@ data_only = true
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -311,7 +311,7 @@ data_only = true
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -336,7 +336,7 @@ workers = 0
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -381,7 +381,7 @@ func TestLoadConfig_MissingSchema(t *testing.T) {
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -405,7 +405,7 @@ schema = "   "
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -430,7 +430,7 @@ on_schema_exists = "merge"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -455,7 +455,7 @@ source_snapshot_mode = "repeatable_read"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -479,7 +479,7 @@ schema = "target"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
@@ -506,7 +506,7 @@ schema = "target"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
@@ -534,7 +534,7 @@ source_snapshot_mode = "single_tx"
 type = "sqlite"
 dsn = "/tmp/test.db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -559,7 +559,7 @@ workers = 8
 type = "sqlite"
 dsn = "/tmp/test.db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -587,7 +587,7 @@ schema = "target"
 type = "sqlite"
 dsn = "/tmp/test.db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
@@ -615,7 +615,7 @@ bogus_option = true
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
@@ -642,7 +642,7 @@ schema = "target"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
@@ -673,7 +673,7 @@ schema = "target"
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
-[postgres]
+[target]
 dsn = "postgres://u:p@h:5432/db"
 
 [advanced]

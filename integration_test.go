@@ -97,7 +97,7 @@ workers = 2
 type = "mysql"
 dsn = %q
 
-[postgres]
+[target]
 dsn = %q
 
 [hooks]
@@ -327,7 +327,7 @@ workers = 1
 type = "sqlite"
 dsn = %q
 
-[postgres]
+[target]
 dsn = %q
 `, pgSchema, sqliteFile, pgDSN)
 
@@ -896,7 +896,7 @@ workers = 4
 type = "mysql"
 dsn = %q
 
-[postgres]
+[target]
 dsn = %q
 
 [type_mapping]

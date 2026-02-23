@@ -75,7 +75,7 @@ dsn = "user:pass@tcp(host:port)/dbname"              # MySQL DSN
 # dsn = "/path/to/database.db"                       # SQLite file path
 # dsn = "file:/path/to/database.db?cache=shared"     # SQLite file URI
 
-[postgres]
+[target]
 dsn = "postgres://user:pass@host:port/dbname?sslmode=disable"
 
 [type_mapping]
@@ -143,7 +143,7 @@ pgferry validates the config at load time and reports errors before connecting t
 | `type_mapping.enum_mode` | Must be `"text"` or `"check"` |
 | `type_mapping.set_mode` | Must be `"text"` or `"text_array"` |
 | `schema_only` + `data_only` | Mutually exclusive &mdash; cannot both be `true` |
-| `postgres.dsn` | Required |
+| `target.dsn` | Required |
 | `workers` | Defaults to `min(NumCPU, 8)` if &le; 0; capped at 1 for SQLite |
 | Source-specific type mappings | MySQL-only options rejected for SQLite sources |
 

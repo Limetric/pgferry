@@ -163,7 +163,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 
 	// 3. Connect to PostgreSQL
 	log.Printf("connecting to PostgreSQL...")
-	pgPool, err := pgxpool.New(ctx, cfg.Postgres.DSN)
+	pgPool, err := pgxpool.New(ctx, cfg.Target.DSN)
 	if err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
 	}

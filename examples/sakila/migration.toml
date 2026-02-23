@@ -12,7 +12,7 @@ workers = 4
 type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/sakila"
 
-[postgres]
+[target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/sakila"
 
 [type_mapping]

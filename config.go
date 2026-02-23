@@ -13,7 +13,7 @@ import (
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
 	Source                            SourceConfig      `toml:"source"`
-	Postgres                          PostgresConfig    `toml:"postgres"`
+	Target                            TargetConfig      `toml:"target"`
 	Schema                            string            `toml:"schema"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
@@ -39,7 +39,7 @@ type SourceConfig struct {
 	DSN  string `toml:"dsn"`
 }
 
-type PostgresConfig struct {
+type TargetConfig struct {
 	DSN string `toml:"dsn"`
 }
 
@@ -160,8 +160,8 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		cfg.Workers = max
 	}
 
-	if cfg.Postgres.DSN == "" {
-		return nil, fmt.Errorf("postgres.dsn is required")
+	if cfg.Target.DSN == "" {
+		return nil, fmt.Errorf("target.dsn is required")
 	}
 
 	return &cfg, nil
