@@ -2,47 +2,17 @@
 
 A MySQL/SQLite-to-PostgreSQL migration CLI. Single binary, zero runtime dependencies.
 
-pgferry reads your source database schema, creates matching PostgreSQL tables, streams data
-in parallel via the COPY protocol, then wires up constraints, indexes, sequences,
-and (optionally) triggers.
-
-## Supported sources
+Reads your source schema, creates matching PostgreSQL tables, streams data in parallel via
+COPY, then wires up constraints, indexes, sequences, and (optionally) triggers.
 
 | Source | Driver | Workers | Snapshot mode |
 |---|---|---|---|
 | MySQL | `go-sql-driver/mysql` | Parallel (configurable) | `none`, `single_tx` |
-| SQLite | `modernc.org/sqlite` (pure Go, no CGO) | Sequential (1 worker) | `none` only |
-
-## How does this compare to pgloader?
-
-[pgloader](https://github.com/dimitri/pgloader) is a great tool and the
-go-to choice for many migrations. pgferry aims to be simpler to set up and
-more robust out of the box:
-
-- **Just works with MySQL 8.4+** &mdash; native support for `caching_sha2_password` auth
-- **Simple configuration** &mdash; a single TOML file with safe defaults instead of a custom DSL
-- **Flexible type mapping** &mdash; defaults are lossless, but you can opt into
-  coercions like `tinyint1_as_boolean`, `binary16_as_uuid`, `json_as_jsonb`,
-  enum-to-check-constraint, and more &mdash; useful for making the PostgreSQL
-  schema feel native rather than a 1:1 MySQL clone
-- **SQLite support** &mdash; migrate SQLite databases to PostgreSQL with the same
-  CLI and config format
-- **Configurable orphan cleanup** &mdash; detects and removes rows that would
-  violate FK constraints (on by default, disable with `clean_orphans = false`)
-- **SQL hooks** &mdash; run your own SQL at 4 phases (`before_data`, `after_data`,
-  `before_fk`, `after_all`) with `{{schema}}` templating
-- **CI-tested against real databases** &mdash; every change is verified with
-  integration tests against MySQL, SQLite, and PostgreSQL
-
-> We also maintain a [pgloader fork](https://github.com/Limetric/pgloader)
-> that patches some common upstream issues &mdash; worth a look if you need
-> pgloader-specific features.
+| SQLite | `modernc.org/sqlite` (pure Go) | Sequential (1 worker) | `none` only |
 
 ## Install
 
-Download the latest binary from the [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest) page.
-
-Or install with Go:
+Download the latest binary from the [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest) page, or:
 
 ```bash
 go install github.com/Limetric/pgferry@latest
@@ -50,7 +20,7 @@ go install github.com/Limetric/pgferry@latest
 
 ## Quick start
 
-### MySQL &rarr; PostgreSQL
+**MySQL &rarr; PostgreSQL**
 
 ```toml
 schema = "app"
@@ -63,7 +33,7 @@ dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
-### SQLite &rarr; PostgreSQL
+**SQLite &rarr; PostgreSQL**
 
 ```toml
 schema = "app"
@@ -76,76 +46,42 @@ dsn = "/path/to/database.db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
-Run the migration:
+Run:
 
 ```bash
 pgferry migration.toml
 ```
 
-That's it. pgferry will introspect your source database, create tables in
-PostgreSQL under the `app` schema, stream all data, then add primary keys,
-indexes, foreign keys, and auto-increment sequences.
+pgferry will introspect the source, create tables under the `app` schema, stream all data,
+then add primary keys, indexes, foreign keys, and auto-increment sequences.
 
-Check the binary version at any time with:
+## Why not pgloader?
 
-```bash
-pgferry --version
-# or
-pgferry version
-```
+[pgloader](https://github.com/dimitri/pgloader) is a great tool. pgferry aims to be
+simpler and more robust out of the box &mdash; native MySQL 8.4+ auth, a single TOML config
+instead of a custom DSL, flexible [type mapping](docs/type-mapping.md) coercions,
+[SQL hooks](docs/hooks.md), configurable orphan cleanup, and SQLite support.
 
-### SQLite DSN formats
-
-SQLite accepts file paths or file URIs:
-
-| Format | Example |
-|---|---|
-| Plain path | `/data/app.db`, `./relative.db` |
-| File URI | `file:/data/app.db?cache=shared` |
-
-In-memory databases (`:memory:`, `file::memory:`, `mode=memory`) are not supported &mdash;
-pgferry requires a real file to open in read-only mode.
+> We also maintain a [pgloader fork](https://github.com/Limetric/pgloader) that patches
+> common upstream issues.
 
 ## Examples
 
-The [`examples/`](examples/) directory contains ready-to-use configurations for
-common scenarios:
-
-| Example                                    | Description                                                                                                                       |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| [`minimal-safe`](examples/minimal-safe/)   | Conservative defaults &mdash; error if schema already exists, all type mappings lossless                                          |
-| [`recreate-fast`](examples/recreate-fast/) | Drops and recreates the target schema, uses `UNLOGGED` tables during bulk load for maximum throughput, 8 parallel workers         |
-| [`hooks`](examples/hooks/)                 | Demonstrates all 4 hook phases with example SQL files for extensions, ANALYZE, orphan cleanup, and post-migration views           |
-| [`sakila`](examples/sakila/)               | Full migration of the [Sakila sample database](https://dev.mysql.com/doc/sakila/en/) with orphan cleanup and post-migration views |
-| [`schema-only`](examples/schema-only/)     | Create the PostgreSQL schema (tables, PKs, indexes, FKs, sequences, triggers) without migrating any data                          |
-| [`data-only`](examples/data-only/)         | Stream data into an existing schema and reset sequences &mdash; use after a `schema_only` run                                     |
+The [`examples/`](examples/) directory has ready-to-use configs:
+[`minimal-safe`](examples/minimal-safe/),
+[`recreate-fast`](examples/recreate-fast/),
+[`hooks`](examples/hooks/),
+[`sakila`](examples/sakila/),
+[`schema-only`](examples/schema-only/),
+[`data-only`](examples/data-only/).
 
 ## Documentation
 
-| Topic                                            | Description                                            |
-| ------------------------------------------------ | ------------------------------------------------------ |
-| [Configuration](docs/configuration.md)           | All TOML settings, defaults, validation                |
-| [Type mapping](docs/type-mapping.md)             | Source&rarr;PG type tables, coercion options, edge cases |
-| [Migration pipeline](docs/migration-pipeline.md) | Step-by-step pipeline, modes, snapshots                |
-| [Hooks](docs/hooks.md)                           | 4-phase SQL hook system, templating                    |
-| [Conventions & limitations](docs/conventions.md) | Naming, orphan cleanup, unsupported features           |
-
-## Development
-
-```bash
-go build -o build/pgferry .          # build
-go vet ./...                         # lint
-go test ./... -count=1               # unit tests (no DB required)
-
-# integration tests — MySQL (requires MySQL on :3306 and PostgreSQL on :5432)
-MYSQL_DSN="root:root@tcp(127.0.0.1:3306)/pgferry_test" \
-POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
-go test -tags integration -count=1 -v ./...
-
-# integration tests — SQLite (requires only PostgreSQL on :5432)
-POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
-go test -tags integration -run TestIntegration_SQLite -count=1 -v ./...
-```
+- [Configuration](docs/configuration.md) &mdash; all TOML settings, defaults, validation
+- [Type mapping](docs/type-mapping.md) &mdash; source&rarr;PG type tables, coercion options
+- [Migration pipeline](docs/migration-pipeline.md) &mdash; step-by-step pipeline, modes, snapshots
+- [Hooks](docs/hooks.md) &mdash; 4-phase SQL hook system, templating
+- [Conventions & limitations](docs/conventions.md) &mdash; naming, orphan cleanup, unsupported features
 
 ## License
 
