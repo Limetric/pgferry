@@ -1,0 +1,45 @@
+name: OpenCode Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, labeled]
+
+jobs:
+  opencode-review:
+    if: github.event.action != 'labeled' || github.event.label.name == 'review'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: anomalyco/opencode/github@latest
+        id: review
+        env:
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: opencode/glm-5-free
+          prompt: |
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs
+            - Suggest improvements
+
+      - name: Remove review label
+        if: github.event.action == 'labeled'
+        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label review || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
