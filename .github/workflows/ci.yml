@@ -20,12 +20,28 @@ jobs:
       - run: go vet ./...
       - run: go test ./... -count=1
 
-  integration:
+  integration-mysql:
     runs-on: ubuntu-latest
     needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mysql: "5.7"
+            postgres: "14"
+          - mysql: "5.7"
+            postgres: "latest"
+          - mysql: "8.0"
+            postgres: "latest"
+          - mysql: "lts"
+            postgres: "17"
+          - mysql: "lts"
+            postgres: "latest"
+          - mysql: "latest"
+            postgres: "latest"
     services:
       mysql:
-        image: mysql:latest
+        image: mysql:${{ matrix.mysql }}
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: pgferry_test
@@ -37,7 +53,7 @@ jobs:
           --health-timeout=5s
           --health-retries=5
       postgres:
-        image: postgres:18
+        image: postgres:${{ matrix.postgres }}
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: pgferry_test
@@ -56,11 +72,40 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - run: go test -tags integration -count=1 -v ./...
+      - run: go test -tags integration -count=1 -v -run TestIntegration_MySQL ./...
+
+  integration-sqlite:
+    runs-on: ubuntu-latest
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ["14", "15", "16", "17", "18"]
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pgferry_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      POSTGRES_DSN: "postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go test -tags integration -count=1 -v -run TestIntegration_SQLite ./...
 
   build:
     runs-on: ubuntu-latest
-    needs: [test, integration]
+    needs: [test, integration-mysql, integration-sqlite]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
