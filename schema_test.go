@@ -11,8 +11,12 @@ func TestToSnakeCase(t *testing.T) {
 		{"chatMessages", "chat_messages"},
 		{"updatedAt", "updated_at"},
 		{"identifier", "identifier"},
-		{"IP", "i_p"},           // leading uppercase: no leading underscore
-		{"ABCDef", "a_b_c_def"}, // consecutive uppercase
+		{"IP", "ip"},                   // acronym stays together
+		{"ABCDef", "abc_def"},          // acronym + word
+		{"nameASCII", "name_ascii"},    // word + trailing acronym
+		{"HTMLParser", "html_parser"},  // leading acronym + word
+		{"getHTTPSUrl", "get_https_url"}, // multiple acronyms
+		{"getHTTPSURL", "get_httpsurl"},  // adjacent acronyms without lowercase boundary
 	}
 	for _, tt := range tests {
 		got := toSnakeCase(tt.in)

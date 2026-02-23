@@ -29,13 +29,23 @@ var pgReservedWords = map[string]bool{
 	"where": true, "window": true, "with": true,
 }
 
-// toSnakeCase converts camelCase to snake_case.
+// toSnakeCase converts camelCase/PascalCase to snake_case.
+// Consecutive uppercase runs are treated as acronyms:
+// "nameASCII" → "name_ascii", "HTMLParser" → "html_parser".
 func toSnakeCase(s string) string {
+	runes := []rune(s)
 	var result []byte
-	for i, r := range s {
+	for i, r := range runes {
 		if unicode.IsUpper(r) {
 			if i > 0 {
-				result = append(result, '_')
+				prev := runes[i-1]
+				if unicode.IsLower(prev) || unicode.IsDigit(prev) {
+					// lowercase/digit → uppercase boundary: "name|A"
+					result = append(result, '_')
+				} else if unicode.IsUpper(prev) && i+1 < len(runes) && unicode.IsLower(runes[i+1]) {
+					// uppercase run ending before lowercase: "HTM|L|Parser" → split before L
+					result = append(result, '_')
+				}
 			}
 			result = append(result, byte(unicode.ToLower(r)))
 		} else {
