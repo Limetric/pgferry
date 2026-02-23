@@ -12,7 +12,20 @@ import (
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
 
-type sqliteSourceDB struct{}
+type sqliteSourceDB struct {
+	snakeCaseIDs bool
+}
+
+func (s *sqliteSourceDB) SetSnakeCaseIdentifiers(enabled bool) { s.snakeCaseIDs = enabled }
+
+// identName converts a source identifier to its PostgreSQL name.
+// When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
+func (s *sqliteSourceDB) identName(name string) string {
+	if s.snakeCaseIDs {
+		return toSnakeCase(name)
+	}
+	return strings.ToLower(name)
+}
 
 func (s *sqliteSourceDB) Name() string { return "SQLite" }
 
@@ -58,7 +71,7 @@ func (s *sqliteSourceDB) ExtractDBName(dsn string) (string, error) {
 }
 
 func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error) {
-	tables, err := introspectSQLiteTables(db)
+	tables, err := introspectSQLiteTables(db, s.identName)
 	if err != nil {
 		return nil, fmt.Errorf("introspect tables: %w", err)
 	}
@@ -66,13 +79,13 @@ func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error)
 	for i := range tables {
 		t := &tables[i]
 
-		cols, autoIncrCols, err := introspectSQLiteColumns(db, t.SourceName)
+		cols, autoIncrCols, err := introspectSQLiteColumns(db, t.SourceName, s.identName)
 		if err != nil {
 			return nil, fmt.Errorf("introspect columns for %s: %w", t.SourceName, err)
 		}
 		t.Columns = cols
 
-		indexes, err := introspectSQLiteIndexes(db, t.SourceName)
+		indexes, err := introspectSQLiteIndexes(db, t.SourceName, s.identName)
 		if err != nil {
 			return nil, fmt.Errorf("introspect indexes for %s: %w", t.SourceName, err)
 		}
@@ -94,7 +107,7 @@ func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error)
 			}
 		}
 
-		fks, err := introspectSQLiteForeignKeys(db, t.SourceName)
+		fks, err := introspectSQLiteForeignKeys(db, t.SourceName, s.identName)
 		if err != nil {
 			return nil, fmt.Errorf("introspect foreign keys for %s: %w", t.SourceName, err)
 		}
@@ -214,7 +227,7 @@ func sqliteReadOnlyURI(dsn string) (string, error) {
 
 // --- Schema introspection ---
 
-func introspectSQLiteTables(db *sql.DB) ([]Table, error) {
+func introspectSQLiteTables(db *sql.DB, identName func(string) string) ([]Table, error) {
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
 	if err != nil {
 		return nil, err
@@ -229,13 +242,13 @@ func introspectSQLiteTables(db *sql.DB) ([]Table, error) {
 		}
 		tables = append(tables, Table{
 			SourceName: name,
-			PGName:     toSnakeCase(name),
+			PGName:     identName(name),
 		})
 	}
 	return tables, rows.Err()
 }
 
-func introspectSQLiteColumns(db *sql.DB, tableName string) ([]Column, map[string]bool, error) {
+func introspectSQLiteColumns(db *sql.DB, tableName string, identName func(string) string) ([]Column, map[string]bool, error) {
 	quotedTable := strings.ReplaceAll(tableName, "\"", "\"\"")
 	rows, err := db.Query(fmt.Sprintf("PRAGMA table_xinfo(\"%s\")", quotedTable))
 	if err != nil {
@@ -260,7 +273,7 @@ func introspectSQLiteColumns(db *sql.DB, tableName string) ([]Column, map[string
 
 		col := Column{
 			SourceName: name,
-			PGName:     toSnakeCase(name),
+			PGName:     identName(name),
 			DataType:   strings.ToLower(normalizeAffinity(colType)),
 			ColumnType: strings.ToLower(colType),
 			Nullable:   notnull == 0,
@@ -385,7 +398,7 @@ func detectSQLiteAutoIncrement(db *sql.DB, tableName string) map[string]bool {
 	return result
 }
 
-func introspectSQLiteIndexes(db *sql.DB, tableName string) ([]Index, error) {
+func introspectSQLiteIndexes(db *sql.DB, tableName string, identName func(string) string) ([]Index, error) {
 	rows, err := db.Query(fmt.Sprintf("PRAGMA index_list(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
 	if err != nil {
 		return nil, err
@@ -407,7 +420,7 @@ func introspectSQLiteIndexes(db *sql.DB, tableName string) ([]Index, error) {
 		}
 
 		idx := Index{
-			Name:       toSnakeCase(name),
+			Name:       identName(name),
 			SourceName: name,
 			Unique:     unique == 1,
 			IsPrimary:  false,
@@ -437,7 +450,7 @@ func introspectSQLiteIndexes(db *sql.DB, tableName string) ([]Index, error) {
 				idx.HasExpression = true
 				continue
 			}
-			idx.Columns = append(idx.Columns, toSnakeCase(colName.String))
+			idx.Columns = append(idx.Columns, identName(colName.String))
 			idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
 		}
 		colRows.Close()
@@ -449,7 +462,7 @@ func introspectSQLiteIndexes(db *sql.DB, tableName string) ([]Index, error) {
 	}
 
 	// Build PK from PRAGMA table_info pk column
-	pk, err := buildPKFromTableInfo(db, tableName)
+	pk, err := buildPKFromTableInfo(db, tableName, identName)
 	if err != nil {
 		return nil, err
 	}
@@ -460,7 +473,7 @@ func introspectSQLiteIndexes(db *sql.DB, tableName string) ([]Index, error) {
 	return indexes, nil
 }
 
-func buildPKFromTableInfo(db *sql.DB, tableName string) (*Index, error) {
+func buildPKFromTableInfo(db *sql.DB, tableName string, identName func(string) string) (*Index, error) {
 	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
 	if err != nil {
 		return nil, err
@@ -503,13 +516,13 @@ func buildPKFromTableInfo(db *sql.DB, tableName string) (*Index, error) {
 		Type:       "BTREE",
 	}
 	for _, pc := range pkCols {
-		idx.Columns = append(idx.Columns, toSnakeCase(pc.name))
+		idx.Columns = append(idx.Columns, identName(pc.name))
 		idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
 	}
 	return idx, nil
 }
 
-func introspectSQLiteForeignKeys(db *sql.DB, tableName string) ([]ForeignKey, error) {
+func introspectSQLiteForeignKeys(db *sql.DB, tableName string, identName func(string) string) ([]ForeignKey, error) {
 	rows, err := db.Query(fmt.Sprintf("PRAGMA foreign_key_list(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
 	if err != nil {
 		return nil, err
@@ -529,17 +542,17 @@ func introspectSQLiteForeignKeys(db *sql.DB, tableName string) ([]ForeignKey, er
 		fk, ok := fkMap[id]
 		if !ok {
 			fk = &ForeignKey{
-				Name:       fmt.Sprintf("fk_%s_%d", toSnakeCase(tableName), id),
+				Name:       fmt.Sprintf("fk_%s_%d", identName(tableName), id),
 				RefTable:   refTable,
-				RefPGTable: toSnakeCase(refTable),
+				RefPGTable: identName(refTable),
 				UpdateRule: strings.ToUpper(onUpdate),
 				DeleteRule: strings.ToUpper(onDelete),
 			}
 			fkMap[id] = fk
 			fkOrder = append(fkOrder, id)
 		}
-		fk.Columns = append(fk.Columns, toSnakeCase(from))
-		fk.RefColumns = append(fk.RefColumns, toSnakeCase(to))
+		fk.Columns = append(fk.Columns, identName(from))
+		fk.RefColumns = append(fk.RefColumns, identName(to))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

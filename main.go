@@ -74,6 +74,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
 
 	log.Printf("pgferry — %s → PostgreSQL migration", src.Name())
 	mode := "full"
@@ -83,7 +84,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t replicate_on_update_current_timestamp=%t",
+		"config: mode=%s workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t snake_case_identifiers=%t replicate_on_update_current_timestamp=%t",
 		mode,
 		cfg.Workers,
 		cfg.Schema,
@@ -92,6 +93,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		cfg.UnloggedTables,
 		cfg.PreserveDefaults,
 		cfg.AddUnsignedChecks,
+		cfg.SnakeCaseIdentifiers,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 	)
 

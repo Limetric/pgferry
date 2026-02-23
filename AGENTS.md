@@ -32,7 +32,7 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 
 **Migration pipeline** (orchestrated in `main.go:runMigration`):
 
-1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `replicate_on_update_current_timestamp=false`)
+1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `snake_case_identifiers=false`, `replicate_on_update_current_timestamp=false`)
 2. `src.IntrospectSchema` — source-specific schema introspection (tables, columns, indexes, FKs). Also reports source views/routines/triggers that require manual migration.
 3. `createTables` — columns only, no constraints (UNLOGGED only when enabled, defaults included by default; omitted when `preserve_defaults=false`)
 4. `loadAndExecSQLFiles` — before_data hooks
@@ -44,7 +44,7 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 
 ## Conventions
 
-- Source names are converted to snake_case via `toSnakeCase`; PostgreSQL reserved words are quoted via `pgIdent`
+- Source names are lowercased by default; when `snake_case_identifiers=true`, converted via `toSnakeCase`; PostgreSQL reserved words are quoted via `pgIdent`
 - Tables are created as regular logged tables by default; set `unlogged_tables=true` to use UNLOGGED during bulk load
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
 - `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`) — MySQL only

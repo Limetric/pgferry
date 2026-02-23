@@ -10,7 +10,20 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-type mysqlSourceDB struct{}
+type mysqlSourceDB struct {
+	snakeCaseIDs bool
+}
+
+func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
+
+// identName converts a source identifier to its PostgreSQL name.
+// When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
+func (m *mysqlSourceDB) identName(s string) string {
+	if m.snakeCaseIDs {
+		return toSnakeCase(s)
+	}
+	return strings.ToLower(s)
+}
 
 func (m *mysqlSourceDB) Name() string { return "MySQL" }
 
@@ -34,7 +47,7 @@ func (m *mysqlSourceDB) ExtractDBName(dsn string) (string, error) {
 }
 
 func (m *mysqlSourceDB) IntrospectSchema(db *sql.DB, dbName string) (*Schema, error) {
-	return introspectMySQLSchema(db, dbName)
+	return introspectMySQLSchema(db, dbName, m.identName)
 }
 
 func (m *mysqlSourceDB) IntrospectSourceObjects(db *sql.DB, dbName string) (*SourceObjects, error) {
@@ -64,8 +77,8 @@ func (m *mysqlSourceDB) ValidateTypeMapping(_ TypeMappingConfig) error { return 
 
 // --- Schema introspection (moved from schema.go) ---
 
-func introspectMySQLSchema(db *sql.DB, dbName string) (*Schema, error) {
-	tables, err := introspectMySQLTables(db, dbName)
+func introspectMySQLSchema(db *sql.DB, dbName string, identName func(string) string) (*Schema, error) {
+	tables, err := introspectMySQLTables(db, dbName, identName)
 	if err != nil {
 		return nil, fmt.Errorf("introspect tables: %w", err)
 	}
@@ -73,13 +86,13 @@ func introspectMySQLSchema(db *sql.DB, dbName string) (*Schema, error) {
 	for i := range tables {
 		t := &tables[i]
 
-		cols, err := introspectMySQLColumns(db, dbName, t.SourceName)
+		cols, err := introspectMySQLColumns(db, dbName, t.SourceName, identName)
 		if err != nil {
 			return nil, fmt.Errorf("introspect columns for %s: %w", t.SourceName, err)
 		}
 		t.Columns = cols
 
-		indexes, err := introspectMySQLIndexes(db, dbName, t.SourceName)
+		indexes, err := introspectMySQLIndexes(db, dbName, t.SourceName, identName)
 		if err != nil {
 			return nil, fmt.Errorf("introspect indexes for %s: %w", t.SourceName, err)
 		}
@@ -92,7 +105,7 @@ func introspectMySQLSchema(db *sql.DB, dbName string) (*Schema, error) {
 			}
 		}
 
-		fks, err := introspectMySQLForeignKeys(db, dbName, t.SourceName)
+		fks, err := introspectMySQLForeignKeys(db, dbName, t.SourceName, identName)
 		if err != nil {
 			return nil, fmt.Errorf("introspect foreign keys for %s: %w", t.SourceName, err)
 		}
@@ -102,7 +115,7 @@ func introspectMySQLSchema(db *sql.DB, dbName string) (*Schema, error) {
 	return &Schema{Tables: tables}, nil
 }
 
-func introspectMySQLTables(db *sql.DB, dbName string) ([]Table, error) {
+func introspectMySQLTables(db *sql.DB, dbName string, identName func(string) string) ([]Table, error) {
 	rows, err := db.Query(
 		`SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
 		 WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE'
@@ -122,13 +135,13 @@ func introspectMySQLTables(db *sql.DB, dbName string) ([]Table, error) {
 		}
 		tables = append(tables, Table{
 			SourceName: name,
-			PGName:     toSnakeCase(name),
+			PGName:     identName(name),
 		})
 	}
 	return tables, rows.Err()
 }
 
-func introspectMySQLColumns(db *sql.DB, dbName, tableName string) ([]Column, error) {
+func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func(string) string) ([]Column, error) {
 	rows, err := db.Query(
 		`SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE,
 		        COALESCE(CHARACTER_MAXIMUM_LENGTH, 0),
@@ -157,7 +170,7 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string) ([]Column, err
 		); err != nil {
 			return nil, err
 		}
-		c.PGName = toSnakeCase(c.SourceName)
+		c.PGName = identName(c.SourceName)
 		c.Nullable = nullable == "YES"
 		if dflt.Valid {
 			c.Default = &dflt.String
@@ -174,7 +187,7 @@ func isMySQLGeneratedColumn(col Column) bool {
 	return strings.Contains(extra, "virtual generated") || strings.Contains(extra, "stored generated")
 }
 
-func introspectMySQLIndexes(db *sql.DB, dbName, tableName string) ([]Index, error) {
+func introspectMySQLIndexes(db *sql.DB, dbName, tableName string, identName func(string) string) ([]Index, error) {
 	rows, err := db.Query(
 		`SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX, INDEX_TYPE, COLLATION, SUB_PART
 		 FROM INFORMATION_SCHEMA.STATISTICS
@@ -202,7 +215,7 @@ func introspectMySQLIndexes(db *sql.DB, dbName, tableName string) ([]Index, erro
 		idx, ok := indexMap[idxName]
 		if !ok {
 			idx = &Index{
-				Name:       toSnakeCase(idxName),
+				Name:       identName(idxName),
 				SourceName: idxName,
 				Unique:     nonUnique == 0,
 				IsPrimary:  idxName == "PRIMARY",
@@ -220,7 +233,7 @@ func introspectMySQLIndexes(db *sql.DB, dbName, tableName string) ([]Index, erro
 			continue
 		}
 
-		idx.Columns = append(idx.Columns, toSnakeCase(colName.String))
+		idx.Columns = append(idx.Columns, identName(colName.String))
 		if collation.Valid && strings.EqualFold(collation.String, "D") {
 			idx.ColumnOrders = append(idx.ColumnOrders, "DESC")
 		} else {
@@ -238,7 +251,7 @@ func introspectMySQLIndexes(db *sql.DB, dbName, tableName string) ([]Index, erro
 	return indexes, nil
 }
 
-func introspectMySQLForeignKeys(db *sql.DB, dbName, tableName string) ([]ForeignKey, error) {
+func introspectMySQLForeignKeys(db *sql.DB, dbName, tableName string, identName func(string) string) ([]ForeignKey, error) {
 	rows, err := db.Query(
 		`SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
 		        kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
@@ -269,17 +282,17 @@ func introspectMySQLForeignKeys(db *sql.DB, dbName, tableName string) ([]Foreign
 		fk, ok := fkMap[fkName]
 		if !ok {
 			fk = &ForeignKey{
-				Name:       toSnakeCase(fkName),
+				Name:       identName(fkName),
 				RefTable:   refTable,
-				RefPGTable: toSnakeCase(refTable),
+				RefPGTable: identName(refTable),
 				UpdateRule: updateRule,
 				DeleteRule: deleteRule,
 			}
 			fkMap[fkName] = fk
 			fkOrder = append(fkOrder, fkName)
 		}
-		fk.Columns = append(fk.Columns, toSnakeCase(colName))
-		fk.RefColumns = append(fk.RefColumns, toSnakeCase(refCol))
+		fk.Columns = append(fk.Columns, identName(colName))
+		fk.RefColumns = append(fk.RefColumns, identName(refCol))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

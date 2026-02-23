@@ -23,6 +23,7 @@ type MigrationConfig struct {
 	PreserveDefaults                  bool              `toml:"preserve_defaults"`
 	AddUnsignedChecks                 bool              `toml:"add_unsigned_checks"`
 	CleanOrphans                      bool              `toml:"clean_orphans"`
+	SnakeCaseIdentifiers              bool              `toml:"snake_case_identifiers"`
 	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
 	Workers                           int               `toml:"workers"`
 	Hooks                             HooksConfig       `toml:"hooks"`

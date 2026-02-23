@@ -31,6 +31,13 @@ data_only = false
 #   "single_tx" — all tables read inside one read-only transaction (sequential, MySQL only)
 source_snapshot_mode = "none"
 
+# Convert source identifiers to snake_case (e.g. userName → user_name)
+# snake_case is the de facto standard for PostgreSQL identifiers.
+# Enable this for idiomatic PG naming. When disabled, source names are
+# lowercased to match PostgreSQL's default case folding.
+# Default: false
+snake_case_identifiers = false
+
 # Use UNLOGGED tables during bulk load, then SET LOGGED after
 # Faster writes because WAL is skipped, but data is lost on crash during migration
 # Ignored when schema_only or data_only is true
@@ -145,6 +152,7 @@ Fields omitted from the TOML file use these defaults:
 | Field | Default |
 |---|---|
 | `on_schema_exists` | `"error"` |
+| `snake_case_identifiers` | `false` |
 | `schema_only` | `false` |
 | `data_only` | `false` |
 | `source_snapshot_mode` | `"none"` |

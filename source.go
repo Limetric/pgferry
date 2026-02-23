@@ -44,6 +44,10 @@ type SourceDB interface {
 
 	// ValidateTypeMapping checks for source-specific type mapping options that are invalid.
 	ValidateTypeMapping(typeMap TypeMappingConfig) error
+
+	// SetSnakeCaseIdentifiers enables or disables snake_case conversion for source identifiers.
+	// When false (default), identifiers are lowercased to match PostgreSQL's default case folding.
+	SetSnakeCaseIdentifiers(enabled bool)
 }
 
 // newSourceDB returns a SourceDB implementation for the given source type.

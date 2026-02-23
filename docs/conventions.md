@@ -2,8 +2,12 @@
 
 ## Naming
 
-Source database identifiers are converted to `snake_case` before creating PostgreSQL objects.
-For example, `parentUserId` becomes `parent_user_id`.
+By default, source database identifiers are lowercased to match PostgreSQL's default case folding.
+For example, `UserName` becomes `username`.
+
+When `snake_case_identifiers = true`, identifiers are converted to `snake_case` instead.
+For example, `parentUserId` becomes `parent_user_id`. This produces idiomatic PostgreSQL naming
+but changes identifier names, which may require application query updates.
 
 PostgreSQL reserved words are automatically double-quoted in all generated DDL.
 For example, a source column named `user` becomes `"user"` in PostgreSQL.
