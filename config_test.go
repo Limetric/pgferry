@@ -163,6 +163,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.TypeMapping.SetMode != "text" {
 		t.Errorf("default TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text")
 	}
+	if !cfg.TypeMapping.WidenUnsignedIntegers {
+		t.Errorf("default TypeMapping.WidenUnsignedIntegers = %t, want true", cfg.TypeMapping.WidenUnsignedIntegers)
+	}
 	if !cfg.TypeMapping.SanitizeJSONNullBytes {
 		t.Errorf("default TypeMapping.SanitizeJSONNullBytes = %t, want true", cfg.TypeMapping.SanitizeJSONNullBytes)
 	}

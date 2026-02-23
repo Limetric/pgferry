@@ -83,6 +83,7 @@ tinyint1_as_boolean = false       # tinyint(1) → boolean instead of smallint (
 binary16_as_uuid = false          # binary(16) → uuid instead of bytea (MySQL only)
 datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp (MySQL only)
 json_as_jsonb = false             # json → jsonb instead of json
+widen_unsigned_integers = true    # unsigned int → bigint; set false to keep as integer (MySQL only)
 sanitize_json_null_bytes = true   # strip \x00 from JSON values (PG rejects them)
 unknown_as_text = false           # map unrecognized source types to text instead of erroring
 
@@ -126,6 +127,7 @@ SQLite accepts file paths or file URIs. pgferry opens the database in **read-onl
 | `datetime_as_timestamptz` | Supported | Config error |
 | `enum_mode = "check"` | Supported | Config error |
 | `set_mode = "text_array"` | Supported | Config error |
+| `widen_unsigned_integers = false` | Supported | Config error |
 
 ## Validation rules
 
@@ -166,6 +168,7 @@ Fields omitted from the TOML file use these defaults:
 | `binary16_as_uuid` | `false` |
 | `datetime_as_timestamptz` | `false` |
 | `json_as_jsonb` | `false` |
+| `widen_unsigned_integers` | `true` |
 | `sanitize_json_null_bytes` | `true` |
 | `unknown_as_text` | `false` |
 | `enum_mode` | `"text"` |

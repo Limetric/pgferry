@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+func noWidenTypeMappingConfig() TypeMappingConfig {
+	cfg := defaultTypeMappingConfig()
+	cfg.WidenUnsignedIntegers = false
+	return cfg
+}
+
 func TestMapType(t *testing.T) {
 	tests := []struct {
 		name string
@@ -23,8 +29,11 @@ func TestMapType(t *testing.T) {
 		{"tinyint shape uses column_type over precision", Column{DataType: "tinyint", Precision: 1, ColumnType: "tinyint(2)"}, TypeMappingConfig{TinyInt1AsBoolean: true, SanitizeJSONNullBytes: true}, "smallint", false},
 		{"tinyint→smallint", Column{DataType: "tinyint", Precision: 3, ColumnType: "tinyint(3)"}, defaultTypeMappingConfig(), "smallint", false},
 		{"smallint unsigned→integer", Column{DataType: "smallint", ColumnType: "smallint unsigned"}, defaultTypeMappingConfig(), "integer", false},
+		{"smallint unsigned→smallint no-widen", Column{DataType: "smallint", ColumnType: "smallint unsigned"}, noWidenTypeMappingConfig(), "smallint", false},
 		{"int unsigned→bigint", Column{DataType: "int", ColumnType: "int unsigned"}, defaultTypeMappingConfig(), "bigint", false},
+		{"int unsigned→integer no-widen", Column{DataType: "int", ColumnType: "int unsigned"}, noWidenTypeMappingConfig(), "integer", false},
 		{"bigint unsigned→numeric20", Column{DataType: "bigint", ColumnType: "bigint unsigned"}, defaultTypeMappingConfig(), "numeric(20)", false},
+		{"bigint unsigned→bigint no-widen", Column{DataType: "bigint", ColumnType: "bigint unsigned"}, noWidenTypeMappingConfig(), "bigint", false},
 		{"mediumint→integer", Column{DataType: "mediumint", ColumnType: "mediumint"}, defaultTypeMappingConfig(), "integer", false},
 		{"bigint", Column{DataType: "bigint", ColumnType: "bigint"}, defaultTypeMappingConfig(), "bigint", false},
 		{"float→real", Column{DataType: "float", ColumnType: "float"}, defaultTypeMappingConfig(), "real", false},

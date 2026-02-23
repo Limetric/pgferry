@@ -58,6 +58,7 @@ type TypeMappingConfig struct {
 	JSONAsJSONB           bool   `toml:"json_as_jsonb"`
 	EnumMode              string `toml:"enum_mode"` // text|check
 	SetMode               string `toml:"set_mode"`  // text|text_array
+	WidenUnsignedIntegers bool   `toml:"widen_unsigned_integers"`
 	SanitizeJSONNullBytes bool   `toml:"sanitize_json_null_bytes"`
 	UnknownAsText         bool   `toml:"unknown_as_text"`
 }
@@ -184,6 +185,7 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		JSONAsJSONB:           false,
 		EnumMode:              "text",
 		SetMode:               "text",
+		WidenUnsignedIntegers: true,
 		SanitizeJSONNullBytes: true,
 		UnknownAsText:         false,
 	}

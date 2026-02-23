@@ -401,19 +401,19 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case col.DataType == "tinyint":
 		return "smallint", nil
 	case col.DataType == "smallint":
-		if isUnsigned {
+		if isUnsigned && typeMap.WidenUnsignedIntegers {
 			return "integer", nil
 		}
 		return "smallint", nil
 	case col.DataType == "mediumint":
 		return "integer", nil
 	case col.DataType == "int":
-		if isUnsigned {
+		if isUnsigned && typeMap.WidenUnsignedIntegers {
 			return "bigint", nil
 		}
 		return "integer", nil
 	case col.DataType == "bigint":
-		if isUnsigned {
+		if isUnsigned && typeMap.WidenUnsignedIntegers {
 			return "numeric(20)", nil
 		}
 		return "bigint", nil

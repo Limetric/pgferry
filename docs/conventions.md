@@ -106,6 +106,7 @@ automatically** and require manual recreation in PostgreSQL.
 - `enum_mode` and `set_mode` control enum/set handling
 - `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz` enable semantic coercions
 - `source_snapshot_mode = "single_tx"` enables consistent snapshots
+- Unsigned integers are widened by default (`widen_unsigned_integers = true`) to preserve the full range; set `false` to keep the original type size
 - Unsigned integer ranges can be enforced via `add_unsigned_checks`
 
 ### SQLite
