@@ -1,4 +1,4 @@
-module pgferry
+module github.com/Limetric/pgferry
 
 go 1.25.0
 
