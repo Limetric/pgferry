@@ -299,6 +299,83 @@ func TestGenerateCreateTable_CollateNotOnNonText(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_CIAsCitext(t *testing.T) {
+	table := Table{
+		PGName: "citext_demo",
+		Columns: []Column{
+			{PGName: "name", DataType: "varchar", CharMaxLen: 100, Nullable: false, Collation: "utf8mb4_general_ci"},
+			{PGName: "code", DataType: "varchar", CharMaxLen: 50, Nullable: false, Collation: "utf8mb4_bin"},
+			{PGName: "count", DataType: "int", Nullable: false, Collation: "utf8mb4_general_ci"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.CIAsCitext = true
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	// _ci text column → citext
+	if !strings.Contains(ddl, "name citext NOT NULL") {
+		t.Errorf("expected citext for _ci varchar column, got:\n%s", ddl)
+	}
+
+	// _bin text column → unchanged (varchar)
+	if strings.Contains(ddl, "code citext") {
+		t.Errorf("_bin column should not become citext, got:\n%s", ddl)
+	}
+
+	// non-text column → unchanged even with _ci collation
+	if strings.Contains(ddl, "count citext") {
+		t.Errorf("non-text column should not become citext, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_CIAsCitextDisabled(t *testing.T) {
+	table := Table{
+		PGName: "disabled_demo",
+		Columns: []Column{
+			{PGName: "name", DataType: "varchar", CharMaxLen: 100, Nullable: false, Collation: "utf8mb4_general_ci"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	// CIAsCitext defaults to false
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	if strings.Contains(ddl, "citext") {
+		t.Errorf("citext should not appear when ci_as_citext=false, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_CIAsCitextWithCollationMap(t *testing.T) {
+	table := Table{
+		PGName: "map_wins",
+		Columns: []Column{
+			{PGName: "title", DataType: "text", Nullable: true, Collation: "utf8mb4_general_ci"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.CIAsCitext = true
+	tm.CollationMap = map[string]string{
+		"utf8mb4_general_ci": "und-x-icu",
+	}
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	// collation_map takes precedence over citext
+	if strings.Contains(ddl, "citext") {
+		t.Errorf("collation_map should take precedence over ci_as_citext, got:\n%s", ddl)
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }

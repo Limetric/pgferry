@@ -117,6 +117,18 @@ automatically** and require manual recreation in PostgreSQL.
 - In-memory databases (`:memory:`) are not supported
 - The database is opened in read-only mode
 
+## Case-insensitive columns (citext)
+
+When `ci_as_citext = true` (MySQL only), text-like columns with `_ci` collations
+are mapped to PostgreSQL's `citext` type. This preserves case-insensitive
+semantics for comparisons, `UNIQUE` constraints, `GROUP BY`, and `ORDER BY`.
+
+The `citext` extension is created automatically (`CREATE EXTENSION IF NOT EXISTS citext`)
+before table creation.
+
+If a `_ci` collation has an explicit `collation_map` entry, the map takes precedence
+and the column retains its original type with a `COLLATE` clause.
+
 ## Enum handling
 
 Enum behavior is controlled by `type_mapping.enum_mode` (MySQL only):

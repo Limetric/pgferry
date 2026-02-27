@@ -207,6 +207,9 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if len(typeMap.CollationMap) > 0 {
 		errs = append(errs, "collation_map is a MySQL-only option")
 	}
+	if typeMap.CIAsCitext {
+		errs = append(errs, "ci_as_citext is a MySQL-only option")
+	}
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid type_mapping for SQLite source: %s", strings.Join(errs, "; "))
 	}

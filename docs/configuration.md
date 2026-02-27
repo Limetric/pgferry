@@ -104,9 +104,17 @@ set_mode = "text"
 #   "auto"  — emit COLLATE clauses for text columns based on source collation
 collation_mode = "none"
 
+# Map _ci (case-insensitive) text columns to PostgreSQL citext type (MySQL only).
+# citext provides true case-insensitive comparisons, UNIQUE, ORDER BY, etc.
+# Requires the citext extension (included in PostgreSQL contrib).
+# Default: false
+ci_as_citext = false
+
 # Map specific MySQL collations to PostgreSQL collations (MySQL only).
 # Only used when collation_mode = "auto". Keys are MySQL collation names,
 # values are PG collation names.
+# When both ci_as_citext and collation_map are set for the same collation,
+# collation_map takes precedence (user chose COLLATE over citext).
 # [type_mapping.collation_map]
 # utf8mb4_general_ci = "und-x-icu"
 # utf8mb4_unicode_ci = "und-x-icu"
@@ -148,6 +156,7 @@ SQLite accepts file paths or file URIs. pgferry opens the database in **read-onl
 | `widen_unsigned_integers = false` | Supported | Config error |
 | `collation_mode = "auto"` | Supported | Config error |
 | `collation_map` | Supported | Config error if non-empty |
+| `ci_as_citext` | Supported | Config error |
 
 ## Validation rules
 
@@ -198,4 +207,5 @@ Fields omitted from the TOML file use these defaults:
 | `set_mode` | `"text"` |
 | `collation_mode` | `"none"` |
 | `collation_map` | `nil` (empty) |
+| `ci_as_citext` | `false` |
 | `source.charset` | `"utf8mb4"` |

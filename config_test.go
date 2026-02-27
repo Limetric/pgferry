@@ -182,6 +182,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.TypeMapping.CollationMap != nil {
 		t.Errorf("default TypeMapping.CollationMap = %v, want nil", cfg.TypeMapping.CollationMap)
 	}
+	if cfg.TypeMapping.CIAsCitext {
+		t.Errorf("default TypeMapping.CIAsCitext = %t, want false", cfg.TypeMapping.CIAsCitext)
+	}
 	if cfg.Source.Charset != "utf8mb4" {
 		t.Errorf("default Source.Charset = %q, want %q", cfg.Source.Charset, "utf8mb4")
 	}

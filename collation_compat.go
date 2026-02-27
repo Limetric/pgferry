@@ -6,10 +6,45 @@ import (
 	"strings"
 )
 
+// isCICollation reports whether the collation name has a _ci suffix, indicating
+// case-insensitive behavior.
+func isCICollation(collation string) bool {
+	return strings.HasSuffix(strings.ToLower(collation), "_ci")
+}
+
+// ciCollationHandled reports whether a _ci collation is being handled (either
+// by ci_as_citext or by a collation_map entry), meaning warnings should be
+// suppressed.
+func ciCollationHandled(collation string, typeMap TypeMappingConfig) bool {
+	if _, mapped := typeMap.CollationMap[collation]; mapped {
+		return true
+	}
+	return typeMap.CIAsCitext
+}
+
+// pgTypeForCollation returns citext for text-like columns with _ci collations
+// when ci_as_citext is enabled. If the collation has an explicit collation_map
+// entry, the user chose COLLATE instead — return pgType unchanged.
+func pgTypeForCollation(col Column, pgType string, typeMap TypeMappingConfig) string {
+	if !typeMap.CIAsCitext {
+		return pgType
+	}
+	if !isCICollation(col.Collation) {
+		return pgType
+	}
+	if _, mapped := typeMap.CollationMap[col.Collation]; mapped {
+		return pgType
+	}
+	if !isTextLikePGType(pgType) {
+		return pgType
+	}
+	return "citext"
+}
+
 // collectCollationWarnings reports charset/collation information found in the
 // introspected schema. It warns about case-insensitive collations (_ci suffix)
-// that will become case-sensitive in PostgreSQL unless a collation_map entry
-// overrides them.
+// that will become case-sensitive in PostgreSQL unless handled by collation_map
+// or ci_as_citext.
 func collectCollationWarnings(schema *Schema, typeMap TypeMappingConfig) []string {
 	charsets := make(map[string]bool)
 	collations := make(map[string]bool)
@@ -42,11 +77,10 @@ func collectCollationWarnings(schema *Schema, typeMap TypeMappingConfig) []strin
 				continue
 			}
 			collations[col.Collation] = true
-			if strings.HasSuffix(strings.ToLower(col.Collation), "_ci") {
+			if isCICollation(col.Collation) {
 				ciCounts[col.Collation]++
 				if uniqueCols[col.PGName] {
-					// Check if user provided a mapping — if so, suppress unique index warning
-					if _, mapped := typeMap.CollationMap[col.Collation]; !mapped {
+					if !ciCollationHandled(col.Collation, typeMap) {
 						ciUniqueRefs[col.Collation] = append(ciUniqueRefs[col.Collation],
 							fmt.Sprintf("%s.%s", t.PGName, col.PGName))
 					}
@@ -71,8 +105,8 @@ func collectCollationWarnings(schema *Schema, typeMap TypeMappingConfig) []strin
 
 	// Warn about _ci collations (case-insensitive → case-sensitive in PG)
 	for _, coll := range sortedKeys(ciCounts) {
-		if _, mapped := typeMap.CollationMap[coll]; mapped {
-			continue // user provided a mapping; suppress warning
+		if ciCollationHandled(coll, typeMap) {
+			continue
 		}
 		warnings = append(warnings, fmt.Sprintf(
 			"%d column(s) use %s (case-insensitive); PostgreSQL text comparisons are case-sensitive by default",
@@ -103,6 +137,11 @@ func pgCollationClause(col Column, typeMap TypeMappingConfig) string {
 	// User-provided mapping takes precedence
 	if mapped, ok := typeMap.CollationMap[col.Collation]; ok {
 		return fmt.Sprintf(`COLLATE "%s"`, mapped)
+	}
+
+	// _ci columns handled by citext don't need a COLLATE clause
+	if typeMap.CIAsCitext && isCICollation(col.Collation) {
+		return ""
 	}
 
 	// _bin suffix → deterministic binary collation

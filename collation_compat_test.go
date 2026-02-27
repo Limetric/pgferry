@@ -218,6 +218,161 @@ func TestPgCollationClause_EmptyCollation(t *testing.T) {
 	}
 }
 
+func TestIsCICollation(t *testing.T) {
+	tests := []struct {
+		collation string
+		want      bool
+	}{
+		{"utf8mb4_general_ci", true},
+		{"utf8mb4_unicode_ci", true},
+		{"UTF8MB4_GENERAL_CI", true},
+		{"utf8mb4_bin", false},
+		{"latin1_swedish_ci", true},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.collation, func(t *testing.T) {
+			got := isCICollation(tt.collation)
+			if got != tt.want {
+				t.Errorf("isCICollation(%q) = %v, want %v", tt.collation, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPgTypeForCollation(t *testing.T) {
+	tests := []struct {
+		name    string
+		col     Column
+		pgType  string
+		typeMap TypeMappingConfig
+		want    string
+	}{
+		{
+			name:   "ci+enabled→citext",
+			col:    Column{Collation: "utf8mb4_general_ci"},
+			pgType: "text",
+			typeMap: TypeMappingConfig{CIAsCitext: true},
+			want:   "citext",
+		},
+		{
+			name:   "ci+enabled+varchar→citext",
+			col:    Column{Collation: "utf8mb4_general_ci"},
+			pgType: "varchar(255)",
+			typeMap: TypeMappingConfig{CIAsCitext: true},
+			want:   "citext",
+		},
+		{
+			name:   "ci+disabled→unchanged",
+			col:    Column{Collation: "utf8mb4_general_ci"},
+			pgType: "text",
+			typeMap: TypeMappingConfig{CIAsCitext: false},
+			want:   "text",
+		},
+		{
+			name:   "ci+collation_map→unchanged (map wins)",
+			col:    Column{Collation: "utf8mb4_general_ci"},
+			pgType: "text",
+			typeMap: TypeMappingConfig{
+				CIAsCitext:   true,
+				CollationMap: map[string]string{"utf8mb4_general_ci": "und-x-icu"},
+			},
+			want: "text",
+		},
+		{
+			name:   "non-ci→unchanged",
+			col:    Column{Collation: "utf8mb4_bin"},
+			pgType: "text",
+			typeMap: TypeMappingConfig{CIAsCitext: true},
+			want:   "text",
+		},
+		{
+			name:   "non-text→unchanged",
+			col:    Column{Collation: "utf8mb4_general_ci"},
+			pgType: "integer",
+			typeMap: TypeMappingConfig{CIAsCitext: true},
+			want:   "integer",
+		},
+		{
+			name:   "empty collation→unchanged",
+			col:    Column{Collation: ""},
+			pgType: "text",
+			typeMap: TypeMappingConfig{CIAsCitext: true},
+			want:   "text",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pgTypeForCollation(tt.col, tt.pgType, tt.typeMap)
+			if got != tt.want {
+				t.Errorf("pgTypeForCollation() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollectCollationWarnings_CIAsCitextSuppresses(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "users",
+				Columns: []Column{
+					{PGName: "name", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+					{PGName: "email", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+				},
+				Indexes: []Index{
+					{Name: "idx_email", Columns: []string{"email"}, Unique: true},
+				},
+			},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.CIAsCitext = true
+
+	warnings := collectCollationWarnings(schema, tm)
+
+	for _, w := range warnings {
+		if strings.Contains(w, "case-insensitive") {
+			t.Errorf("expected CI column count warning to be suppressed with ci_as_citext, got: %s", w)
+		}
+		if strings.Contains(w, "unique index/PK") {
+			t.Errorf("expected unique index CI warning to be suppressed with ci_as_citext, got: %s", w)
+		}
+	}
+}
+
+func TestCollectCollationWarnings_CIAsCitextPartialSuppression(t *testing.T) {
+	// When ci_as_citext is true but a specific collation has a collation_map entry,
+	// the map entry takes precedence (handled), so warnings for that collation are suppressed.
+	// A different _ci collation without a map entry is also suppressed by ci_as_citext.
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "t1",
+				Columns: []Column{
+					{PGName: "a", Collation: "utf8mb4_general_ci"},
+					{PGName: "b", Collation: "utf8mb4_unicode_ci"},
+				},
+			},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.CIAsCitext = true
+	tm.CollationMap = map[string]string{
+		"utf8mb4_general_ci": "und-x-icu",
+	}
+
+	warnings := collectCollationWarnings(schema, tm)
+
+	for _, w := range warnings {
+		if strings.Contains(w, "case-insensitive") {
+			t.Errorf("expected all CI warnings suppressed, got: %s", w)
+		}
+	}
+}
+
 func TestIsTextLikePGType(t *testing.T) {
 	tests := []struct {
 		pgType string

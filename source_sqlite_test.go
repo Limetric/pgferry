@@ -365,6 +365,15 @@ func TestSQLiteValidateTypeMapping(t *testing.T) {
 	if err := src.ValidateTypeMapping(tm); err == nil {
 		t.Fatal("expected error for collation_map with entries")
 	}
+
+	// ci_as_citext should fail
+	tm = defaultTypeMappingConfig()
+	tm.CIAsCitext = true
+	if err := src.ValidateTypeMapping(tm); err == nil {
+		t.Fatal("expected error for ci_as_citext")
+	} else if !strings.Contains(err.Error(), "ci_as_citext") {
+		t.Errorf("error should mention ci_as_citext, got: %v", err)
+	}
 }
 
 func TestSQLiteMapDefault(t *testing.T) {

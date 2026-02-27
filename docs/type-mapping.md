@@ -87,6 +87,7 @@ unknown_as_text = false           # unknown types → text (instead of error)
 enum_mode = "text"                # "text" or "check" (MySQL only)
 set_mode = "text"                 # "text" or "text_array" (MySQL only)
 collation_mode = "none"           # "none" or "auto" (MySQL only)
+ci_as_citext = false              # _ci text columns → citext (MySQL only)
 
 # Map MySQL collations to PG collations (used when collation_mode = "auto")
 # [type_mapping.collation_map]
@@ -139,6 +140,25 @@ is a minor overhead on every write. This is useful when the source length limits
 
 When disabled (the default), `char(n)` maps to `varchar(n)` rather than
 `char(n)` in PostgreSQL, following the pgloader convention to avoid padding issues.
+
+### Case-insensitive columns (citext)
+
+When `ci_as_citext = true`, MySQL text-like columns (`text`, `varchar(n)`,
+`char(n)`) that use a `_ci` (case-insensitive) collation are mapped to
+PostgreSQL's `citext` type instead of their default mapping. The `citext`
+extension (included in PostgreSQL contrib) provides true case-insensitive
+comparisons, `UNIQUE`, `GROUP BY`, and `ORDER BY` &mdash; a closer semantic
+match to MySQL's `_ci` collation behavior.
+
+pgferry runs `CREATE EXTENSION IF NOT EXISTS citext` before table creation
+when this option is enabled.
+
+If a `_ci` collation also has an entry in `collation_map`, the map entry takes
+precedence (the column keeps its original type with a `COLLATE` clause instead
+of becoming `citext`).
+
+Non-text columns (e.g. integers) are never affected, even if they carry a `_ci`
+collation in the MySQL schema.
 
 ### Set splitting
 

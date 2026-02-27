@@ -187,7 +187,15 @@ func runMigration(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		// 5. Create bare tables (no PKs, FKs, indexes)
+		// 5a. Create citext extension if needed
+		if cfg.TypeMapping.CIAsCitext {
+			log.Printf("ensuring citext extension...")
+			if err := ensureCitextExtension(ctx, pgPool); err != nil {
+				return err
+			}
+		}
+
+		// 5b. Create bare tables (no PKs, FKs, indexes)
 		log.Printf("creating tables...")
 		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
 			return fmt.Errorf("create tables: %w", err)
