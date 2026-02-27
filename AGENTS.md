@@ -5,10 +5,10 @@ Source database to PostgreSQL migration CLI. Supports MySQL and SQLite sources. 
 ## Commands
 
 ```bash
-go build -o build/pgferry .          # Build binary
-go vet ./...                   # Lint
-go test ./... -count=1         # Unit tests (no DB required)
-go test -run TestFoo ./...     # Run a single test
+go build -o build/pgferry ./src      # Build binary
+go vet ./...                          # Lint
+go test ./... -count=1                # Unit tests (no DB required)
+go test -run TestFoo ./...            # Run a single test
 
 # Integration tests — MySQL (requires MySQL on :3306 and PostgreSQL on :5432)
 MYSQL_DSN="root:root@tcp(127.0.0.1:3306)/pgferry_test" \
@@ -22,15 +22,15 @@ go test -tags integration -run TestIntegration_SQLite -count=1 -v ./...
 
 ## Architecture
 
-All source is in `package main` at the repo root. Single-binary CLI using Cobra.
+All source is in `package main` under the `src/` directory. Single-binary CLI using Cobra.
 
-**Source abstraction** (`source.go`): The `SourceDB` interface abstracts source-specific logic (introspection, type mapping, value transformation, identifier quoting). Implementations:
-- `source_mysql.go` — MySQL via `INFORMATION_SCHEMA`, backtick quoting, parallel workers
-- `source_sqlite.go` — SQLite via PRAGMAs, double-quote quoting, single worker (`MaxWorkers=1`)
+**Source abstraction** (`src/source.go`): The `SourceDB` interface abstracts source-specific logic (introspection, type mapping, value transformation, identifier quoting). Implementations:
+- `src/source_mysql.go` — MySQL via `INFORMATION_SCHEMA`, backtick quoting, parallel workers
+- `src/source_sqlite.go` — SQLite via PRAGMAs, double-quote quoting, single worker (`MaxWorkers=1`)
 
 Factory: `newSourceDB(sourceType string)` returns the correct implementation based on `[source].type`.
 
-**Migration pipeline** (orchestrated in `main.go:runMigration`):
+**Migration pipeline** (orchestrated in `src/main.go:runMigration`):
 
 1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `snake_case_identifiers=true`, `replicate_on_update_current_timestamp=false`)
 2. `src.IntrospectSchema` — source-specific schema introspection (tables, columns, indexes, FKs). Also reports source views/routines/triggers that require manual migration.
