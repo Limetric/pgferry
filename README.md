@@ -60,7 +60,8 @@ then add primary keys, indexes, foreign keys, and auto-increment sequences.
 [pgloader](https://github.com/dimitri/pgloader) is a great tool. pgferry aims to be
 simpler and more robust out of the box &mdash; native MySQL 8.4+ auth, a single TOML config
 instead of a custom DSL, flexible [type mapping](docs/type-mapping.md) coercions,
-[SQL hooks](docs/hooks.md), configurable orphan cleanup, and SQLite support.
+charset/collation awareness, [SQL hooks](docs/hooks.md), configurable orphan cleanup,
+and SQLite support.
 
 > We also maintain a [pgloader fork](https://github.com/Limetric/pgloader) that patches
 > common upstream issues.

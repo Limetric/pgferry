@@ -86,6 +86,11 @@ sanitize_json_null_bytes = true   # strip \x00 from JSON values
 unknown_as_text = false           # unknown types → text (instead of error)
 enum_mode = "text"                # "text" or "check" (MySQL only)
 set_mode = "text"                 # "text" or "text_array" (MySQL only)
+collation_mode = "none"           # "none" or "auto" (MySQL only)
+
+# Map MySQL collations to PG collations (used when collation_mode = "auto")
+# [type_mapping.collation_map]
+# utf8mb4_general_ci = "und-x-icu"
 ```
 
 ### Enum mode

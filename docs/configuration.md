@@ -74,6 +74,9 @@ type = "mysql"                                       # "mysql" or "sqlite"
 dsn = "user:pass@tcp(host:port)/dbname"              # MySQL DSN
 # dsn = "/path/to/database.db"                       # SQLite file path
 # dsn = "file:/path/to/database.db?cache=shared"     # SQLite file URI
+charset = "utf8mb4"                                  # MySQL connection charset (default: "utf8mb4")
+                                                     # Injected into DSN as charset= param unless already present
+                                                     # MySQL only — config error for SQLite if not "utf8mb4"
 
 [target]
 dsn = "postgres://user:pass@host:port/dbname?sslmode=disable"
@@ -95,6 +98,18 @@ enum_mode = "text"
 # Set handling (MySQL only): "text" (default) stores as comma-separated text;
 #                             "text_array" stores as text[] (PostgreSQL array)
 set_mode = "text"
+
+# Collation handling (MySQL only):
+#   "none"  (default) — no COLLATE clauses added; warnings are still reported
+#   "auto"  — emit COLLATE clauses for text columns based on source collation
+collation_mode = "none"
+
+# Map specific MySQL collations to PostgreSQL collations (MySQL only).
+# Only used when collation_mode = "auto". Keys are MySQL collation names,
+# values are PG collation names.
+# [type_mapping.collation_map]
+# utf8mb4_general_ci = "und-x-icu"
+# utf8mb4_unicode_ci = "und-x-icu"
 
 [hooks]
 before_data = []   # after table creation, before COPY
@@ -123,6 +138,7 @@ SQLite accepts file paths or file URIs. pgferry opens the database in **read-onl
 |---|---|---|
 | `source_snapshot_mode = "single_tx"` | Supported | Not supported (config error) |
 | Workers | Configurable (`workers` setting) | Always 1 (capped internally) |
+| `source.charset` | Supported (default `"utf8mb4"`) | Config error if not default |
 | `tinyint1_as_boolean` | Supported | Config error |
 | `binary16_as_uuid` | Supported | Config error |
 | `datetime_as_timestamptz` | Supported | Config error |
@@ -130,6 +146,8 @@ SQLite accepts file paths or file URIs. pgferry opens the database in **read-onl
 | `enum_mode = "check"` | Supported | Config error |
 | `set_mode = "text_array"` | Supported | Config error |
 | `widen_unsigned_integers = false` | Supported | Config error |
+| `collation_mode = "auto"` | Supported | Config error |
+| `collation_map` | Supported | Config error if non-empty |
 
 ## Validation rules
 
@@ -144,6 +162,8 @@ pgferry validates the config at load time and reports errors before connecting t
 | `source.dsn` | Required |
 | `type_mapping.enum_mode` | Must be `"text"` or `"check"` |
 | `type_mapping.set_mode` | Must be `"text"` or `"text_array"` |
+| `type_mapping.collation_mode` | Must be `"none"` or `"auto"` |
+| `source.charset` | MySQL-only; config error for SQLite if not `"utf8mb4"` |
 | `schema_only` + `data_only` | Mutually exclusive &mdash; cannot both be `true` |
 | `target.dsn` | Required |
 | `workers` | Defaults to `min(NumCPU, 8)` if &le; 0; capped at 1 for SQLite |
@@ -176,3 +196,6 @@ Fields omitted from the TOML file use these defaults:
 | `unknown_as_text` | `false` |
 | `enum_mode` | `"text"` |
 | `set_mode` | `"text"` |
+| `collation_mode` | `"none"` |
+| `collation_map` | `nil` (empty) |
+| `source.charset` | `"utf8mb4"` |

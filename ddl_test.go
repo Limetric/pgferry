@@ -220,6 +220,85 @@ func TestGenerateCreateTable_SetArrayDefault(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_CollateAutoWithBin(t *testing.T) {
+	table := Table{
+		PGName: "collation_demo",
+		Columns: []Column{
+			{PGName: "code", DataType: "varchar", CharMaxLen: 50, Nullable: false, Collation: "utf8mb4_bin"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, `COLLATE "C"`) {
+		t.Fatalf("expected COLLATE \"C\" for _bin collation, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_CollateModeNone(t *testing.T) {
+	table := Table{
+		PGName: "no_collate",
+		Columns: []Column{
+			{PGName: "name", DataType: "varchar", CharMaxLen: 100, Nullable: false, Collation: "utf8mb4_bin"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "none"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if strings.Contains(ddl, "COLLATE") {
+		t.Fatalf("expected no COLLATE when mode=none, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_CollateUserMap(t *testing.T) {
+	table := Table{
+		PGName: "mapped_collation",
+		Columns: []Column{
+			{PGName: "title", DataType: "text", Nullable: true, Collation: "utf8mb4_general_ci"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+	tm.CollationMap = map[string]string{
+		"utf8mb4_general_ci": "und-x-icu",
+	}
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, `COLLATE "und-x-icu"`) {
+		t.Fatalf("expected user-mapped COLLATE in DDL, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_CollateNotOnNonText(t *testing.T) {
+	table := Table{
+		PGName: "int_collation",
+		Columns: []Column{
+			{PGName: "count", DataType: "int", Nullable: false, Collation: "utf8mb4_bin"},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if strings.Contains(ddl, "COLLATE") {
+		t.Fatalf("COLLATE should not appear on non-text column, got:\n%s", ddl)
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }

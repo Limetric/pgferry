@@ -12,9 +12,11 @@ import (
 
 type mysqlSourceDB struct {
 	snakeCaseIDs bool
+	charset      string
 }
 
 func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
+func (m *mysqlSourceDB) SetCharset(charset string)            { m.charset = charset }
 
 // identName converts a source identifier to its PostgreSQL name.
 // When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
@@ -28,6 +30,15 @@ func (m *mysqlSourceDB) identName(s string) string {
 func (m *mysqlSourceDB) Name() string { return "MySQL" }
 
 func (m *mysqlSourceDB) OpenDB(dsn string) (*sql.DB, error) {
+	// Inject charset into DSN if not already present.
+	// The go-sql-driver/mysql driver natively parses charset= and sends SET NAMES on connect.
+	if m.charset != "" && !strings.Contains(dsn, "charset=") {
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn = dsn + sep + "charset=" + m.charset
+	}
 	cfg, err := mysql.ParseDSN(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse mysql dsn: %w", err)
@@ -147,7 +158,9 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 		        COALESCE(CHARACTER_MAXIMUM_LENGTH, 0),
 		        COALESCE(NUMERIC_PRECISION, 0),
 		        COALESCE(NUMERIC_SCALE, 0),
-		        IS_NULLABLE, COLUMN_DEFAULT, EXTRA, ORDINAL_POSITION
+		        IS_NULLABLE, COLUMN_DEFAULT, EXTRA, ORDINAL_POSITION,
+		        COALESCE(CHARACTER_SET_NAME, ''),
+		        COALESCE(COLLATION_NAME, '')
 		 FROM INFORMATION_SCHEMA.COLUMNS
 		 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		 ORDER BY ORDINAL_POSITION`,
@@ -167,6 +180,7 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 			&c.SourceName, &c.DataType, &c.ColumnType,
 			&c.CharMaxLen, &c.Precision, &c.Scale,
 			&nullable, &dflt, &c.Extra, &c.OrdinalPos,
+			&c.Charset, &c.Collation,
 		); err != nil {
 			return nil, err
 		}

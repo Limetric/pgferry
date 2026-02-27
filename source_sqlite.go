@@ -17,6 +17,7 @@ type sqliteSourceDB struct {
 }
 
 func (s *sqliteSourceDB) SetSnakeCaseIdentifiers(enabled bool) { s.snakeCaseIDs = enabled }
+func (s *sqliteSourceDB) SetCharset(_ string)                  {}
 
 // identName converts a source identifier to its PostgreSQL name.
 // When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
@@ -199,6 +200,12 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	}
 	if typeMap.SetMode != "text" {
 		errs = append(errs, fmt.Sprintf("set_mode=%q is a MySQL-only option", typeMap.SetMode))
+	}
+	if typeMap.CollationMode != "none" {
+		errs = append(errs, fmt.Sprintf("collation_mode=%q is a MySQL-only option", typeMap.CollationMode))
+	}
+	if len(typeMap.CollationMap) > 0 {
+		errs = append(errs, "collation_map is a MySQL-only option")
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid type_mapping for SQLite source: %s", strings.Join(errs, "; "))

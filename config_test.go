@@ -176,6 +176,15 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.TypeMapping.UnknownAsText {
 		t.Errorf("default TypeMapping.UnknownAsText = %t, want false", cfg.TypeMapping.UnknownAsText)
 	}
+	if cfg.TypeMapping.CollationMode != "none" {
+		t.Errorf("default TypeMapping.CollationMode = %q, want %q", cfg.TypeMapping.CollationMode, "none")
+	}
+	if cfg.TypeMapping.CollationMap != nil {
+		t.Errorf("default TypeMapping.CollationMap = %v, want nil", cfg.TypeMapping.CollationMap)
+	}
+	if cfg.Source.Charset != "utf8mb4" {
+		t.Errorf("default Source.Charset = %q, want %q", cfg.Source.Charset, "utf8mb4")
+	}
 }
 
 func TestLoadConfig_TypeMappingOverride(t *testing.T) {
@@ -607,6 +616,188 @@ tinyint1_as_boolean = true
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for MySQL-only type mapping option with SQLite source")
+	}
+}
+
+func TestLoadConfig_InvalidCollationMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_collation_mode.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+collation_mode = "strict"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid collation_mode")
+	}
+	if !strings.Contains(err.Error(), "collation_mode") {
+		t.Errorf("error should mention collation_mode, got: %v", err)
+	}
+}
+
+func TestLoadConfig_CollationMapParsed(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "collation_map.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+collation_mode = "auto"
+
+[type_mapping.collation_map]
+utf8mb4_general_ci = "und-x-icu"
+utf8mb4_unicode_ci = "und-x-icu"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.TypeMapping.CollationMode != "auto" {
+		t.Errorf("CollationMode = %q, want %q", cfg.TypeMapping.CollationMode, "auto")
+	}
+	if len(cfg.TypeMapping.CollationMap) != 2 {
+		t.Fatalf("CollationMap length = %d, want 2", len(cfg.TypeMapping.CollationMap))
+	}
+	if cfg.TypeMapping.CollationMap["utf8mb4_general_ci"] != "und-x-icu" {
+		t.Errorf("CollationMap[utf8mb4_general_ci] = %q", cfg.TypeMapping.CollationMap["utf8mb4_general_ci"])
+	}
+}
+
+func TestLoadConfig_SourceCharsetOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "charset.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+charset = "latin1"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.Source.Charset != "latin1" {
+		t.Errorf("Source.Charset = %q, want %q", cfg.Source.Charset, "latin1")
+	}
+}
+
+func TestLoadConfig_SQLiteCharsetRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_charset.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+charset = "latin1"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for SQLite + charset override")
+	}
+	if !strings.Contains(err.Error(), "MySQL-only") {
+		t.Errorf("error should mention MySQL-only, got: %v", err)
+	}
+}
+
+func TestLoadConfig_SQLiteCollationModeRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_collation_mode.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+collation_mode = "auto"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for SQLite + collation_mode=auto")
+	}
+}
+
+func TestLoadConfig_SQLiteCollationMapRejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_collation_map.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping.collation_map]
+utf8mb4_general_ci = "und-x-icu"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for SQLite + collation_map")
 	}
 }
 

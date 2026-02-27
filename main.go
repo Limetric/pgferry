@@ -75,6 +75,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
+	src.SetCharset(cfg.Source.Charset)
 
 	log.Printf("pgferry — %s → PostgreSQL migration", src.Name())
 	mode := "full"
@@ -142,6 +143,12 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 	if warnings := collectGeneratedColumnWarnings(schema); len(warnings) > 0 {
 		log.Printf("generated column report: %d generated column(s) need manual expression migration", len(warnings))
+		for _, w := range warnings {
+			log.Printf("  WARN: %s", w)
+		}
+	}
+	if warnings := collectCollationWarnings(schema, cfg.TypeMapping); len(warnings) > 0 {
+		log.Printf("charset/collation report:")
 		for _, w := range warnings {
 			log.Printf("  WARN: %s", w)
 		}

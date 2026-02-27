@@ -41,6 +41,12 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 		}
 		fmt.Fprintf(&b, "  %s %s", pgIdent(col.PGName), pgType)
 
+		if isTextLikePGType(pgType) {
+			if collate := pgCollationClause(col, typeMap); collate != "" {
+				fmt.Fprintf(&b, " %s", collate)
+			}
+		}
+
 		if preserveDefaults && col.Default != nil {
 			dflt, err := src.MapDefault(col, pgType, typeMap)
 			if err != nil {

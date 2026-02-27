@@ -1,0 +1,247 @@
+package main
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestCollectCollationWarnings_EmptySchema(t *testing.T) {
+	schema := &Schema{}
+	warnings := collectCollationWarnings(schema, defaultTypeMappingConfig())
+	if len(warnings) != 0 {
+		t.Errorf("expected 0 warnings for empty schema, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestCollectCollationWarnings_CIWarnings(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "users",
+				Columns: []Column{
+					{PGName: "name", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+					{PGName: "email", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+					{PGName: "id", Charset: "", Collation: ""},
+				},
+			},
+		},
+	}
+
+	warnings := collectCollationWarnings(schema, defaultTypeMappingConfig())
+
+	// Should have: charset summary, collation summary, _ci warning
+	var hasCIWarning bool
+	for _, w := range warnings {
+		if strings.Contains(w, "utf8mb4_general_ci") && strings.Contains(w, "case-insensitive") {
+			hasCIWarning = true
+			// Should report 2 columns
+			if !strings.Contains(w, "2 column(s)") {
+				t.Errorf("expected 2 columns in CI warning, got: %s", w)
+			}
+		}
+	}
+	if !hasCIWarning {
+		t.Errorf("expected CI collation warning, got: %v", warnings)
+	}
+}
+
+func TestCollectCollationWarnings_CIDeduplicated(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "t1",
+				Columns: []Column{
+					{PGName: "a", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+				},
+			},
+			{
+				PGName: "t2",
+				Columns: []Column{
+					{PGName: "b", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+				},
+			},
+		},
+	}
+
+	warnings := collectCollationWarnings(schema, defaultTypeMappingConfig())
+
+	// Should have exactly one _ci warning for utf8mb4_general_ci, not two
+	ciCount := 0
+	for _, w := range warnings {
+		if strings.Contains(w, "case-insensitive") {
+			ciCount++
+		}
+	}
+	if ciCount != 1 {
+		t.Errorf("expected 1 deduplicated CI warning, got %d: %v", ciCount, warnings)
+	}
+}
+
+func TestCollectCollationWarnings_MappedCISuppressed(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "users",
+				Columns: []Column{
+					{PGName: "name", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+				},
+			},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.CollationMap = map[string]string{
+		"utf8mb4_general_ci": "und-x-icu",
+	}
+
+	warnings := collectCollationWarnings(schema, tm)
+
+	for _, w := range warnings {
+		if strings.Contains(w, "case-insensitive") {
+			t.Errorf("expected CI warning to be suppressed when mapped, got: %s", w)
+		}
+	}
+}
+
+func TestCollectCollationWarnings_UniqueIndexCI(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "users",
+				Columns: []Column{
+					{PGName: "email", Charset: "utf8mb4", Collation: "utf8mb4_unicode_ci"},
+				},
+				Indexes: []Index{
+					{Name: "idx_email", Columns: []string{"email"}, Unique: true},
+				},
+			},
+		},
+	}
+
+	warnings := collectCollationWarnings(schema, defaultTypeMappingConfig())
+
+	var hasUniqueWarning bool
+	for _, w := range warnings {
+		if strings.Contains(w, "unique index/PK") && strings.Contains(w, "users.email") {
+			hasUniqueWarning = true
+		}
+	}
+	if !hasUniqueWarning {
+		t.Errorf("expected unique index CI warning, got: %v", warnings)
+	}
+}
+
+func TestCollectCollationWarnings_PKColumnCI(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "tags",
+				PrimaryKey: &Index{
+					Columns: []string{"slug"},
+					Unique:  true,
+				},
+				Columns: []Column{
+					{PGName: "slug", Charset: "utf8mb4", Collation: "utf8mb4_general_ci"},
+				},
+			},
+		},
+	}
+
+	warnings := collectCollationWarnings(schema, defaultTypeMappingConfig())
+
+	var hasPKWarning bool
+	for _, w := range warnings {
+		if strings.Contains(w, "unique index/PK") && strings.Contains(w, "tags.slug") {
+			hasPKWarning = true
+		}
+	}
+	if !hasPKWarning {
+		t.Errorf("expected PK CI warning, got: %v", warnings)
+	}
+}
+
+func TestPgCollationClause_ModeNone(t *testing.T) {
+	col := Column{Collation: "utf8mb4_bin"}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "none"
+
+	got := pgCollationClause(col, tm)
+	if got != "" {
+		t.Errorf("expected empty for mode=none, got %q", got)
+	}
+}
+
+func TestPgCollationClause_AutoBin(t *testing.T) {
+	col := Column{Collation: "utf8mb4_bin"}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+
+	got := pgCollationClause(col, tm)
+	if got != `COLLATE "C"` {
+		t.Errorf("expected COLLATE \"C\" for _bin, got %q", got)
+	}
+}
+
+func TestPgCollationClause_AutoCINoMap(t *testing.T) {
+	col := Column{Collation: "utf8mb4_general_ci"}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+
+	got := pgCollationClause(col, tm)
+	if got != "" {
+		t.Errorf("expected empty for _ci without map, got %q", got)
+	}
+}
+
+func TestPgCollationClause_AutoMapped(t *testing.T) {
+	col := Column{Collation: "utf8mb4_general_ci"}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+	tm.CollationMap = map[string]string{
+		"utf8mb4_general_ci": "und-x-icu",
+	}
+
+	got := pgCollationClause(col, tm)
+	if got != `COLLATE "und-x-icu"` {
+		t.Errorf("expected COLLATE \"und-x-icu\", got %q", got)
+	}
+}
+
+func TestPgCollationClause_EmptyCollation(t *testing.T) {
+	col := Column{Collation: ""}
+	tm := defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+
+	got := pgCollationClause(col, tm)
+	if got != "" {
+		t.Errorf("expected empty for no collation, got %q", got)
+	}
+}
+
+func TestIsTextLikePGType(t *testing.T) {
+	tests := []struct {
+		pgType string
+		want   bool
+	}{
+		{"text", true},
+		{"varchar(255)", true},
+		{"varchar(50)", true},
+		{"char(1)", true},
+		{"integer", false},
+		{"bigint", false},
+		{"bytea", false},
+		{"boolean", false},
+		{"json", false},
+		{"jsonb", false},
+		{"numeric(10,2)", false},
+		{"text[]", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.pgType, func(t *testing.T) {
+			got := isTextLikePGType(tt.pgType)
+			if got != tt.want {
+				t.Errorf("isTextLikePGType(%q) = %v, want %v", tt.pgType, got, tt.want)
+			}
+		})
+	}
+}

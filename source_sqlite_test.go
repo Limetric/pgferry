@@ -351,6 +351,20 @@ func TestSQLiteValidateTypeMapping(t *testing.T) {
 	if err := src.ValidateTypeMapping(tm); err == nil {
 		t.Fatal("expected error for binary16_as_uuid")
 	}
+
+	// collation_mode="auto" should fail
+	tm = defaultTypeMappingConfig()
+	tm.CollationMode = "auto"
+	if err := src.ValidateTypeMapping(tm); err == nil {
+		t.Fatal("expected error for collation_mode=auto")
+	}
+
+	// collation_map with entries should fail
+	tm = defaultTypeMappingConfig()
+	tm.CollationMap = map[string]string{"utf8mb4_general_ci": "und-x-icu"}
+	if err := src.ValidateTypeMapping(tm); err == nil {
+		t.Fatal("expected error for collation_map with entries")
+	}
 }
 
 func TestSQLiteMapDefault(t *testing.T) {

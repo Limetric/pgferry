@@ -35,8 +35,9 @@ type MigrationConfig struct {
 
 // SourceConfig identifies the source database engine and connection string.
 type SourceConfig struct {
-	Type string `toml:"type"` // "mysql" or "sqlite"
-	DSN  string `toml:"dsn"`
+	Type    string `toml:"type"`    // "mysql" or "sqlite"
+	DSN     string `toml:"dsn"`
+	Charset string `toml:"charset"` // character set for MySQL connection (default: "utf8mb4")
 }
 
 type TargetConfig struct {
@@ -52,16 +53,18 @@ type HooksConfig struct {
 
 // TypeMappingConfig controls non-lossless type coercions.
 type TypeMappingConfig struct {
-	TinyInt1AsBoolean     bool   `toml:"tinyint1_as_boolean"`
-	Binary16AsUUID        bool   `toml:"binary16_as_uuid"`
-	DatetimeAsTimestamptz bool   `toml:"datetime_as_timestamptz"`
-	JSONAsJSONB           bool   `toml:"json_as_jsonb"`
-	EnumMode              string `toml:"enum_mode"` // text|check
-	SetMode               string `toml:"set_mode"`  // text|text_array
-	WidenUnsignedIntegers bool   `toml:"widen_unsigned_integers"`
-	VarcharAsText         bool   `toml:"varchar_as_text"`
-	SanitizeJSONNullBytes bool   `toml:"sanitize_json_null_bytes"`
-	UnknownAsText         bool   `toml:"unknown_as_text"`
+	TinyInt1AsBoolean     bool              `toml:"tinyint1_as_boolean"`
+	Binary16AsUUID        bool              `toml:"binary16_as_uuid"`
+	DatetimeAsTimestamptz bool              `toml:"datetime_as_timestamptz"`
+	JSONAsJSONB           bool              `toml:"json_as_jsonb"`
+	EnumMode              string            `toml:"enum_mode"` // text|check
+	SetMode               string            `toml:"set_mode"`  // text|text_array
+	WidenUnsignedIntegers bool              `toml:"widen_unsigned_integers"`
+	VarcharAsText         bool              `toml:"varchar_as_text"`
+	SanitizeJSONNullBytes bool              `toml:"sanitize_json_null_bytes"`
+	UnknownAsText         bool              `toml:"unknown_as_text"`
+	CollationMode         string            `toml:"collation_mode"` // none|auto
+	CollationMap          map[string]string `toml:"collation_map"`  // MySQL collation → PG collation overrides
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -129,6 +132,11 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	default:
 		return nil, fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
 	}
+	switch cfg.TypeMapping.CollationMode {
+	case "none", "auto":
+	default:
+		return nil, fmt.Errorf("type_mapping.collation_mode must be one of: none, auto")
+	}
 
 	if cfg.SchemaOnly && cfg.DataOnly {
 		return nil, fmt.Errorf("schema_only and data_only are mutually exclusive")
@@ -142,6 +150,9 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.Source.Charset == "" {
+		cfg.Source.Charset = "utf8mb4"
+	}
 	if cfg.Source.DSN == "" {
 		return nil, fmt.Errorf("source.dsn is required")
 	}
@@ -149,6 +160,11 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	// Source-specific snapshot validation
 	if cfg.SourceSnapshotMode == "single_tx" && !src.SupportsSnapshotMode() {
 		return nil, fmt.Errorf("source_snapshot_mode \"single_tx\" is not supported for %s sources", cfg.Source.Type)
+	}
+
+	// Source-specific charset validation (charset is MySQL-only)
+	if cfg.Source.Type == "sqlite" && cfg.Source.Charset != "utf8mb4" {
+		return nil, fmt.Errorf("source.charset is a MySQL-only option")
 	}
 
 	// Source-specific type mapping validation
@@ -198,5 +214,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		WidenUnsignedIntegers: true,
 		SanitizeJSONNullBytes: true,
 		UnknownAsText:         false,
+		CollationMode:         "none",
 	}
 }

@@ -13,6 +13,8 @@ type Column struct {
 	Default    *string
 	Extra      string // e.g. "auto_increment", "on update CURRENT_TIMESTAMP"
 	OrdinalPos int
+	Charset    string // e.g. "utf8mb4" — MySQL only, zero-value for SQLite
+	Collation  string // e.g. "utf8mb4_general_ci" — MySQL only, zero-value for SQLite
 }
 
 // Index represents a source database index (may span multiple columns).
