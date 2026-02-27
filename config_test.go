@@ -170,6 +170,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if !cfg.TypeMapping.SanitizeJSONNullBytes {
 		t.Errorf("default TypeMapping.SanitizeJSONNullBytes = %t, want true", cfg.TypeMapping.SanitizeJSONNullBytes)
 	}
+	if cfg.TypeMapping.VarcharAsText {
+		t.Errorf("default TypeMapping.VarcharAsText = %t, want false", cfg.TypeMapping.VarcharAsText)
+	}
 	if cfg.TypeMapping.UnknownAsText {
 		t.Errorf("default TypeMapping.UnknownAsText = %t, want false", cfg.TypeMapping.UnknownAsText)
 	}
@@ -194,6 +197,7 @@ tinyint1_as_boolean = true
 binary16_as_uuid = true
 datetime_as_timestamptz = true
 json_as_jsonb = true
+varchar_as_text = true
 enum_mode = "check"
 set_mode = "text_array"
 sanitize_json_null_bytes = false
@@ -225,6 +229,9 @@ unknown_as_text = true
 	}
 	if cfg.TypeMapping.SetMode != "text_array" {
 		t.Errorf("TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text_array")
+	}
+	if !cfg.TypeMapping.VarcharAsText {
+		t.Errorf("TypeMapping.VarcharAsText = %t, want true", cfg.TypeMapping.VarcharAsText)
 	}
 	if cfg.TypeMapping.SanitizeJSONNullBytes {
 		t.Errorf("TypeMapping.SanitizeJSONNullBytes = %t, want false", cfg.TypeMapping.SanitizeJSONNullBytes)

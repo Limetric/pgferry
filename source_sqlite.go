@@ -188,6 +188,9 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if typeMap.DatetimeAsTimestamptz {
 		errs = append(errs, "datetime_as_timestamptz is a MySQL-only option")
 	}
+	if typeMap.VarcharAsText {
+		errs = append(errs, "varchar_as_text is a MySQL-only option")
+	}
 	if !typeMap.WidenUnsignedIntegers {
 		errs = append(errs, "widen_unsigned_integers is a MySQL-only option")
 	}

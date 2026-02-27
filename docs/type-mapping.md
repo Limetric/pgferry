@@ -16,8 +16,8 @@ pgferry defaults to conservative, lossless type conversions. Semantic mappings
 | `float` | `real` | | |
 | `double` | `double precision` | | |
 | `decimal(p,s)` | `numeric(p,s)` | | |
-| `varchar(n)` | `varchar(n)` | | |
-| `char(n)` | `varchar(n)` | | |
+| `varchar(n)` | `varchar(n)` | `text` | `varchar_as_text` |
+| `char(n)` | `varchar(n)` | `text` | `varchar_as_text` |
 | `tinytext` | `text` | | |
 | `text` | `text` | | |
 | `mediumtext` | `text` | | |
@@ -69,7 +69,7 @@ instead of aborting.
 
 - **No unsigned integers**: SQLite has no unsigned concept, so `add_unsigned_checks` has no effect.
 - **No enums or sets**: SQLite has no native enum or set types, so `enum_mode` and `set_mode` must remain at their defaults (`"text"`).
-- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `enum_mode = "check"`, and `set_mode = "text_array"` produce a config error when used with a SQLite source.
+- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `varchar_as_text`, `enum_mode = "check"`, and `set_mode = "text_array"` produce a config error when used with a SQLite source.
 
 ## Type mapping options
 
@@ -80,6 +80,7 @@ All options live under `[type_mapping]` in your TOML config:
 tinyint1_as_boolean = false       # tinyint(1) → boolean (MySQL only)
 binary16_as_uuid = false          # binary(16) → uuid (MySQL only)
 datetime_as_timestamptz = false   # datetime → timestamptz (MySQL only)
+varchar_as_text = false           # varchar(n)/char(n) → text (MySQL only)
 json_as_jsonb = false             # json → jsonb
 sanitize_json_null_bytes = true   # strip \x00 from JSON values
 unknown_as_text = false           # unknown types → text (instead of error)
@@ -123,10 +124,16 @@ When `tinyint1_as_boolean = true`, `tinyint(1)` columns are mapped to `boolean`.
 Values `0` become `false` and non-zero values become `true`. All other `tinyint`
 sizes remain `smallint`.
 
-### Char &rarr; varchar
+### Varchar/char &rarr; text
 
-MySQL `char(n)` columns are mapped to `varchar(n)` rather than `char(n)` in
-PostgreSQL. This follows the pgloader convention and avoids padding issues.
+When `varchar_as_text = true`, MySQL `varchar(n)` and `char(n)` columns are
+mapped to PostgreSQL `text` instead of `varchar(n)`. In PostgreSQL, `text` and
+`varchar(n)` have identical storage and performance &mdash; the length constraint
+is a minor overhead on every write. This is useful when the source length limits
+(e.g. MySQL's common `varchar(255)` default) carry no business meaning.
+
+When disabled (the default), `char(n)` maps to `varchar(n)` rather than
+`char(n)` in PostgreSQL, following the pgloader convention to avoid padding issues.
 
 ### Set splitting
 

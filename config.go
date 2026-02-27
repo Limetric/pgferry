@@ -59,6 +59,7 @@ type TypeMappingConfig struct {
 	EnumMode              string `toml:"enum_mode"` // text|check
 	SetMode               string `toml:"set_mode"`  // text|text_array
 	WidenUnsignedIntegers bool   `toml:"widen_unsigned_integers"`
+	VarcharAsText         bool   `toml:"varchar_as_text"`
 	SanitizeJSONNullBytes bool   `toml:"sanitize_json_null_bytes"`
 	UnknownAsText         bool   `toml:"unknown_as_text"`
 }

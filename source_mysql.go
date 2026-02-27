@@ -423,8 +423,14 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case col.DataType == "decimal":
 		return fmt.Sprintf("numeric(%d,%d)", col.Precision, col.Scale), nil
 	case col.DataType == "varchar":
+		if typeMap.VarcharAsText {
+			return "text", nil
+		}
 		return fmt.Sprintf("varchar(%d)", col.CharMaxLen), nil
 	case col.DataType == "char":
+		if typeMap.VarcharAsText {
+			return "text", nil
+		}
 		return fmt.Sprintf("varchar(%d)", col.CharMaxLen), nil
 	case col.DataType == "text", col.DataType == "mediumtext", col.DataType == "longtext", col.DataType == "tinytext":
 		return "text", nil
