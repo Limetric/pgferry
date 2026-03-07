@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -203,40 +204,29 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 
 	if !cfg.SchemaOnly {
-		// In data_only mode, FKs are already in place from the schema_only run.
-		// Disable triggers to prevent FK violations during parallel COPY.
-		if cfg.DataOnly {
-			log.Printf("disabling triggers for data load...")
-			if err := setTriggers(ctx, pgPool, schema, cfg.Schema, false); err != nil {
-				return fmt.Errorf("disable triggers: %w", err)
-			}
-		}
-
-		// 6. before_data hooks
-		if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data"); err != nil {
-			return fmt.Errorf("before_data hooks: %w", err)
-		}
-
-		// 7. Migrate data
-		if cfg.SourceSnapshotMode == "single_tx" {
-			log.Printf("migrating data with source_snapshot_mode=single_tx (sequential)")
-		} else {
-			log.Printf("migrating data with %d workers...", cfg.Workers)
-		}
-		if err := migrateData(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
-			return fmt.Errorf("migrate data: %w", err)
-		}
-
-		// 8. after_data hooks
-		if err := loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data"); err != nil {
-			return fmt.Errorf("after_data hooks: %w", err)
-		}
-
-		if cfg.DataOnly {
-			log.Printf("re-enabling triggers...")
-			if err := setTriggers(ctx, pgPool, schema, cfg.Schema, true); err != nil {
-				return fmt.Errorf("enable triggers: %w", err)
-			}
+		err := runDataMigrationPhase(
+			cfg.DataOnly,
+			log.Printf,
+			func(enable bool) error {
+				return setTriggers(ctx, pgPool, schema, cfg.Schema, enable)
+			},
+			func() error {
+				return loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data")
+			},
+			func() error {
+				if cfg.SourceSnapshotMode == "single_tx" {
+					log.Printf("migrating data with source_snapshot_mode=single_tx (sequential)")
+				} else {
+					log.Printf("migrating data with %d workers...", cfg.Workers)
+				}
+				return migrateData(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode)
+			},
+			func() error {
+				return loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data")
+			},
+		)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -247,6 +237,60 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 
 	log.Printf("migration completed in %s", time.Since(start).Round(time.Millisecond))
+	return nil
+}
+
+func runDataMigrationPhase(
+	dataOnly bool,
+	logf func(string, ...any),
+	setTriggers func(enable bool) error,
+	beforeData func() error,
+	migrate func() error,
+	afterData func() error,
+) (err error) {
+	if !dataOnly {
+		if err := beforeData(); err != nil {
+			return fmt.Errorf("before_data hooks: %w", err)
+		}
+		if err := migrate(); err != nil {
+			return fmt.Errorf("migrate data: %w", err)
+		}
+		if err := afterData(); err != nil {
+			return fmt.Errorf("after_data hooks: %w", err)
+		}
+		return nil
+	}
+
+	logf("disabling triggers for data load...")
+	if err := setTriggers(false); err != nil {
+		return fmt.Errorf("disable triggers: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			logf("data load failed; attempting to re-enable triggers...")
+		} else {
+			logf("re-enabling triggers...")
+		}
+		if enableErr := setTriggers(true); enableErr != nil {
+			enableErr = fmt.Errorf("enable triggers: %w", enableErr)
+			if err != nil {
+				err = errors.Join(err, enableErr)
+				return
+			}
+			err = enableErr
+		}
+	}()
+
+	if err := beforeData(); err != nil {
+		return fmt.Errorf("before_data hooks: %w", err)
+	}
+	if err := migrate(); err != nil {
+		return fmt.Errorf("migrate data: %w", err)
+	}
+	if err := afterData(); err != nil {
+		return fmt.Errorf("after_data hooks: %w", err)
+	}
 	return nil
 }
 
