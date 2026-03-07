@@ -156,7 +156,34 @@ func unsignedCheckExpr(col Column, typeMap TypeMappingConfig) (string, bool) {
 
 func unsignedConstraintName(table, col string) string {
 	base := fmt.Sprintf("ck_%s_%s", table, col)
-	suffix := "_unsigned"
+	return truncateGeneratedIdentifierWithSuffix(base, "_unsigned")
+}
+
+func generatedIndexName(t Table, idx Index) string {
+	return truncateGeneratedIdentifier(fmt.Sprintf("%s_%s", t.PGName, idx.Name))
+}
+
+func generatedForeignKeyName(fk ForeignKey) string {
+	return truncateGeneratedIdentifier(fk.Name)
+}
+
+func generatedSequenceName(t Table, col Column) string {
+	return truncateGeneratedIdentifier(fmt.Sprintf("%s_%s_seq", t.PGName, col.PGName))
+}
+
+func generatedTriggerFunctionName(col Column) string {
+	return truncateGeneratedIdentifier(fmt.Sprintf("set_%s", col.PGName))
+}
+
+func generatedTriggerName(t Table, col Column) string {
+	return truncateGeneratedIdentifier(fmt.Sprintf("trg_%s_%s", t.PGName, col.PGName))
+}
+
+func truncateGeneratedIdentifier(name string) string {
+	return truncateGeneratedIdentifierWithSuffix(name, "")
+}
+
+func truncateGeneratedIdentifierWithSuffix(base, suffix string) string {
 	full := base + suffix
 	if len(full) <= 63 {
 		return full
@@ -222,7 +249,7 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 			if idx.Unique {
 				unique = "UNIQUE "
 			}
-			idxName := fmt.Sprintf("%s_%s", t.PGName, idx.Name)
+			idxName := generatedIndexName(t, idx)
 			q := fmt.Sprintf("CREATE %sINDEX %s ON %s.%s (%s)",
 				unique, pgIdent(idxName), pgIdent(pgSchema), pgIdent(t.PGName), cols)
 			if err := execSQL(ctx, pool, idxName, q); err != nil {
@@ -240,19 +267,20 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 		for _, fk := range t.ForeignKeys {
 			localCols := quotedColumnList(fk.Columns)
 			refCols := quotedColumnList(fk.RefColumns)
+			fkName := generatedForeignKeyName(fk)
 			q := fmt.Sprintf(
 				"ALTER TABLE %s.%s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s.%s(%s) ON UPDATE %s ON DELETE %s",
 				pgIdent(pgSchema), pgIdent(t.PGName),
-				pgIdent(fk.Name),
+				pgIdent(fkName),
 				localCols,
 				pgIdent(pgSchema), pgIdent(fk.RefPGTable),
 				refCols,
 				fk.UpdateRule, fk.DeleteRule,
 			)
-			if err := execSQL(ctx, pool, fk.Name, q); err != nil {
+			if err := execSQL(ctx, pool, fkName, q); err != nil {
 				return err
 			}
-			log.Printf("    fk %s on %s.%s → %s", fk.Name, pgSchema, t.PGName, fk.RefPGTable)
+			log.Printf("    fk %s on %s.%s → %s", fkName, pgSchema, t.PGName, fk.RefPGTable)
 		}
 	}
 	return nil
@@ -266,7 +294,7 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 			if !strings.Contains(col.Extra, "auto_increment") {
 				continue
 			}
-			seqName := fmt.Sprintf("%s_%s_seq", t.PGName, col.PGName)
+			seqName := generatedSequenceName(t, col)
 			stmts := resetSequenceStatements(pgSchema, t, col)
 			for _, q := range stmts {
 				if err := execSQL(ctx, pool, seqName, q); err != nil {
@@ -280,7 +308,7 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 }
 
 func resetSequenceStatements(pgSchema string, t Table, col Column) []string {
-	seqName := fmt.Sprintf("%s_%s_seq", t.PGName, col.PGName)
+	seqName := generatedSequenceName(t, col)
 	seqRef := pgQualifiedRegclassLiteral(pgSchema, seqName)
 
 	return []string{
@@ -312,7 +340,7 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 				continue
 			}
 
-			funcName := fmt.Sprintf("set_%s", col.PGName)
+			funcName := generatedTriggerFunctionName(col)
 
 			// Create trigger function if not yet created
 			if !createdFuncs[funcName] {
@@ -326,7 +354,7 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 			}
 
 			// Create trigger
-			trigName := fmt.Sprintf("trg_%s_%s", t.PGName, col.PGName)
+			trigName := generatedTriggerName(t, col)
 			q := fmt.Sprintf(
 				"CREATE TRIGGER %s BEFORE UPDATE ON %s.%s FOR EACH ROW EXECUTE FUNCTION %s.%s()",
 				pgIdent(trigName), pgIdent(pgSchema), pgIdent(t.PGName),
