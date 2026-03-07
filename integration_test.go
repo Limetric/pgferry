@@ -391,7 +391,9 @@ func TestIntegration_MySQL_SchemaOnly(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	defer pgPool.Close()
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
 
 	pgSchema := integrationSchemaName("inttest_schema_only")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -456,7 +458,9 @@ func TestIntegration_MySQL_DataOnly_PrecreatedSchema(t *testing.T) {
 	src, schema := introspectMySQLSchemaForTest(t, mysqlDSN)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	defer pgPool.Close()
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
 
 	pgSchema := integrationSchemaName("inttest_data_only")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -531,7 +535,9 @@ func TestIntegration_MySQL_SchemaOnlyThenDataOnly(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	defer pgPool.Close()
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
 
 	pgSchema := integrationSchemaName("inttest_split_mode")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -605,7 +611,9 @@ func TestIntegration_MySQL_SequenceReset_AllowsNextInsert(t *testing.T) {
 	seedMySQL(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	defer pgPool.Close()
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
 
 	pgSchema := integrationSchemaName("inttest_sequence")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -1564,7 +1572,7 @@ func assertTablePersistence(t *testing.T, pool *pgxpool.Pool, schema, table, wan
 
 	var got string
 	err := pool.QueryRow(context.Background(), `
-		SELECT c.relpersistence
+		SELECT c.relpersistence::text
 		FROM pg_class c
 		JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = $1 AND c.relname = $2
