@@ -19,7 +19,7 @@ already exist in PostgreSQL.
 ## Usage
 
 ```bash
-pgferry -config examples/data-only/migration.toml
+pgferry -config examples/mysql/data-only/migration.toml
 ```
 
 Edit the `[source]` and `[target]` DSNs to match your environment before running.

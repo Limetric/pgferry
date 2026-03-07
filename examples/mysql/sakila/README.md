@@ -26,7 +26,7 @@ to PostgreSQL.
 ## Usage
 
 ```bash
-pgferry -config examples/sakila/migration.toml
+pgferry -config examples/mysql/sakila/migration.toml
 ```
 
 Edit the `[source]` and `[target]` DSNs to match your environment before running.

@@ -72,7 +72,7 @@ are skipped.
 
 ## Example hook files
 
-From [`examples/hooks/`](../examples/hooks/):
+From [`examples/sqlite/hooks/`](../examples/sqlite/hooks/):
 
 **`before_data.sql`** &mdash; create extensions before data load:
 ```sql

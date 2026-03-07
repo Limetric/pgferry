@@ -1,0 +1,24 @@
+schema = "app"
+on_schema_exists = "error"
+source_snapshot_mode = "none"
+unlogged_tables = false
+clean_orphans = false
+preserve_defaults = true
+
+[source]
+type = "sqlite"
+dsn = "./source.db"
+
+[target]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+
+[type_mapping]
+json_as_jsonb = false
+sanitize_json_null_bytes = true
+unknown_as_text = false
+
+[hooks]
+before_data = ["before_data.sql"]
+after_data = ["after_data.sql"]
+before_fk = ["before_fk.sql"]
+after_all = ["after_all.sql"]

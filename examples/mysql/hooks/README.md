@@ -24,7 +24,7 @@ of `{{schema}}` are replaced with the configured schema name at runtime.
 ## Usage
 
 ```bash
-pgferry -config examples/hooks/migration.toml
+pgferry -config examples/mysql/hooks/migration.toml
 ```
 
 Edit the `[source]` and `[target]` DSNs to match your environment before running.

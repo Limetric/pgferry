@@ -68,13 +68,24 @@ and SQLite support.
 
 ## Examples
 
-The [`examples/`](examples/) directory has ready-to-use configs:
-[`minimal-safe`](examples/minimal-safe/),
-[`recreate-fast`](examples/recreate-fast/),
-[`hooks`](examples/hooks/),
-[`sakila`](examples/sakila/),
-[`schema-only`](examples/schema-only/),
-[`data-only`](examples/data-only/).
+The [`examples/`](examples/) directory is organized by source type.
+
+**MySQL**
+
+[`minimal-safe`](examples/mysql/minimal-safe/),
+[`recreate-fast`](examples/mysql/recreate-fast/),
+[`hooks`](examples/mysql/hooks/),
+[`sakila`](examples/mysql/sakila/),
+[`schema-only`](examples/mysql/schema-only/),
+[`data-only`](examples/mysql/data-only/).
+
+**SQLite**
+
+[`minimal-safe`](examples/sqlite/minimal-safe/),
+[`recreate-fast`](examples/sqlite/recreate-fast/),
+[`hooks`](examples/sqlite/hooks/),
+[`schema-only`](examples/sqlite/schema-only/),
+[`data-only`](examples/sqlite/data-only/).
 
 ## Documentation
 
