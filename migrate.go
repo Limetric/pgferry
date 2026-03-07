@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -108,23 +107,11 @@ func migrateTable(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpoo
 
 type dbQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
 func migrateTableFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
-	// Count rows for progress
-	var totalRows int64
 	quotedTable := src.QuoteIdentifier(table.SourceName)
-	err := source.QueryRowContext(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s", quotedTable)).Scan(&totalRows)
-	if err != nil {
-		return fmt.Errorf("count rows: %w", err)
-	}
-	log.Printf("  [%s] %d rows to migrate", table.SourceName, totalRows)
-
-	if totalRows == 0 {
-		log.Printf("  [%s] done (empty)", table.SourceName)
-		return nil
-	}
+	log.Printf("  [%s] starting row copy", table.SourceName)
 
 	// Build PG column names
 	pgColumns := make([]string, len(table.Columns))
@@ -146,16 +133,7 @@ func migrateTableFromSource(ctx context.Context, src SourceDB, source dbQuerier,
 	}
 	defer rows.Close()
 
-	rs := &rowSource{
-		rows:        rows,
-		table:       table,
-		copied:      new(atomic.Int64),
-		total:       totalRows,
-		src:         src,
-		typeMapping: typeMap,
-		tableName:   table.SourceName,
-		lastLog:     time.Now(),
-	}
+	rs := newRowSource(rows, table, src, typeMap)
 
 	count, err := conn.Conn().CopyFrom(
 		ctx,
@@ -175,14 +153,36 @@ func migrateTableFromSource(ctx context.Context, src SourceDB, source dbQuerier,
 type rowSource struct {
 	rows        *sql.Rows
 	table       Table
+	scanDest    []any
+	scanPtrs    []any
 	values      []any
 	err         error
-	copied      *atomic.Int64
-	total       int64
+	copied      int64
 	src         SourceDB
 	typeMapping TypeMappingConfig
 	tableName   string
 	lastLog     time.Time
+}
+
+func newRowSource(rows *sql.Rows, table Table, src SourceDB, typeMap TypeMappingConfig) *rowSource {
+	numCols := len(table.Columns)
+	scanDest := make([]any, numCols)
+	scanPtrs := make([]any, numCols)
+	for i := range scanDest {
+		scanPtrs[i] = &scanDest[i]
+	}
+
+	return &rowSource{
+		rows:        rows,
+		table:       table,
+		scanDest:    scanDest,
+		scanPtrs:    scanPtrs,
+		values:      make([]any, numCols),
+		src:         src,
+		typeMapping: typeMap,
+		tableName:   table.SourceName,
+		lastLog:     time.Now(),
+	}
 }
 
 func (r *rowSource) Next() bool {
@@ -191,23 +191,13 @@ func (r *rowSource) Next() bool {
 		return false
 	}
 
-	// Create scan destinations
-	numCols := len(r.table.Columns)
-	dest := make([]any, numCols)
-	ptrs := make([]any, numCols)
-	for i := range dest {
-		ptrs[i] = &dest[i]
-	}
-
-	if err := r.rows.Scan(ptrs...); err != nil {
+	if err := r.rows.Scan(r.scanPtrs...); err != nil {
 		r.err = err
 		return false
 	}
 
-	// Transform values
-	r.values = make([]any, numCols)
 	for i, col := range r.table.Columns {
-		v, err := r.src.TransformValue(dest[i], col, r.typeMapping)
+		v, err := r.src.TransformValue(r.scanDest[i], col, r.typeMapping)
 		if err != nil {
 			r.err = fmt.Errorf("column %s: %w", col.SourceName, err)
 			return false
@@ -215,10 +205,9 @@ func (r *rowSource) Next() bool {
 		r.values[i] = v
 	}
 
-	n := r.copied.Add(1)
+	r.copied++
 	if now := time.Now(); now.Sub(r.lastLog) >= 10*time.Second {
-		pct := float64(n) / float64(r.total) * 100
-		log.Printf("  [%s] progress: %d/%d rows (%.1f%%)", r.tableName, n, r.total, pct)
+		log.Printf("  [%s] progress: %d rows copied", r.tableName, r.copied)
 		r.lastLog = now
 	}
 	return true
