@@ -38,6 +38,7 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(planCmd)
 }
 
 func main() {
