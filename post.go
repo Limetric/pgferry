@@ -266,19 +266,8 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 			if !strings.Contains(col.Extra, "auto_increment") {
 				continue
 			}
-			// PG serial sequence naming convention: schema.table_col_seq
-			// But since we created raw integer columns, we need to create the sequence and attach it
 			seqName := fmt.Sprintf("%s_%s_seq", t.PGName, col.PGName)
-
-			stmts := []string{
-				fmt.Sprintf("CREATE SEQUENCE IF NOT EXISTS %s.%s", pgIdent(pgSchema), pgIdent(seqName)),
-				fmt.Sprintf("SELECT setval('%s.%s', COALESCE((SELECT MAX(%s) FROM %s.%s), 0) + 1, false)",
-					pgSchema, seqName,
-					pgIdent(col.PGName), pgIdent(pgSchema), pgIdent(t.PGName)),
-				fmt.Sprintf("ALTER TABLE %s.%s ALTER COLUMN %s SET DEFAULT nextval('%s.%s')",
-					pgIdent(pgSchema), pgIdent(t.PGName), pgIdent(col.PGName),
-					pgSchema, seqName),
-			}
+			stmts := resetSequenceStatements(pgSchema, t, col)
 			for _, q := range stmts {
 				if err := execSQL(ctx, pool, seqName, q); err != nil {
 					return err
@@ -288,6 +277,28 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 		}
 	}
 	return nil
+}
+
+func resetSequenceStatements(pgSchema string, t Table, col Column) []string {
+	seqName := fmt.Sprintf("%s_%s_seq", t.PGName, col.PGName)
+	seqRef := pgQualifiedRegclassLiteral(pgSchema, seqName)
+
+	return []string{
+		fmt.Sprintf("CREATE SEQUENCE IF NOT EXISTS %s", pgQualifiedIdent(pgSchema, seqName)),
+		fmt.Sprintf("SELECT setval(%s, COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)",
+			seqRef,
+			pgIdent(col.PGName), pgQualifiedIdent(pgSchema, t.PGName)),
+		fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT nextval(%s)",
+			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName), seqRef),
+	}
+}
+
+func pgQualifiedIdent(schema, name string) string {
+	return fmt.Sprintf("%s.%s", pgIdent(schema), pgIdent(name))
+}
+
+func pgQualifiedRegclassLiteral(schema, name string) string {
+	return fmt.Sprintf("%s::regclass", pgLiteral(pgQualifiedIdent(schema, name)))
 }
 
 // createTriggers creates trigger functions and triggers for columns with ON UPDATE CURRENT_TIMESTAMP.
