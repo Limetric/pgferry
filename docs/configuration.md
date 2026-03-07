@@ -6,6 +6,15 @@ pgferry is configured with a single TOML file passed as the first argument:
 pgferry migration.toml
 ```
 
+If you want help creating that file, start the interactive wizard instead:
+
+```bash
+pgferry generate
+```
+
+The wizard walks through the main migration settings and lets you either save the generated
+TOML for later reuse, execute it immediately, or do both.
+
 ## Full reference
 
 ```toml
