@@ -11,10 +11,10 @@ func TestToSnakeCase(t *testing.T) {
 		{"chatMessages", "chat_messages"},
 		{"updatedAt", "updated_at"},
 		{"identifier", "identifier"},
-		{"IP", "ip"},                   // acronym stays together
-		{"ABCDef", "abc_def"},          // acronym + word
-		{"nameASCII", "name_ascii"},    // word + trailing acronym
-		{"HTMLParser", "html_parser"},  // leading acronym + word
+		{"IP", "ip"},                     // acronym stays together
+		{"ABCDef", "abc_def"},            // acronym + word
+		{"nameASCII", "name_ascii"},      // word + trailing acronym
+		{"HTMLParser", "html_parser"},    // leading acronym + word
 		{"getHTTPSUrl", "get_https_url"}, // multiple acronyms
 		{"getHTTPSURL", "get_httpsurl"},  // adjacent acronyms without lowercase boundary
 	}
@@ -39,6 +39,7 @@ func TestPgIdent(t *testing.T) {
 		{"has space", `"has space"`},
 		{"Upper", `"Upper"`},
 		{"0start", `"0start"`},
+		{`has"quote`, `"has""quote"`},
 	}
 	for _, tt := range tests {
 		got := pgIdent(tt.in)

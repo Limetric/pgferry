@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"strings"
 	"unicode"
 )
 
@@ -74,7 +75,7 @@ func pgNeedsQuoting(name string) bool {
 // that contain characters invalid in unquoted identifiers.
 func pgIdent(name string) string {
 	if pgReservedWords[name] || pgNeedsQuoting(name) {
-		return `"` + name + `"`
+		return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 	}
 	return name
 }
