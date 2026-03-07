@@ -379,6 +379,268 @@ dsn = %q
 	}
 }
 
+func TestIntegration_MySQL_SchemaOnly(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	defer pgPool.Close()
+
+	pgSchema := integrationSchemaName("inttest_schema_only")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+schema_only = true
+unlogged_tables = true
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 0)
+	assertRowCount(t, pgPool, pgSchema, "posts", 0)
+	assertRowCount(t, pgPool, pgSchema, "comments", 0)
+
+	for _, tbl := range []string{"users", "posts", "comments"} {
+		assertPKExists(t, pgPool, pgSchema, tbl)
+		assertTablePersistence(t, pgPool, pgSchema, tbl, "p")
+	}
+
+	assertFKExists(t, pgPool, pgSchema, "posts", "users")
+	assertFKExists(t, pgPool, pgSchema, "comments", "posts")
+	assertFKExists(t, pgPool, pgSchema, "comments", "users")
+
+	assertIndexCountAtLeast(t, pgPool, pgSchema, "posts", 1)
+	assertIndexCountAtLeast(t, pgPool, pgSchema, "comments", 2)
+
+	var nextUserID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('SchemaOnlyProbe', NULL) RETURNING id", pgIdent(pgSchema)),
+	).Scan(&nextUserID)
+	if err != nil {
+		t.Fatalf("insert into schema_only target: %v", err)
+	}
+	if nextUserID != 1 {
+		t.Errorf("first inserted user id after schema_only: got %d, want 1", nextUserID)
+	}
+}
+
+func TestIntegration_MySQL_DataOnly_PrecreatedSchema(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	src, schema := introspectMySQLSchemaForTest(t, mysqlDSN)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	defer pgPool.Close()
+
+	pgSchema := integrationSchemaName("inttest_data_only")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(pgSchema))); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	preCfg := &MigrationConfig{
+		Schema:           pgSchema,
+		SchemaOnly:       true,
+		PreserveDefaults: true,
+		CleanOrphans:     true,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+	if err := createTables(ctx, pgPool, schema, pgSchema, false, preCfg.PreserveDefaults, preCfg.TypeMapping, src); err != nil {
+		t.Fatalf("precreate tables: %v", err)
+	}
+	if err := postMigrate(ctx, pgPool, schema, preCfg); err != nil {
+		t.Fatalf("precreate post-migrate: %v", err)
+	}
+
+	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE TABLE %s.manual_marker (note text)", pgIdent(pgSchema))); err != nil {
+		t.Fatalf("create marker table: %v", err)
+	}
+	if _, err := pgPool.Exec(ctx, fmt.Sprintf("INSERT INTO %s.manual_marker (note) VALUES ('keep-me')", pgIdent(pgSchema))); err != nil {
+		t.Fatalf("insert marker row: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+data_only = true
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+
+	var markerCount int
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s.manual_marker", pgIdent(pgSchema)),
+	).Scan(&markerCount)
+	if err != nil {
+		t.Fatalf("count marker rows: %v", err)
+	}
+	if markerCount != 1 {
+		t.Errorf("manual_marker row count: got %d, want 1", markerCount)
+	}
+}
+
+func TestIntegration_MySQL_SchemaOnlyThenDataOnly(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	defer pgPool.Close()
+
+	pgSchema := integrationSchemaName("inttest_split_mode")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	schemaOnlyCfg := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+schema_only = true
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, schemaOnlyCfg)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 0)
+	assertRowCount(t, pgPool, pgSchema, "posts", 0)
+	assertRowCount(t, pgPool, pgSchema, "comments", 0)
+
+	dataOnlyCfg := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+data_only = true
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, dataOnlyCfg)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+
+	for _, tbl := range []string{"users", "posts", "comments"} {
+		assertPKExists(t, pgPool, pgSchema, tbl)
+	}
+	assertFKExists(t, pgPool, pgSchema, "posts", "users")
+	assertFKExists(t, pgPool, pgSchema, "comments", "posts")
+	assertFKExists(t, pgPool, pgSchema, "comments", "users")
+
+	var body string
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("SELECT body FROM %s.posts WHERE id = 1", pgIdent(pgSchema)),
+	).Scan(&body)
+	if err != nil {
+		t.Fatalf("spot-check split-mode post body: %v", err)
+	}
+	if body != "Hello world" {
+		t.Errorf("posts.id=1 body: got %q, want %q", body, "Hello world")
+	}
+}
+
+func TestIntegration_MySQL_SequenceReset_AllowsNextInsert(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQL(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	defer pgPool.Close()
+
+	pgSchema := integrationSchemaName("inttest_sequence")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('Frank', 'frank@example.com') RETURNING id", pgIdent(pgSchema)),
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert migrated user: %v", err)
+	}
+	if insertedID != 6 {
+		t.Errorf("inserted user id after reset: got %d, want 6", insertedID)
+	}
+}
+
 func seedSQLite(t *testing.T, dbPath string) {
 	t.Helper()
 
@@ -504,6 +766,66 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("seed mysql %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
+func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS comments",
+		"DROP TABLE IF EXISTS posts",
+		"DROP TABLE IF EXISTS users",
+
+		`CREATE TABLE users (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			email VARCHAR(200) NULL
+		)`,
+		`CREATE TABLE posts (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			user_id INT NOT NULL,
+			title VARCHAR(200) NOT NULL,
+			body TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		`CREATE TABLE comments (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			post_id INT NOT NULL,
+			user_id INT NOT NULL,
+			content TEXT,
+			FOREIGN KEY (post_id) REFERENCES posts(id),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+
+		"INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Bob', NULL)",
+		"INSERT INTO users (name, email) VALUES ('Charlie', 'charlie@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Diana', 'diana@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Eve', NULL)",
+
+		"INSERT INTO posts (user_id, title, body) VALUES (1, 'First Post', 'Hello world')",
+		"INSERT INTO posts (user_id, title, body) VALUES (2, 'Bobs Post', 'Content here')",
+		"INSERT INTO posts (user_id, title, body) VALUES (3, 'Thoughts', 'Some thoughts')",
+		"INSERT INTO posts (user_id, title, body) VALUES (4, 'Update', NULL)",
+		"INSERT INTO posts (user_id, title, body) VALUES (5, 'Hello', 'Eve here')",
+
+		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 2, 'Nice post!')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 3, 'Great read')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (2, 1, 'Thanks Bob')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (2, 4, 'Interesting')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (3, 5, 'I agree')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (3, 1, 'Me too')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (4, 2, 'Good update')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (4, 3, 'Thanks')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 1, 'Welcome Eve')",
+		"INSERT INTO comments (post_id, user_id, content) VALUES (5, 4, 'Hi Eve!')",
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql without orphans %q: %v", stmt[:min(len(stmt), 60)], err)
 		}
 	}
 }
@@ -1059,6 +1381,88 @@ func buildReadOnlyUserDSN(baseDSN, user, password string) (string, error) {
 	return cfg.FormatDSN(), nil
 }
 
+func requireMySQLAndPostgresDSNs(t *testing.T) (string, string) {
+	t.Helper()
+
+	mysqlDSN := os.Getenv("MYSQL_DSN")
+	pgDSN := os.Getenv("POSTGRES_DSN")
+	if mysqlDSN == "" || pgDSN == "" {
+		t.Skip("MYSQL_DSN and POSTGRES_DSN env vars required")
+	}
+	return mysqlDSN, pgDSN
+}
+
+func openIntegrationPGPool(t *testing.T, pgDSN string) *pgxpool.Pool {
+	t.Helper()
+
+	pool, err := pgxpool.New(context.Background(), pgDSN)
+	if err != nil {
+		t.Fatalf("connect pg: %v", err)
+	}
+	return pool
+}
+
+func integrationSchemaName(prefix string) string {
+	return fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+}
+
+func writeIntegrationConfig(t *testing.T, dir, content string) string {
+	t.Helper()
+
+	cfgPath := filepath.Join(dir, fmt.Sprintf("migration_%d.toml", time.Now().UnixNano()))
+	if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	return cfgPath
+}
+
+func runMigrationFromConfig(t *testing.T, cfgPath string) {
+	t.Helper()
+
+	configPath = ""
+	if err := runMigration(nil, []string{cfgPath}); err != nil {
+		t.Fatalf("runMigration(%s): %v", cfgPath, err)
+	}
+}
+
+func introspectMySQLSchemaForTest(t *testing.T, mysqlDSN string) (*mysqlSourceDB, *Schema) {
+	t.Helper()
+
+	src := &mysqlSourceDB{}
+	src.SetSnakeCaseIdentifiers(true)
+
+	mysqlDB, err := src.OpenDB(mysqlDSN)
+	if err != nil {
+		t.Fatalf("open mysql for introspection: %v", err)
+	}
+	defer mysqlDB.Close()
+	mysqlDB.SetMaxOpenConns(1)
+
+	dbName, err := src.ExtractDBName(mysqlDSN)
+	if err != nil {
+		t.Fatalf("extract db name: %v", err)
+	}
+
+	schema, err := src.IntrospectSchema(mysqlDB, dbName)
+	if err != nil {
+		t.Fatalf("introspect schema: %v", err)
+	}
+	return src, schema
+}
+
+func ensureDroppedSchema(t *testing.T, pool *pgxpool.Pool, schema string) {
+	t.Helper()
+	dropSchema(t, pool, schema)
+}
+
+func dropSchema(t *testing.T, pool *pgxpool.Pool, schema string) {
+	t.Helper()
+
+	if _, err := pool.Exec(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", pgIdent(schema))); err != nil {
+		t.Fatalf("drop schema %s: %v", schema, err)
+	}
+}
+
 func assertRowCount(t *testing.T, pool *pgxpool.Pool, schema, table string, want int) {
 	t.Helper()
 	var got int
@@ -1136,5 +1540,39 @@ func assertFKExists(t *testing.T, pool *pgxpool.Pool, schema, fromTable, toTable
 	}
 	if count == 0 {
 		t.Errorf("no foreign key from %s.%s → %s.%s", schema, fromTable, schema, toTable)
+	}
+}
+
+func assertIndexCountAtLeast(t *testing.T, pool *pgxpool.Pool, schema, table string, wantAtLeast int) {
+	t.Helper()
+
+	var got int
+	err := pool.QueryRow(context.Background(), `
+		SELECT COUNT(*) FROM pg_indexes
+		WHERE schemaname = $1 AND tablename = $2 AND indexname NOT LIKE '%_pkey'
+	`, schema, table).Scan(&got)
+	if err != nil {
+		t.Fatalf("count indexes on %s.%s: %v", schema, table, err)
+	}
+	if got < wantAtLeast {
+		t.Errorf("%s.%s non-primary index count: got %d, want at least %d", schema, table, got, wantAtLeast)
+	}
+}
+
+func assertTablePersistence(t *testing.T, pool *pgxpool.Pool, schema, table, want string) {
+	t.Helper()
+
+	var got string
+	err := pool.QueryRow(context.Background(), `
+		SELECT c.relpersistence
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2
+	`, schema, table).Scan(&got)
+	if err != nil {
+		t.Fatalf("check persistence for %s.%s: %v", schema, table, err)
+	}
+	if got != want {
+		t.Errorf("%s.%s relpersistence: got %q, want %q", schema, table, got, want)
 	}
 }
