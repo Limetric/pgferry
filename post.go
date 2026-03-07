@@ -333,42 +333,13 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 // MySQL allows orphaned data via SET FOREIGN_KEY_CHECKS=0; PostgreSQL rejects it
 // when adding FK constraints. The action mirrors the FK's ON DELETE rule:
 // SET NULL → null out the columns, anything else → delete the rows.
+//
+// PostgreSQL uses MATCH SIMPLE semantics by default, so rows with any NULL
+// component in a composite foreign key are not violations and must be skipped.
 func cleanOrphans(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
 	for _, t := range schema.Tables {
 		for _, fk := range t.ForeignKeys {
-			child := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
-			parent := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(fk.RefPGTable))
-
-			// Build the NOT EXISTS join condition
-			var joinConds []string
-			for i, col := range fk.Columns {
-				joinConds = append(joinConds,
-					fmt.Sprintf("p.%s = c.%s", pgIdent(fk.RefColumns[i]), pgIdent(col)))
-			}
-			notExists := fmt.Sprintf("NOT EXISTS (SELECT 1 FROM %s p WHERE %s)",
-				parent, strings.Join(joinConds, " AND "))
-
-			// At least one FK column must be non-null for a violation to exist
-			var notNulls []string
-			for _, col := range fk.Columns {
-				notNulls = append(notNulls, fmt.Sprintf("c.%s IS NOT NULL", pgIdent(col)))
-			}
-			whereNotNull := strings.Join(notNulls, " OR ")
-
-			var q string
-			if strings.EqualFold(fk.DeleteRule, "SET NULL") {
-				// Null out the FK columns
-				var setClauses []string
-				for _, col := range fk.Columns {
-					setClauses = append(setClauses, fmt.Sprintf("%s = NULL", pgIdent(col)))
-				}
-				q = fmt.Sprintf("UPDATE %s c SET %s WHERE (%s) AND %s",
-					child, strings.Join(setClauses, ", "), whereNotNull, notExists)
-			} else {
-				// DELETE for CASCADE, RESTRICT, NO ACTION
-				q = fmt.Sprintf("DELETE FROM %s c WHERE (%s) AND %s",
-					child, whereNotNull, notExists)
-			}
+			q := buildCleanOrphansSQL(pgSchema, t, fk)
 
 			tag, err := pool.Exec(ctx, q)
 			if err != nil {
@@ -386,6 +357,41 @@ func cleanOrphans(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 		}
 	}
 	return nil
+}
+
+func buildCleanOrphansSQL(pgSchema string, t Table, fk ForeignKey) string {
+	child := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
+	parent := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(fk.RefPGTable))
+
+	var joinConds []string
+	for i, col := range fk.Columns {
+		joinConds = append(joinConds,
+			fmt.Sprintf("p.%s = c.%s", pgIdent(fk.RefColumns[i]), pgIdent(col)))
+	}
+	notExists := fmt.Sprintf("NOT EXISTS (SELECT 1 FROM %s p WHERE %s)",
+		parent, strings.Join(joinConds, " AND "))
+
+	whereAllNotNull := foreignKeyAllNotNullPredicate(fk.Columns)
+
+	if strings.EqualFold(fk.DeleteRule, "SET NULL") {
+		var setClauses []string
+		for _, col := range fk.Columns {
+			setClauses = append(setClauses, fmt.Sprintf("%s = NULL", pgIdent(col)))
+		}
+		return fmt.Sprintf("UPDATE %s c SET %s WHERE (%s) AND %s",
+			child, strings.Join(setClauses, ", "), whereAllNotNull, notExists)
+	}
+
+	return fmt.Sprintf("DELETE FROM %s c WHERE (%s) AND %s",
+		child, whereAllNotNull, notExists)
+}
+
+func foreignKeyAllNotNullPredicate(cols []string) string {
+	notNulls := make([]string, len(cols))
+	for i, col := range cols {
+		notNulls[i] = fmt.Sprintf("c.%s IS NOT NULL", pgIdent(col))
+	}
+	return strings.Join(notNulls, " AND ")
 }
 
 // setTriggers enables or disables all triggers on every table in the schema.
