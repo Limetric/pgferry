@@ -34,3 +34,39 @@ func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildSourceSelectQuery_UsesExplicitQuotedColumnsInOrder(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "users",
+		Columns: []Column{
+			{SourceName: "id"},
+			{SourceName: "Order"},
+			{SourceName: "created-at"},
+		},
+	}
+
+	got := buildSourceSelectQuery(src, table)
+	want := "SELECT `id`, `Order`, `created-at` FROM `users`"
+	if got != want {
+		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
+	}
+}
+
+func TestBuildSourceSelectQuery_IncludesGeneratedColumns(t *testing.T) {
+	src := &sqliteSourceDB{}
+	table := Table{
+		SourceName: "metrics",
+		Columns: []Column{
+			{SourceName: "id"},
+			{SourceName: "computed_value", Extra: "VIRTUAL GENERATED"},
+			{SourceName: "stored_total", Extra: "STORED GENERATED"},
+		},
+	}
+
+	got := buildSourceSelectQuery(src, table)
+	want := `SELECT "id", "computed_value", "stored_total" FROM "metrics"`
+	if got != want {
+		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
+	}
+}

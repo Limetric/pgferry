@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -110,7 +111,6 @@ type dbQuerier interface {
 }
 
 func migrateTableFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) error {
-	quotedTable := src.QuoteIdentifier(table.SourceName)
 	log.Printf("  [%s] starting row copy", table.SourceName)
 
 	// Build PG column names
@@ -127,7 +127,7 @@ func migrateTableFromSource(ctx context.Context, src SourceDB, source dbQuerier,
 	defer conn.Release()
 
 	// Stream source rows via COPY protocol
-	rows, err := source.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s", quotedTable))
+	rows, err := source.QueryContext(ctx, buildSourceSelectQuery(src, table))
 	if err != nil {
 		return fmt.Errorf("select: %w", err)
 	}
@@ -219,4 +219,12 @@ func (r *rowSource) Values() ([]any, error) {
 
 func (r *rowSource) Err() error {
 	return r.err
+}
+
+func buildSourceSelectQuery(src SourceDB, table Table) string {
+	cols := make([]string, len(table.Columns))
+	for i, col := range table.Columns {
+		cols[i] = src.QuoteIdentifier(col.SourceName)
+	}
+	return fmt.Sprintf("SELECT %s FROM %s", strings.Join(cols, ", "), src.QuoteIdentifier(table.SourceName))
 }
