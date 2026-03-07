@@ -35,7 +35,7 @@ type MigrationConfig struct {
 
 // SourceConfig identifies the source database engine and connection string.
 type SourceConfig struct {
-	Type    string `toml:"type"`    // "mysql" or "sqlite"
+	Type    string `toml:"type"` // "mysql" or "sqlite"
 	DSN     string `toml:"dsn"`
 	Charset string `toml:"charset"` // character set for MySQL connection (default: "utf8mb4")
 }
@@ -75,14 +75,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	cfg := MigrationConfig{
-		OnSchemaExists:     "error",
-		SourceSnapshotMode: "none",
-		PreserveDefaults:     true,
-		CleanOrphans:         true,
-		SnakeCaseIdentifiers: true,
-		TypeMapping:        defaultTypeMappingConfig(),
-	}
+	cfg := defaultMigrationConfig()
 	md, err := toml.Decode(string(data), &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -99,7 +92,30 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve config path: %w", err)
 	}
-	cfg.configDir = filepath.Dir(absPath)
+	if err := finalizeConfig(&cfg, filepath.Dir(absPath)); err != nil {
+		return nil, err
+	}
+
+	return &cfg, nil
+}
+
+func defaultMigrationConfig() MigrationConfig {
+	return MigrationConfig{
+		OnSchemaExists:       "error",
+		SourceSnapshotMode:   "none",
+		PreserveDefaults:     true,
+		CleanOrphans:         true,
+		SnakeCaseIdentifiers: true,
+		TypeMapping:          defaultTypeMappingConfig(),
+	}
+}
+
+func finalizeConfig(cfg *MigrationConfig, configDir string) error {
+	absDir, err := filepath.Abs(configDir)
+	if err != nil {
+		return fmt.Errorf("resolve config path: %w", err)
+	}
+	cfg.configDir = absDir
 
 	if cfg.Workers <= 0 {
 		cfg.Workers = defaultWorkers()
@@ -107,7 +123,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 
 	cfg.Schema = strings.TrimSpace(cfg.Schema)
 	if cfg.Schema == "" {
-		return nil, fmt.Errorf("schema is required")
+		return fmt.Errorf("schema is required")
 	}
 
 	if cfg.OnSchemaExists == "" {
@@ -116,61 +132,61 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	switch cfg.OnSchemaExists {
 	case "error", "recreate":
 	default:
-		return nil, fmt.Errorf("on_schema_exists must be one of: error, recreate")
+		return fmt.Errorf("on_schema_exists must be one of: error, recreate")
 	}
 	switch cfg.SourceSnapshotMode {
 	case "none", "single_tx":
 	default:
-		return nil, fmt.Errorf("source_snapshot_mode must be one of: none, single_tx")
+		return fmt.Errorf("source_snapshot_mode must be one of: none, single_tx")
 	}
 	switch cfg.TypeMapping.EnumMode {
 	case "text", "check":
 	default:
-		return nil, fmt.Errorf("type_mapping.enum_mode must be one of: text, check")
+		return fmt.Errorf("type_mapping.enum_mode must be one of: text, check")
 	}
 	switch cfg.TypeMapping.SetMode {
 	case "text", "text_array":
 	default:
-		return nil, fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
+		return fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
 	}
 	switch cfg.TypeMapping.CollationMode {
 	case "none", "auto":
 	default:
-		return nil, fmt.Errorf("type_mapping.collation_mode must be one of: none, auto")
+		return fmt.Errorf("type_mapping.collation_mode must be one of: none, auto")
 	}
 
 	if cfg.SchemaOnly && cfg.DataOnly {
-		return nil, fmt.Errorf("schema_only and data_only are mutually exclusive")
+		return fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
 
 	// Source validation
 	if cfg.Source.Type == "" {
-		return nil, fmt.Errorf("source.type is required (must be mysql or sqlite)")
+		return fmt.Errorf("source.type is required (must be mysql or sqlite)")
 	}
 	src, err := newSourceDB(cfg.Source.Type)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if cfg.Source.Charset == "" {
 		cfg.Source.Charset = "utf8mb4"
 	}
 	if cfg.Source.DSN == "" {
-		return nil, fmt.Errorf("source.dsn is required")
+		return fmt.Errorf("source.dsn is required")
 	}
 
 	// Source-specific snapshot validation
 	if cfg.SourceSnapshotMode == "single_tx" && !src.SupportsSnapshotMode() {
-		return nil, fmt.Errorf("source_snapshot_mode \"single_tx\" is not supported for %s sources", cfg.Source.Type)
+		return fmt.Errorf("source_snapshot_mode \"single_tx\" is not supported for %s sources", cfg.Source.Type)
 	}
 
 	// Source-specific charset validation (charset is MySQL-only)
 	if cfg.Source.Type == "sqlite" && cfg.Source.Charset != "utf8mb4" {
-		return nil, fmt.Errorf("source.charset is a MySQL-only option")
+		return fmt.Errorf("source.charset is a MySQL-only option")
 	}
 
 	// Source-specific type mapping validation
 	if err := src.ValidateTypeMapping(cfg.TypeMapping); err != nil {
-		return nil, err
+		return err
 	}
 
 	// Cap workers based on source limits
@@ -179,10 +195,10 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	}
 
 	if cfg.Target.DSN == "" {
-		return nil, fmt.Errorf("target.dsn is required")
+		return fmt.Errorf("target.dsn is required")
 	}
 
-	return &cfg, nil
+	return nil
 }
 
 // resolvePath resolves a path relative to the config file directory.
