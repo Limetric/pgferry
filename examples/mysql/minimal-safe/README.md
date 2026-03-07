@@ -20,7 +20,7 @@ A conservative starting template for first-time migrations.
 ## Usage
 
 ```bash
-pgferry -config examples/mysql/minimal-safe/migration.toml
+pgferry examples/mysql/minimal-safe/migration.toml
 ```
 
 Edit the `[source]` and `[target]` DSNs to match your environment before running.

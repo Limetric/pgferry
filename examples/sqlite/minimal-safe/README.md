@@ -27,6 +27,6 @@ A conservative starting template for migrating a SQLite file into PostgreSQL.
 ## Usage
 
 ```bash
-pgferry -config examples/sqlite/minimal-safe/migration.toml
+pgferry examples/sqlite/minimal-safe/migration.toml
 ```
 Edit the `[source]` SQLite file path and `[target]` PostgreSQL DSN before running.

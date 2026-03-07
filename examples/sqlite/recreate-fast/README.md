@@ -28,7 +28,7 @@ overhead during bulk copy.
 ## Usage
 
 ```bash
-pgferry -config examples/sqlite/recreate-fast/migration.toml
+pgferry examples/sqlite/recreate-fast/migration.toml
 ```
 
 Edit the `[source]` SQLite file path and `[target]` PostgreSQL DSN before running.

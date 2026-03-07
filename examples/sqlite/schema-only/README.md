@@ -24,7 +24,7 @@ Creates the PostgreSQL schema from a SQLite file without copying any row data.
 ## Usage
 
 ```bash
-pgferry -config examples/sqlite/schema-only/migration.toml
+pgferry examples/sqlite/schema-only/migration.toml
 ```
 
 Edit the `[source]` SQLite file path and `[target]` PostgreSQL DSN before running.

@@ -24,7 +24,7 @@ The target tables must already exist in PostgreSQL.
 ## Usage
 
 ```bash
-pgferry -config examples/sqlite/data-only/migration.toml
+pgferry examples/sqlite/data-only/migration.toml
 ```
 
 Edit the `[source]` SQLite file path and `[target]` PostgreSQL DSN before running.

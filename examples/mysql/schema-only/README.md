@@ -19,7 +19,7 @@ copying any row data.
 ## Usage
 
 ```bash
-pgferry -config examples/mysql/schema-only/migration.toml
+pgferry examples/mysql/schema-only/migration.toml
 ```
 
 Edit the `[source]` and `[target]` DSNs to match your environment before running.

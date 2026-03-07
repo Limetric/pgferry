@@ -21,7 +21,7 @@ schema each run and uses UNLOGGED tables to skip WAL overhead during bulk copy.
 ## Usage
 
 ```bash
-pgferry -config examples/mysql/recreate-fast/migration.toml
+pgferry examples/mysql/recreate-fast/migration.toml
 ```
 
 Edit the `[source]` and `[target]` DSNs to match your environment before running.
