@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,57 +19,103 @@ type ValidationResult struct {
 	CountMatch  bool
 }
 
+// validationWorkers returns the effective worker count for validation,
+// capping based on source backend limits (e.g., SQLite requires a single worker).
+func validationWorkers(workers int, src SourceDB) int {
+	if max := src.MaxWorkers(); max > 0 && workers > max {
+		workers = max
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	return workers
+}
+
 // validateMigration runs post-load validation comparing source and target row counts.
-func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, mode string) ([]ValidationResult, error) {
+// Tables are validated in parallel with bounded concurrency. The workers parameter
+// controls maximum parallelism and is capped by source backend limits (e.g., SQLite
+// is always single-threaded).
+func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, mode string, workers int) ([]ValidationResult, error) {
 	if mode == "none" || mode == "" {
 		return nil, nil
 	}
+
+	workers = validationWorkers(workers, src)
 
 	srcDB, err := src.OpenDB(srcDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open source for validation: %w", err)
 	}
 	defer srcDB.Close()
-	srcDB.SetMaxOpenConns(1)
+	srcDB.SetMaxOpenConns(workers)
 
-	var results []ValidationResult
-	var mismatches int
+	start := time.Now()
+	results := make([]ValidationResult, len(schema.Tables))
 
-	for _, t := range schema.Tables {
-		result := ValidationResult{Table: t.SourceName}
+	// Use a cancellable context so a failure in one goroutine stops the rest.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-		// Count source rows
-		srcQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", src.QuoteIdentifier(t.SourceName))
-		srcRows, err := srcDB.QueryContext(ctx, srcQuery)
-		if err != nil {
-			return nil, fmt.Errorf("count source rows for %s: %w", t.SourceName, err)
-		}
-		if srcRows.Next() {
-			if err := srcRows.Scan(&result.SourceCount); err != nil {
-				srcRows.Close()
-				return nil, fmt.Errorf("scan source count for %s: %w", t.SourceName, err)
-			}
-		} else if err := srcRows.Err(); err != nil {
-			srcRows.Close()
-			return nil, fmt.Errorf("count source rows for %s: %w", t.SourceName, err)
-		}
-		srcRows.Close()
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	var firstErr error
+	var errOnce sync.Once
 
-		// Count target rows
-		pgQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
-		if err := pool.QueryRow(ctx, pgQuery).Scan(&result.TargetCount); err != nil {
-			return nil, fmt.Errorf("count target rows for %s: %w", t.PGName, err)
-		}
-
-		result.CountMatch = result.SourceCount == result.TargetCount
-		if !result.CountMatch {
-			mismatches++
-			log.Printf("  MISMATCH: %s — source=%d target=%d", t.SourceName, result.SourceCount, result.TargetCount)
-		} else {
-			log.Printf("  OK: %s — %d rows", t.SourceName, result.SourceCount)
-		}
-		results = append(results, result)
+	setErr := func(err error) {
+		errOnce.Do(func() { firstErr = err })
+		cancel()
 	}
+
+	for i, t := range schema.Tables {
+		wg.Add(1)
+		go func(idx int, tbl Table) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			result := ValidationResult{Table: tbl.SourceName}
+
+			// Count source rows
+			srcQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", src.QuoteIdentifier(tbl.SourceName))
+			if err := srcDB.QueryRowContext(ctx, srcQuery).Scan(&result.SourceCount); err != nil {
+				setErr(fmt.Errorf("count source rows for %s: %w", tbl.SourceName, err))
+				return
+			}
+
+			// Count target rows
+			pgQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pgIdent(pgSchema), pgIdent(tbl.PGName))
+			if err := pool.QueryRow(ctx, pgQuery).Scan(&result.TargetCount); err != nil {
+				setErr(fmt.Errorf("count target rows for %s: %w", tbl.PGName, err))
+				return
+			}
+
+			result.CountMatch = result.SourceCount == result.TargetCount
+			results[idx] = result
+		}(i, t)
+	}
+
+	wg.Wait()
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	// Report results deterministically (in original table order)
+	var mismatches int
+	for _, r := range results {
+		if !r.CountMatch {
+			mismatches++
+			log.Printf("  MISMATCH: %s — source=%d target=%d", r.Table, r.SourceCount, r.TargetCount)
+		} else {
+			log.Printf("  OK: %s — %d rows", r.Table, r.SourceCount)
+		}
+	}
+
+	log.Printf("  validated %d table(s) in %s (workers=%d)", len(schema.Tables), time.Since(start).Round(time.Millisecond), workers)
 
 	if mismatches > 0 {
 		var names []string
