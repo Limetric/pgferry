@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -41,7 +42,7 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 	}
 
 	log.Printf("  indexes...")
-	if err := addIndexes(ctx, pool, schema, pgSchema); err != nil {
+	if err := addIndexes(ctx, pool, schema, pgSchema, cfg.IndexWorkers); err != nil {
 		return fmt.Errorf("indexes: %w", err)
 	}
 
@@ -235,30 +236,100 @@ func addPrimaryKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 	return nil
 }
 
-// addIndexes adds all non-primary indexes.
-func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
+// indexJob represents a single index creation task for the parallel worker pool.
+type indexJob struct {
+	table Table
+	index Index
+}
+
+// planIndexJobs collects all supported index creation jobs and logs skipped indexes.
+func planIndexJobs(schema *Schema, pgSchema string) (jobs []indexJob, skipped int) {
 	for _, t := range schema.Tables {
 		for _, idx := range t.Indexes {
 			if reason, unsupported := indexUnsupportedReason(idx); unsupported {
 				log.Printf("    skipping index %s on %s.%s: %s", idx.SourceName, pgSchema, t.PGName, reason)
+				skipped++
 				continue
 			}
-
-			cols := quotedOrderedColumnList(idx.Columns, idx.ColumnOrders)
-			unique := ""
-			if idx.Unique {
-				unique = "UNIQUE "
-			}
-			idxName := generatedIndexName(t, idx)
-			q := fmt.Sprintf("CREATE %sINDEX %s ON %s.%s (%s)",
-				unique, pgIdent(idxName), pgIdent(pgSchema), pgIdent(t.PGName), cols)
-			if err := execSQL(ctx, pool, idxName, q); err != nil {
-				return err
-			}
-			log.Printf("    index %s on %s.%s (%s)", idxName, pgSchema, t.PGName, cols)
+			jobs = append(jobs, indexJob{table: t, index: idx})
 		}
 	}
+	return jobs, skipped
+}
+
+// createIndex executes a single CREATE INDEX statement.
+func createIndex(ctx context.Context, pool *pgxpool.Pool, pgSchema string, t Table, idx Index) error {
+	cols := quotedOrderedColumnList(idx.Columns, idx.ColumnOrders)
+	unique := ""
+	if idx.Unique {
+		unique = "UNIQUE "
+	}
+	idxName := generatedIndexName(t, idx)
+	q := fmt.Sprintf("CREATE %sINDEX %s ON %s.%s (%s)",
+		unique, pgIdent(idxName), pgIdent(pgSchema), pgIdent(t.PGName), cols)
+	if err := execSQL(ctx, pool, idxName, q); err != nil {
+		return err
+	}
+	log.Printf("    index %s on %s.%s (%s)", idxName, pgSchema, t.PGName, cols)
 	return nil
+}
+
+// addIndexes adds all non-primary indexes with bounded parallelism.
+func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int) error {
+	jobs, skipped := planIndexJobs(schema, pgSchema)
+	if len(jobs) == 0 {
+		if skipped > 0 {
+			log.Printf("    no supported indexes to create (%d skipped)", skipped)
+		}
+		return nil
+	}
+
+	if workers < 1 {
+		workers = 1
+	}
+	log.Printf("    creating %d index(es) with %d worker(s) (%d skipped)...", len(jobs), workers, skipped)
+
+	if workers == 1 {
+		for _, job := range jobs {
+			if err := createIndex(ctx, pool, pgSchema, job.table, job.index); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	sem := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	var firstErr error
+	var errOnce sync.Once
+
+	setErr := func(err error) {
+		errOnce.Do(func() { firstErr = err })
+		cancel()
+	}
+
+	for _, job := range jobs {
+		wg.Add(1)
+		go func(j indexJob) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			defer func() { <-sem }()
+
+			if err := createIndex(ctx, pool, pgSchema, j.table, j.index); err != nil {
+				setErr(err)
+			}
+		}(job)
+	}
+
+	wg.Wait()
+	return firstErr
 }
 
 // addForeignKeys adds all foreign key constraints from introspected data.
