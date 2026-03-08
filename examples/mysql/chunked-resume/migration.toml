@@ -1,0 +1,14 @@
+schema = "app"
+on_schema_exists = "error"
+unlogged_tables = true
+workers = 8
+chunk_size = 100000
+resume = true
+validation = "row_count"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+
+[target]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"

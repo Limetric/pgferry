@@ -126,7 +126,11 @@ after_all = []
 		t.Fatalf("before_data hooks: %v", err)
 	}
 
-	if err := migrateData(ctx, src, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+	if err := migrateData(ctx, migrateDataConfig{
+		Src: src, SrcDSN: mysqlDSN, Pool: pgPool, Schema: schema, PGSchema: pgSchema,
+		Workers: cfg.Workers, TypeMap: cfg.TypeMapping, SourceSnapshotMode: cfg.SourceSnapshotMode,
+		ChunkSize: cfg.ChunkSize, Resume: cfg.Resume, ConfigDir: cfg.configDir,
+	}); err != nil {
 		t.Fatalf("migrateData: %v", err)
 	}
 
@@ -255,7 +259,11 @@ func TestIntegration_MySQLReadOnlyUser(t *testing.T) {
 	if err := createTables(ctx, pgPool, schema, pgSchema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
-	if err := migrateData(ctx, src, roDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+	if err := migrateData(ctx, migrateDataConfig{
+		Src: src, SrcDSN: roDSN, Pool: pgPool, Schema: schema, PGSchema: pgSchema,
+		Workers: cfg.Workers, TypeMap: cfg.TypeMapping, SourceSnapshotMode: cfg.SourceSnapshotMode,
+		ChunkSize: cfg.ChunkSize, Resume: cfg.Resume, ConfigDir: t.TempDir(),
+	}); err != nil {
 		t.Fatalf("migrateData with readonly user: %v", err)
 	}
 	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
@@ -345,7 +353,11 @@ dsn = %q
 		t.Fatalf("createTables: %v", err)
 	}
 
-	if err := migrateData(ctx, src, sqliteFile, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+	if err := migrateData(ctx, migrateDataConfig{
+		Src: src, SrcDSN: sqliteFile, Pool: pgPool, Schema: schema, PGSchema: pgSchema,
+		Workers: cfg.Workers, TypeMap: cfg.TypeMapping, SourceSnapshotMode: cfg.SourceSnapshotMode,
+		ChunkSize: cfg.ChunkSize, Resume: cfg.Resume, ConfigDir: cfg.configDir,
+	}); err != nil {
 		t.Fatalf("migrateData: %v", err)
 	}
 
@@ -1250,7 +1262,11 @@ set_mode = "text_array"
 		t.Fatalf("createTables: %v", err)
 	}
 
-	if err := migrateData(ctx, src, mysqlDSN, pgPool, schema, pgSchema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode); err != nil {
+	if err := migrateData(ctx, migrateDataConfig{
+		Src: src, SrcDSN: mysqlDSN, Pool: pgPool, Schema: schema, PGSchema: pgSchema,
+		Workers: cfg.Workers, TypeMap: cfg.TypeMapping, SourceSnapshotMode: cfg.SourceSnapshotMode,
+		ChunkSize: cfg.ChunkSize, Resume: cfg.Resume, ConfigDir: cfg.configDir,
+	}); err != nil {
 		t.Fatalf("migrateData: %v", err)
 	}
 

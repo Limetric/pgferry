@@ -26,6 +26,9 @@ type MigrationConfig struct {
 	SnakeCaseIdentifiers              bool              `toml:"snake_case_identifiers"`
 	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
 	Workers                           int               `toml:"workers"`
+	ChunkSize                         int64             `toml:"chunk_size"`
+	Resume                            bool              `toml:"resume"`
+	Validation                        string            `toml:"validation"` // none|row_count
 	Hooks                             HooksConfig       `toml:"hooks"`
 	TypeMapping                       TypeMappingConfig `toml:"type_mapping"`
 
@@ -120,6 +123,12 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.Workers <= 0 {
 		cfg.Workers = defaultWorkers()
 	}
+	if cfg.ChunkSize <= 0 {
+		cfg.ChunkSize = 100000
+	}
+	if cfg.Validation == "" {
+		cfg.Validation = "none"
+	}
 
 	cfg.Schema = strings.TrimSpace(cfg.Schema)
 	if cfg.Schema == "" {
@@ -155,8 +164,20 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("type_mapping.collation_mode must be one of: none, auto")
 	}
 
+	switch cfg.Validation {
+	case "none", "row_count":
+	default:
+		return fmt.Errorf("validation must be one of: none, row_count")
+	}
+
 	if cfg.SchemaOnly && cfg.DataOnly {
 		return fmt.Errorf("schema_only and data_only are mutually exclusive")
+	}
+	if cfg.Resume && cfg.OnSchemaExists == "recreate" {
+		return fmt.Errorf("resume is incompatible with on_schema_exists=recreate (would destroy data to resume into)")
+	}
+	if cfg.Resume && cfg.SchemaOnly {
+		return fmt.Errorf("resume is incompatible with schema_only (no data to resume)")
 	}
 
 	// Source validation

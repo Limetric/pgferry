@@ -100,7 +100,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t snake_case_identifiers=%t replicate_on_update_current_timestamp=%t",
+		"config: mode=%s workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d resume=%t validation=%s",
 		mode,
 		cfg.Workers,
 		cfg.Schema,
@@ -111,6 +111,9 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		cfg.AddUnsignedChecks,
 		cfg.SnakeCaseIdentifiers,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
+		cfg.ChunkSize,
+		cfg.Resume,
+		cfg.Validation,
 	)
 
 	// 1. Connect to source (for schema introspection only)
@@ -233,7 +236,19 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 				} else {
 					log.Printf("migrating data with %d workers...", cfg.Workers)
 				}
-				return migrateData(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Workers, cfg.TypeMapping, cfg.SourceSnapshotMode)
+				return migrateData(ctx, migrateDataConfig{
+					Src:                src,
+					SrcDSN:             cfg.Source.DSN,
+					Pool:               pgPool,
+					Schema:             schema,
+					PGSchema:           cfg.Schema,
+					Workers:            cfg.Workers,
+					TypeMap:            cfg.TypeMapping,
+					SourceSnapshotMode: cfg.SourceSnapshotMode,
+					ChunkSize:          cfg.ChunkSize,
+					Resume:             cfg.Resume,
+					ConfigDir:          cfg.configDir,
+				})
 			},
 			func() error {
 				return loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.AfterData, "after_data")
@@ -242,6 +257,18 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		if err != nil {
 			return err
 		}
+	}
+
+	// Validation
+	if cfg.Validation != "none" && !cfg.SchemaOnly {
+		if cfg.SourceSnapshotMode == "single_tx" {
+			log.Printf("WARN: validation with source_snapshot_mode=single_tx compares against current source state, not the snapshot; results may be inaccurate if the source was modified during migration")
+		}
+		log.Printf("running post-load validation (mode=%s)...", cfg.Validation)
+		if _, err := validateMigration(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Validation); err != nil {
+			return fmt.Errorf("validation: %w", err)
+		}
+		log.Printf("validation passed")
 	}
 
 	// 9. Post-migration: SET LOGGED, PKs, indexes, hooks, FKs, sequences, triggers

@@ -3,7 +3,9 @@
 A MySQL/SQLite-to-PostgreSQL migration CLI. Single binary, zero runtime dependencies.
 
 Reads your source schema, creates matching PostgreSQL tables, streams data in parallel via
-COPY, then wires up constraints, indexes, sequences, and (optionally) triggers.
+COPY with optional per-table chunking for large tables, then wires up constraints, indexes,
+sequences, and (optionally) triggers. Supports resumable migrations with checkpoints and
+post-load validation.
 
 | Source | Driver | Workers | Snapshot mode |
 |---|---|---|---|
@@ -85,7 +87,8 @@ The [`examples/`](examples/) directory is organized by source type.
 [`hooks`](examples/mysql/hooks/),
 [`sakila`](examples/mysql/sakila/),
 [`schema-only`](examples/mysql/schema-only/),
-[`data-only`](examples/mysql/data-only/).
+[`data-only`](examples/mysql/data-only/),
+[`chunked-resume`](examples/mysql/chunked-resume/).
 
 **SQLite**
 
@@ -93,13 +96,14 @@ The [`examples/`](examples/) directory is organized by source type.
 [`recreate-fast`](examples/sqlite/recreate-fast/),
 [`hooks`](examples/sqlite/hooks/),
 [`schema-only`](examples/sqlite/schema-only/),
-[`data-only`](examples/sqlite/data-only/).
+[`data-only`](examples/sqlite/data-only/),
+[`chunked-resume`](examples/sqlite/chunked-resume/).
 
 ## Documentation
 
 - [Configuration](docs/configuration.md) &mdash; all TOML settings, defaults, validation
 - [Type mapping](docs/type-mapping.md) &mdash; source&rarr;PG type tables, coercion options
-- [Migration pipeline](docs/migration-pipeline.md) &mdash; step-by-step pipeline, modes, snapshots
+- [Migration pipeline](docs/migration-pipeline.md) &mdash; step-by-step pipeline, modes, snapshots, chunking, resume, validation
 - [Hooks](docs/hooks.md) &mdash; 4-phase SQL hook system, templating
 - [Conventions & limitations](docs/conventions.md) &mdash; naming, orphan cleanup, unsupported features
 

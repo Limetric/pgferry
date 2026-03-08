@@ -98,6 +98,34 @@ pgferry detects views, routines (functions/procedures, MySQL only), and triggers
 source database and reports them as warnings. These are **not migrated
 automatically** and require manual recreation in PostgreSQL.
 
+## Chunking eligibility
+
+pgferry automatically chunks tables that have a **single-column numeric primary key**
+(integer types: `int`, `bigint`, `smallint`, `mediumint`, `tinyint` for MySQL;
+`INTEGER` for SQLite). Chunking is range-based using `WHERE pk >= lower AND pk < upper`.
+
+Tables that are **not chunkable** fall back to full-table `SELECT` + `COPY`:
+
+- Tables with composite primary keys (multiple columns)
+- Tables with non-numeric primary keys (UUID, VARCHAR, etc.)
+- Tables with no primary key
+
+Gaps in primary key sequences are handled naturally &mdash; a chunk spanning a
+gap simply returns fewer rows than the target chunk size.
+
+## Checkpoint files
+
+When chunked migration runs, pgferry writes a checkpoint file
+(`pgferry_checkpoint.json`) in the same directory as the TOML config file.
+The checkpoint records which chunks and tables have been completed.
+
+- **Format:** JSON (human-readable, inspectable)
+- **Writes:** Atomic (temp file + rename) to prevent corruption from crashes
+- **Cleanup:** Automatically deleted when migration completes successfully
+- **Stale checkpoints:** If the source data changes between runs, resuming from
+  a stale checkpoint may produce inconsistent results. pgferry logs the
+  checkpoint's `started_at` timestamp when resuming.
+
 ## Source-specific notes
 
 ### MySQL
