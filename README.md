@@ -2,11 +2,16 @@
 
 Move MySQL or SQLite databases into PostgreSQL with one config file and one binary.
 
-`pgferry` introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and optional triggers after the load. It is built for migrations that need to be boring in production: resumable, inspectable, and easy to reason about.
+`pgferry` is easy to pick up without boxing you into a shallow tool. It gets the default path out of your way, then gives you the controls you need when a real migration gets messy: planning, hooks, type mapping, checkpoints, validation, and post-load cleanup.
+
+It introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and optional triggers after the load. It is built for migrations that need to be boring in production: resumable, inspectable, and easy to reason about.
 
 - Single binary, zero runtime dependencies
+- Fast to start with sensible defaults
 - MySQL and SQLite source support
 - Parallel loading for MySQL, chunking for large tables
+- Manual control where it matters: hooks, planning, mapping, cleanup
+- Two-phase schema-only and data-only workflows when you need tighter control
 - Resume interrupted runs from checkpoints
 - Preflight planning for unsupported objects and manual follow-up
 - Optional SQL hooks and post-load validation
@@ -73,11 +78,18 @@ pgferry plan migration.toml --output-dir hooks --format json
 
 `plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
 
-## Why pgferry
+## Built For Real Migrations
 
-[`pgloader`](https://github.com/dimitri/pgloader) is the OG. It earned that reputation, and it is still an important tool in the ecosystem. `pgferry` is the better default when you want a migration tool that is easier to operate and easier to trust day to day: one static binary, one TOML config, native MySQL 8.4+ auth support, flexible [type mapping](docs/type-mapping.md), charset and collation awareness, [SQL hooks](docs/hooks.md), configurable orphan cleanup, and resumable checkpoints.
+- Use the default full pipeline when you want the fastest path from source to PostgreSQL.
+- Split the run into `schema_only` and `data_only` phases when your team wants to inspect or adjust the generated schema before loading data.
+- Use MySQL `single_tx` snapshot mode when the source is live and you need a consistent point-in-time read across tables.
+- Turn on `unlogged_tables` or `on_schema_exists = "recreate"` when speed matters more than preserving an existing target schema during iterative test runs.
 
-If `pgloader` is the classic, `pgferry` is the more practical choice for teams that want migrations to be predictable, inspectable, and easy to rerun.
+## Why pick pgferry over pgloader
+
+[`pgloader`](https://github.com/dimitri/pgloader) is the OG. It earned that reputation, and it is still an important tool in the ecosystem. `pgferry` is the better default when you want a migration tool that stays simple on the surface without giving up depth underneath: one static binary, one TOML config, native MySQL 8.4+ auth support, flexible [type mapping](docs/type-mapping.md), charset and collation awareness, [SQL hooks](docs/hooks.md), configurable orphan cleanup, resumable checkpoints, and SQLite support.
+
+If `pgloader` is the classic, `pgferry` is the more practical choice for teams that want migrations to be predictable, inspectable, easy to rerun, and still adaptable when the happy path is not enough.
 
 We also maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes for common upstream issues, so that comparison comes from hands-on experience.
 
