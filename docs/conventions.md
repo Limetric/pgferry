@@ -121,7 +121,9 @@ The checkpoint records which chunks and tables have been completed.
 
 - **Format:** Compact JSON
 - **Writes:** Batched and atomic (temp file + rename) to prevent corruption
-  from crashes. Flushes occur every 10 completed items or every 5 seconds.
+  from crashes. Flushes occur after every 10 completed items, or within 5
+  seconds of the next completed item. A crash can lose up to 10 chunks of
+  progress.
 - **No overhead when disabled:** when `resume = false` (the default), no
   checkpoint file is created or updated.
 - **Cleanup:** Automatically deleted when migration completes successfully

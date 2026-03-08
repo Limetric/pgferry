@@ -304,7 +304,9 @@ func (m *persistentCheckpointManager) shouldFlush() bool {
 }
 
 // Flush writes pending checkpoint state to disk. The mutex is held only during
-// marshaling (CPU-bound), then released before file I/O.
+// marshaling (CPU-bound), then released before file I/O. The dirty/unflushed
+// counters are reset only after a successful write so that a failed flush
+// (e.g. disk full) does not silently extend the recovery window.
 func (m *persistentCheckpointManager) Flush() error {
 	m.mu.Lock()
 	if !m.dirty {
@@ -312,15 +314,21 @@ func (m *persistentCheckpointManager) Flush() error {
 		return nil
 	}
 	data, err := json.Marshal(m.state)
-	m.dirty = false
-	m.unflushed = 0
-	m.lastFlush = time.Now()
 	m.mu.Unlock()
 
 	if err != nil {
 		return fmt.Errorf("marshal checkpoint: %w", err)
 	}
-	return writeCheckpointFile(m.path, data)
+	if err := writeCheckpointFile(m.path, data); err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	m.dirty = false
+	m.unflushed = 0
+	m.lastFlush = time.Now()
+	m.mu.Unlock()
+	return nil
 }
 
 func (m *persistentCheckpointManager) Cleanup() error {

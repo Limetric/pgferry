@@ -153,7 +153,6 @@ func TestNewCheckpointState(t *testing.T) {
 }
 
 func TestNoopCheckpointManager(t *testing.T) {
-	dir := t.TempDir()
 	mgr := &noopCheckpointManager{}
 
 	if mgr.IsTableDone("anything") {
@@ -163,7 +162,7 @@ func TestNoopCheckpointManager(t *testing.T) {
 		t.Error("noop should never report chunk completed")
 	}
 
-	// Record calls should not panic or create files
+	// Record calls should not panic
 	mgr.RecordFullTable("t1", 1000)
 	mgr.RecordChunk("t1", 0, 500, 3)
 
@@ -172,14 +171,6 @@ func TestNoopCheckpointManager(t *testing.T) {
 	}
 	if err := mgr.Cleanup(); err != nil {
 		t.Errorf("Cleanup: %v", err)
-	}
-
-	// Verify no checkpoint file was created
-	entries, _ := os.ReadDir(dir)
-	for _, e := range entries {
-		if strings.Contains(e.Name(), "checkpoint") {
-			t.Errorf("noop manager should not create files, found %s", e.Name())
-		}
 	}
 }
 
@@ -396,6 +387,87 @@ func TestPersistentCheckpointManager_TimeBasedFlush(t *testing.T) {
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("checkpoint file should exist after time-based flush")
+	}
+}
+
+func TestPersistentCheckpointManager_FlushPreservesProgressOnError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	// Simulate partial migration: some chunks succeed, then an error occurs.
+	mgr.RecordChunk("orders", 0, 500, 5)
+	mgr.RecordChunk("orders", 1, 500, 5)
+	mgr.RecordFullTable("users", 1000)
+
+	// Explicit flush (as the error path in migrateData would do)
+	if err := mgr.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	// Verify the checkpoint persists partial progress
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !loaded.isTableDone("users") {
+		t.Error("users should be done in checkpoint")
+	}
+	if !loaded.isChunkCompleted("orders", 0) {
+		t.Error("orders chunk 0 should be in checkpoint")
+	}
+	if !loaded.isChunkCompleted("orders", 1) {
+		t.Error("orders chunk 1 should be in checkpoint")
+	}
+	if loaded.isChunkCompleted("orders", 2) {
+		t.Error("orders chunk 2 should NOT be in checkpoint (not yet reached)")
+	}
+
+	// A new manager loading this checkpoint should skip the completed work
+	mgr2, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager 2: %v", err)
+	}
+	if !mgr2.IsTableDone("users") {
+		t.Error("resumed manager should skip users")
+	}
+	if !mgr2.IsChunkCompleted("orders", 0) {
+		t.Error("resumed manager should skip orders chunk 0")
+	}
+	if !mgr2.IsChunkCompleted("orders", 1) {
+		t.Error("resumed manager should skip orders chunk 1")
+	}
+	if mgr2.IsChunkCompleted("orders", 2) {
+		t.Error("resumed manager should not skip orders chunk 2")
+	}
+}
+
+func TestPersistentCheckpointManager_DirtyRetainedOnWriteFailure(t *testing.T) {
+	// Use a path where the directory does not exist so writeCheckpointFile fails.
+	path := filepath.Join(t.TempDir(), "nonexistent_subdir", "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	mgr.RecordChunk("t1", 0, 100, 5)
+
+	// Flush should fail because the directory doesn't exist
+	if err := mgr.Flush(); err == nil {
+		t.Fatal("expected flush to fail with nonexistent directory")
+	}
+
+	// dirty should still be true so the next flush retries
+	mgr.mu.Lock()
+	stillDirty := mgr.dirty
+	mgr.mu.Unlock()
+	if !stillDirty {
+		t.Error("dirty flag should remain true after failed write")
 	}
 }
 

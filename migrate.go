@@ -175,7 +175,8 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 		mgr = &noopCheckpointManager{}
 	}
 
-	// Flush partial progress on error so a resumed run can skip completed work.
+	// On error, flush partial checkpoint progress so a resumed run can skip
+	// completed work. This is a no-op when resume=false (noop manager).
 	success := false
 	defer func() {
 		if !success {

@@ -172,10 +172,17 @@ resume = true
 1. **On start:** if a checkpoint file exists, load it and skip completed chunks.
    If no checkpoint exists, create a fresh one.
 2. **During migration:** checkpoint state is tracked in memory and flushed to
-   disk periodically (every 10 completed items or every 5 seconds, whichever
-   comes first). Each flush writes atomically (temp file + rename). On error,
-   pending state is flushed to preserve partial progress for the next resume.
+   disk after every 10 completed items, or within 5 seconds of the next
+   completed item (there is no background timer — flushes are evaluated when
+   a chunk or table finishes). Each flush writes atomically (temp file +
+   rename). On error, pending state is flushed to preserve partial progress
+   for the next resume.
 3. **On success:** the checkpoint file is deleted.
+
+**Durability trade-off:** batched flushing means a crash can lose up to 10
+chunks of progress (or up to 5 seconds worth), compared to at most 1 chunk
+with per-item flushing. This is an acceptable trade-off for the significant
+reduction in I/O overhead, especially on heavily chunked migrations.
 
 When `resume = false` (the default), no checkpoint file is created or updated,
 eliminating all checkpoint-related I/O from the data copy hot path.
