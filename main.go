@@ -33,11 +33,20 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var generateCmd = &cobra.Command{
+	Use:     "generate",
+	Aliases: []string{"init"},
+	Short:   "Launch an interactive config wizard",
+	Args:    cobra.NoArgs,
+	RunE:    runGenerateWizard,
+}
+
 func init() {
 	rootCmd.Version = versionString()
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(generateCmd)
 }
 
 func main() {
@@ -62,6 +71,10 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	return runMigrationWithConfig(cfg)
+}
+
+func runMigrationWithConfig(cfg *MigrationConfig) error {
 	ctx := context.Background()
 	start := time.Now()
 

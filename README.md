@@ -52,6 +52,14 @@ Run:
 pgferry migration.toml
 ```
 
+Or launch the interactive config wizard:
+
+```bash
+pgferry generate
+```
+
+The wizard can save a reusable `migration.toml`, run the migration immediately, or do both.
+
 pgferry will introspect the source, create tables under the `app` schema, stream all data,
 then add primary keys, indexes, foreign keys, and auto-increment sequences.
 
