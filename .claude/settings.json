@@ -1,0 +1,28 @@
+{
+	"permissions": {
+		"allow": [
+			"Edit",
+			"Write",
+			"WebFetch",
+			"Bash(ls:*)",
+			"Bash(cat:*)",
+			"Bash(grep:*)",
+			"Bash(chmod:*)",
+			"Bash(tail:*)",
+			"Bash(tree:*)",
+			"Bash(head:*)",
+			"Bash(git:*)",
+			"Bash(jq:*)",
+			"Bash(rg:*)",
+			"Bash(find:*)",
+			"Bash(gh:*)",
+			"mcp__context7-free__*",
+			"mcp__context7__*",
+			"mcp__exa__*",
+			"mcp__brave-search__*",
+			"mcp__github__*"
+		]
+	},
+	"enabledMcpjsonServers": ["context7", "context7-free", "github", "svelte", "exa", "brave-search"],
+	"enableAllProjectMcpServers": true
+}
