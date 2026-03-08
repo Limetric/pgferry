@@ -1,20 +1,24 @@
 # pgferry
 
-A MySQL/SQLite-to-PostgreSQL migration CLI. Single binary, zero runtime dependencies.
+Move MySQL or SQLite databases into PostgreSQL with one config file and one binary.
 
-Reads your source schema, creates matching PostgreSQL tables, streams data in parallel via
-COPY with optional per-table chunking for large tables, then wires up constraints, indexes,
-sequences, and (optionally) triggers. Supports resumable migrations with checkpoints and
-post-load validation.
+`pgferry` introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and optional triggers after the load. It is built for migrations that need to be boring in production: resumable, inspectable, and easy to reason about.
 
-| Source | Driver | Workers | Snapshot mode |
-|---|---|---|---|
-| MySQL | `go-sql-driver/mysql` | Parallel (configurable) | `none`, `single_tx` |
-| SQLite | `modernc.org/sqlite` (pure Go) | Sequential (1 worker) | `none` only |
+- Single binary, zero runtime dependencies
+- MySQL and SQLite source support
+- Parallel loading for MySQL, chunking for large tables
+- Resume interrupted runs from checkpoints
+- Preflight planning for unsupported objects and manual follow-up
+- Optional SQL hooks and post-load validation
+
+| Source | Driver                         | Workers                 | Snapshot mode       |
+| ------ | ------------------------------ | ----------------------- | ------------------- |
+| MySQL  | `go-sql-driver/mysql`          | Parallel (configurable) | `none`, `single_tx` |
+| SQLite | `modernc.org/sqlite` (pure Go) | Sequential (1 worker)   | `none` only         |
 
 ## Install
 
-Download the latest binary from the [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest) page, or build from source:
+Download the latest binary from [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest), or build from source:
 
 ```bash
 git clone https://github.com/Limetric/pgferry.git
@@ -22,9 +26,11 @@ cd pgferry
 go build -o build/pgferry .
 ```
 
-## Quick start
+## Quick Start
 
-**MySQL &rarr; PostgreSQL**
+Create `migration.toml` manually or via `pgferry generate`.
+
+**MySQL -> PostgreSQL**
 
 ```toml
 schema = "app"
@@ -37,7 +43,7 @@ dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
-**SQLite &rarr; PostgreSQL**
+**SQLite -> PostgreSQL**
 
 ```toml
 schema = "app"
@@ -50,76 +56,47 @@ dsn = "/path/to/database.db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
-Run:
+Run the migration:
 
 ```bash
 pgferry migration.toml
 ```
 
-Or launch the interactive config wizard:
+## Check First, Migrate Second
 
-```bash
-pgferry generate
-```
-
-The wizard can save a reusable `migration.toml`, run the migration immediately, or do both.
-
-Analyze a source database before migrating:
+Inspect the source before touching PostgreSQL:
 
 ```bash
 pgferry plan migration.toml
 pgferry plan migration.toml --output-dir hooks --format json
 ```
 
-`plan` introspects the source schema and reports objects that need manual attention &mdash;
-views, routines, triggers, generated columns, unsupported indexes, and collation warnings.
-With `--output-dir` it generates skeleton SQL hook files you can fill in.
+`plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
 
-pgferry will introspect the source, create tables under the `app` schema, stream all data,
-then add primary keys, indexes, foreign keys, and auto-increment sequences.
+## Why pgferry
 
-## Why not pgloader?
+[`pgloader`](https://github.com/dimitri/pgloader) is the OG. It earned that reputation, and it is still an important tool in the ecosystem. `pgferry` is the better default when you want a migration tool that is easier to operate and easier to trust day to day: one static binary, one TOML config, native MySQL 8.4+ auth support, flexible [type mapping](docs/type-mapping.md), charset and collation awareness, [SQL hooks](docs/hooks.md), configurable orphan cleanup, and resumable checkpoints.
 
-[pgloader](https://github.com/dimitri/pgloader) is a great tool. pgferry aims to be
-simpler and more robust out of the box &mdash; native MySQL 8.4+ auth, a single TOML config
-instead of a custom DSL, flexible [type mapping](docs/type-mapping.md) coercions,
-charset/collation awareness, [SQL hooks](docs/hooks.md), configurable orphan cleanup,
-and SQLite support.
+If `pgloader` is the classic, `pgferry` is the more practical choice for teams that want migrations to be predictable, inspectable, and easy to rerun.
 
-> We also maintain a [pgloader fork](https://github.com/Limetric/pgloader) that patches
-> common upstream issues.
+We also maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes for common upstream issues, so that comparison comes from hands-on experience.
 
 ## Examples
 
-The [`examples/`](examples/) directory is organized by source type.
+The [`examples/`](examples/) directory is split by source type.
 
-**MySQL**
+**MySQL:** [`minimal-safe`](examples/mysql/minimal-safe/), [`recreate-fast`](examples/mysql/recreate-fast/), [`hooks`](examples/mysql/hooks/), [`sakila`](examples/mysql/sakila/), [`schema-only`](examples/mysql/schema-only/), [`data-only`](examples/mysql/data-only/), [`chunked-resume`](examples/mysql/chunked-resume/)
 
-[`minimal-safe`](examples/mysql/minimal-safe/),
-[`recreate-fast`](examples/mysql/recreate-fast/),
-[`hooks`](examples/mysql/hooks/),
-[`sakila`](examples/mysql/sakila/),
-[`schema-only`](examples/mysql/schema-only/),
-[`data-only`](examples/mysql/data-only/),
-[`chunked-resume`](examples/mysql/chunked-resume/).
-
-**SQLite**
-
-[`minimal-safe`](examples/sqlite/minimal-safe/),
-[`recreate-fast`](examples/sqlite/recreate-fast/),
-[`hooks`](examples/sqlite/hooks/),
-[`schema-only`](examples/sqlite/schema-only/),
-[`data-only`](examples/sqlite/data-only/),
-[`chunked-resume`](examples/sqlite/chunked-resume/).
+**SQLite:** [`minimal-safe`](examples/sqlite/minimal-safe/), [`recreate-fast`](examples/sqlite/recreate-fast/), [`hooks`](examples/sqlite/hooks/), [`schema-only`](examples/sqlite/schema-only/), [`data-only`](examples/sqlite/data-only/), [`chunked-resume`](examples/sqlite/chunked-resume/)
 
 ## Documentation
 
-- [Configuration](docs/configuration.md) &mdash; all TOML settings, defaults, validation
-- [Type mapping](docs/type-mapping.md) &mdash; source&rarr;PG type tables, coercion options
-- [Migration pipeline](docs/migration-pipeline.md) &mdash; step-by-step pipeline, modes, snapshots, chunking, resume, validation
-- [Hooks](docs/hooks.md) &mdash; 4-phase SQL hook system, templating
-- [Conventions & limitations](docs/conventions.md) &mdash; naming, orphan cleanup, unsupported features
+- [Configuration](docs/configuration.md): all TOML settings, defaults, and validation
+- [Type mapping](docs/type-mapping.md): source-to-PostgreSQL type mapping and coercion options
+- [Migration pipeline](docs/migration-pipeline.md): pipeline stages, snapshot modes, chunking, resume, and validation
+- [Hooks](docs/hooks.md): the four hook phases and template substitution
+- [Conventions and limitations](docs/conventions.md): naming rules, cleanup behavior, and unsupported features
 
 ## License
 
-Apache 2.0 &mdash; see [LICENSE](LICENSE).
+Apache 2.0. See [LICENSE](LICENSE).
