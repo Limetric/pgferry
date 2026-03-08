@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -148,5 +149,283 @@ func TestNewCheckpointState(t *testing.T) {
 	}
 	if time.Since(state.StartedAt) > time.Minute {
 		t.Error("StartedAt should be recent")
+	}
+}
+
+func TestNoopCheckpointManager(t *testing.T) {
+	dir := t.TempDir()
+	mgr := &noopCheckpointManager{}
+
+	if mgr.IsTableDone("anything") {
+		t.Error("noop should never report table done")
+	}
+	if mgr.IsChunkCompleted("anything", 0) {
+		t.Error("noop should never report chunk completed")
+	}
+
+	// Record calls should not panic or create files
+	mgr.RecordFullTable("t1", 1000)
+	mgr.RecordChunk("t1", 0, 500, 3)
+
+	if err := mgr.Flush(); err != nil {
+		t.Errorf("Flush: %v", err)
+	}
+	if err := mgr.Cleanup(); err != nil {
+		t.Errorf("Cleanup: %v", err)
+	}
+
+	// Verify no checkpoint file was created
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "checkpoint") {
+			t.Errorf("noop manager should not create files, found %s", e.Name())
+		}
+	}
+}
+
+func TestPersistentCheckpointManager_FreshStart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if mgr.IsTableDone("t1") {
+		t.Error("fresh manager should not report table done")
+	}
+	if mgr.IsChunkCompleted("t1", 0) {
+		t.Error("fresh manager should not report chunk completed")
+	}
+}
+
+func TestPersistentCheckpointManager_SkipSets(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	// Create a checkpoint with some completed work
+	state := newCheckpointState()
+	state.recordFullTable("users", 1000)
+	state.recordChunk("orders", 0, 500, 3)
+	state.recordChunk("orders", 1, 300, 3)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if !mgr.IsTableDone("users") {
+		t.Error("users should be done")
+	}
+	if mgr.IsTableDone("orders") {
+		t.Error("orders should not be done")
+	}
+	if !mgr.IsChunkCompleted("orders", 0) {
+		t.Error("orders chunk 0 should be completed")
+	}
+	if !mgr.IsChunkCompleted("orders", 1) {
+		t.Error("orders chunk 1 should be completed")
+	}
+	if mgr.IsChunkCompleted("orders", 2) {
+		t.Error("orders chunk 2 should not be completed")
+	}
+	if mgr.IsChunkCompleted("nonexistent", 0) {
+		t.Error("nonexistent table should not have completed chunks")
+	}
+}
+
+func TestPersistentCheckpointManager_BatchedFlush(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	// Record fewer items than the flush threshold — file should not exist yet
+	for i := 0; i < checkpointFlushCount-1; i++ {
+		mgr.RecordChunk("t1", i, 100, checkpointFlushCount+5)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("checkpoint file should not exist before flush threshold")
+	}
+
+	// One more record should trigger the flush
+	mgr.RecordChunk("t1", checkpointFlushCount-1, 100, checkpointFlushCount+5)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("checkpoint file should exist after flush threshold")
+	}
+
+	// Verify the file is loadable and has correct state
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	tc := loaded.Tables["t1"]
+	if tc == nil {
+		t.Fatal("table t1 not in checkpoint")
+	}
+	if len(tc.CompletedChunks) != checkpointFlushCount {
+		t.Errorf("CompletedChunks = %d, want %d", len(tc.CompletedChunks), checkpointFlushCount)
+	}
+}
+
+func TestPersistentCheckpointManager_ExplicitFlush(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	mgr.RecordFullTable("t1", 500)
+
+	// File should not exist yet (below flush threshold)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("file should not exist before explicit flush")
+	}
+
+	// Explicit flush should write the file
+	if err := mgr.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !loaded.isTableDone("t1") {
+		t.Error("t1 should be done after flush")
+	}
+
+	// Second flush with no new data should be a no-op (no error)
+	if err := mgr.Flush(); err != nil {
+		t.Fatalf("second flush: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_Cleanup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	mgr.RecordFullTable("t1", 500)
+	if err := mgr.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	if err := mgr.Cleanup(); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("checkpoint file should not exist after cleanup")
+	}
+}
+
+func TestPersistentCheckpointManager_ConcurrentRecords(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	const numWorkers = 8
+	const chunksPerWorker = 20
+	var wg sync.WaitGroup
+
+	for w := 0; w < numWorkers; w++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			tableName := "t1"
+			for i := 0; i < chunksPerWorker; i++ {
+				idx := workerID*chunksPerWorker + i
+				mgr.RecordChunk(tableName, idx, 100, numWorkers*chunksPerWorker)
+			}
+		}(w)
+	}
+
+	wg.Wait()
+	if err := mgr.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	tc := loaded.Tables["t1"]
+	if tc == nil {
+		t.Fatal("table t1 not in checkpoint")
+	}
+	if len(tc.CompletedChunks) != numWorkers*chunksPerWorker {
+		t.Errorf("CompletedChunks = %d, want %d", len(tc.CompletedChunks), numWorkers*chunksPerWorker)
+	}
+}
+
+func TestPersistentCheckpointManager_TimeBasedFlush(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	mgr, err := newPersistentCheckpointManager(path)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	// Force lastFlush into the past to trigger time-based flush
+	mgr.mu.Lock()
+	mgr.lastFlush = time.Now().Add(-checkpointFlushInterval - time.Second)
+	mgr.mu.Unlock()
+
+	// Even a single record should trigger flush due to elapsed time
+	mgr.RecordChunk("t1", 0, 100, 5)
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("checkpoint file should exist after time-based flush")
+	}
+}
+
+func TestCheckpointCompactJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	state := newCheckpointState()
+	state.recordFullTable("t1", 100)
+
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	// Compact JSON should not contain newlines
+	if strings.Contains(string(data), "\n") {
+		t.Error("checkpoint should use compact JSON (no newlines)")
+	}
+
+	// Should still be loadable
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !loaded.isTableDone("t1") {
+		t.Error("t1 should be done")
 	}
 }

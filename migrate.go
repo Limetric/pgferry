@@ -45,41 +45,17 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 		return err
 	}
 
-	// Load or create checkpoint
-	cpPath := checkpointPath(configDir)
-	var cp *CheckpointState
+	// Create checkpoint manager: noop when resume is disabled to avoid
+	// all checkpoint file I/O in the hot path.
+	var mgr checkpointManager
 	if resume {
-		cp, err = loadCheckpoint(cpPath)
-		if err != nil {
-			return fmt.Errorf("load checkpoint: %w", err)
+		pm, mgrErr := newPersistentCheckpointManager(checkpointPath(configDir))
+		if mgrErr != nil {
+			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
-		if cp != nil {
-			log.Printf("resuming from checkpoint (started %s)", cp.StartedAt.Format(time.RFC3339))
-		}
-	}
-	if cp == nil {
-		cp = newCheckpointState()
-	}
-
-	var cpMu sync.Mutex
-
-	// Pre-compute skip sets from checkpoint BEFORE launching workers to avoid
-	// concurrent map reads (in skip checks) racing with map writes (in workers).
-	skipTables := make(map[string]bool)       // tables fully done
-	skipChunks := make(map[string]map[int]bool) // table → chunk indices done
-	if resume {
-		for name, tc := range cp.Tables {
-			if tc.FullTableDone {
-				skipTables[name] = true
-			}
-			if len(tc.CompletedChunks) > 0 {
-				s := make(map[int]bool, len(tc.CompletedChunks))
-				for idx := range tc.CompletedChunks {
-					s[idx] = true
-				}
-				skipChunks[name] = s
-			}
-		}
+		mgr = pm
+	} else {
+		mgr = &noopCheckpointManager{}
 	}
 
 	sem := make(chan struct{}, workers)
@@ -99,7 +75,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	for _, plan := range plans {
 		if plan.ChunkKey == nil {
 			// Non-chunkable: fall back to full-table copy
-			if skipTables[plan.Table.SourceName] {
+			if mgr.IsTableDone(plan.Table.SourceName) {
 				log.Printf("  [%s] skipping (completed in previous run)", plan.Table.SourceName)
 				continue
 			}
@@ -114,18 +90,12 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 					errCh <- fmt.Errorf("table %s: %w", t.SourceName, copyErr)
 					return
 				}
-				cpMu.Lock()
-				cp.recordFullTable(t.SourceName, count)
-				if saveErr := saveCheckpoint(cpPath, cp); saveErr != nil {
-					log.Printf("WARN: failed to save checkpoint: %v", saveErr)
-				}
-				cpMu.Unlock()
+				mgr.RecordFullTable(t.SourceName, count)
 			}(plan.Table)
 		} else {
 			// Chunkable: dispatch each chunk
-			tableSkips := skipChunks[plan.Table.SourceName]
 			for _, chunk := range plan.Chunks {
-				if tableSkips[chunk.Index] {
+				if mgr.IsChunkCompleted(plan.Table.SourceName, chunk.Index) {
 					continue
 				}
 				wg.Add(1)
@@ -139,12 +109,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 						errCh <- fmt.Errorf("table %s chunk %d: %w", t.SourceName, c.Index, copyErr)
 						return
 					}
-					cpMu.Lock()
-					cp.recordChunk(t.SourceName, c.Index, count, chunkCount)
-					if saveErr := saveCheckpoint(cpPath, cp); saveErr != nil {
-						log.Printf("WARN: failed to save checkpoint: %v", saveErr)
-					}
-					cpMu.Unlock()
+					mgr.RecordChunk(t.SourceName, c.Index, count, chunkCount)
 				}(plan.Table, *plan.ChunkKey, chunk, len(plan.Chunks))
 			}
 		}
@@ -157,7 +122,12 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	for err := range errCh {
 		errs = append(errs, err)
 	}
+
 	if len(errs) > 0 {
+		// Flush partial progress so a resumed run can skip completed work.
+		if flushErr := mgr.Flush(); flushErr != nil {
+			log.Printf("WARN: failed to save checkpoint: %v", flushErr)
+		}
 		for _, e := range errs {
 			log.Printf("ERROR: %v", e)
 		}
@@ -165,7 +135,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	}
 
 	// All succeeded — remove checkpoint
-	if err := deleteCheckpoint(cpPath); err != nil {
+	if err := mgr.Cleanup(); err != nil {
 		log.Printf("WARN: failed to delete checkpoint: %v", err)
 	}
 	return nil
@@ -193,28 +163,34 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	}
 	defer tx.Rollback()
 
-	// Load or create checkpoint
-	cpPath := checkpointPath(configDir)
-	var cp *CheckpointState
+	// Create checkpoint manager: noop when resume is disabled.
+	var mgr checkpointManager
 	if resume {
-		cp, err = loadCheckpoint(cpPath)
-		if err != nil {
-			return fmt.Errorf("load checkpoint: %w", err)
+		pm, mgrErr := newPersistentCheckpointManager(checkpointPath(configDir))
+		if mgrErr != nil {
+			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
-		if cp != nil {
-			log.Printf("resuming from checkpoint (started %s)", cp.StartedAt.Format(time.RFC3339))
+		mgr = pm
+	} else {
+		mgr = &noopCheckpointManager{}
+	}
+
+	// Flush partial progress on error so a resumed run can skip completed work.
+	success := false
+	defer func() {
+		if !success {
+			if flushErr := mgr.Flush(); flushErr != nil {
+				log.Printf("WARN: failed to save checkpoint: %v", flushErr)
+			}
 		}
-	}
-	if cp == nil {
-		cp = newCheckpointState()
-	}
+	}()
 
 	log.Printf("source snapshot enabled: single_tx (sequential table copy)")
 	for _, t := range schema.Tables {
 		key := chunkKeyForTable(t, src)
 		if key == nil {
 			// Not chunkable — full-table copy
-			if resume && cp.isTableDone(t.SourceName) {
+			if mgr.IsTableDone(t.SourceName) {
 				log.Printf("  [%s] skipping (completed in previous run)", t.SourceName)
 				continue
 			}
@@ -222,10 +198,7 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 			if copyErr != nil {
 				return fmt.Errorf("table %s: %w", t.SourceName, copyErr)
 			}
-			cp.recordFullTable(t.SourceName, count)
-			if saveErr := saveCheckpoint(cpPath, cp); saveErr != nil {
-				log.Printf("WARN: failed to save checkpoint: %v", saveErr)
-			}
+			mgr.RecordFullTable(t.SourceName, count)
 			continue
 		}
 
@@ -236,27 +209,21 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 		}
 		if !hasRows {
 			log.Printf("  [%s] empty table, skipping", t.SourceName)
-			cp.recordFullTable(t.SourceName, 0)
-			if saveErr := saveCheckpoint(cpPath, cp); saveErr != nil {
-				log.Printf("WARN: failed to save checkpoint: %v", saveErr)
-			}
+			mgr.RecordFullTable(t.SourceName, 0)
 			continue
 		}
 
 		chunks := planChunks(min, max, chunkSize)
 		log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
 		for _, chunk := range chunks {
-			if resume && cp.isChunkCompleted(t.SourceName, chunk.Index) {
+			if mgr.IsChunkCompleted(t.SourceName, chunk.Index) {
 				continue
 			}
 			count, copyErr := migrateChunkFromSource(ctx, src, tx, pool, t, pgSchema, typeMap, *key, chunk)
 			if copyErr != nil {
 				return fmt.Errorf("table %s chunk %d: %w", t.SourceName, chunk.Index, copyErr)
 			}
-			cp.recordChunk(t.SourceName, chunk.Index, count, len(chunks))
-			if saveErr := saveCheckpoint(cpPath, cp); saveErr != nil {
-				log.Printf("WARN: failed to save checkpoint: %v", saveErr)
-			}
+			mgr.RecordChunk(t.SourceName, chunk.Index, count, len(chunks))
 		}
 	}
 
@@ -264,8 +231,9 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 		return fmt.Errorf("commit source transaction: %w", err)
 	}
 
+	success = true
 	// All succeeded — remove checkpoint
-	if err := deleteCheckpoint(cpPath); err != nil {
+	if err := mgr.Cleanup(); err != nil {
 		log.Printf("WARN: failed to delete checkpoint: %v", err)
 	}
 	return nil

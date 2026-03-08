@@ -171,9 +171,14 @@ resume = true
 
 1. **On start:** if a checkpoint file exists, load it and skip completed chunks.
    If no checkpoint exists, create a fresh one.
-2. **During migration:** the checkpoint is atomically updated after each chunk
-   completes (write to temp file, then rename &mdash; safe against crashes).
+2. **During migration:** checkpoint state is tracked in memory and flushed to
+   disk periodically (every 10 completed items or every 5 seconds, whichever
+   comes first). Each flush writes atomically (temp file + rename). On error,
+   pending state is flushed to preserve partial progress for the next resume.
 3. **On success:** the checkpoint file is deleted.
+
+When `resume = false` (the default), no checkpoint file is created or updated,
+eliminating all checkpoint-related I/O from the data copy hot path.
 
 ### Constraints
 
