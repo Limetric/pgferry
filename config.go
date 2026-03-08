@@ -124,6 +124,7 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.Workers <= 0 {
 		cfg.Workers = defaultWorkers()
 	}
+	// index_workers defaults to workers when not set (0 means inherit)
 	if cfg.IndexWorkers <= 0 {
 		cfg.IndexWorkers = cfg.Workers
 	}
@@ -214,9 +215,14 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return err
 	}
 
-	// Cap workers based on source limits
-	if max := src.MaxWorkers(); max > 0 && cfg.Workers > max {
-		cfg.Workers = max
+	// Cap workers based on source limits (e.g. SQLite is single-threaded)
+	if max := src.MaxWorkers(); max > 0 {
+		if cfg.Workers > max {
+			cfg.Workers = max
+		}
+		if cfg.IndexWorkers > max {
+			cfg.IndexWorkers = max
+		}
 	}
 
 	if cfg.Target.DSN == "" {

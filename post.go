@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -278,26 +279,35 @@ func createIndex(ctx context.Context, pool *pgxpool.Pool, pgSchema string, t Tab
 func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int) error {
 	jobs, skipped := planIndexJobs(schema, pgSchema)
 	if len(jobs) == 0 {
-		if skipped > 0 {
-			log.Printf("    no supported indexes to create (%d skipped)", skipped)
-		}
+		log.Printf("    no indexes to create (%d skipped)", skipped)
 		return nil
 	}
 
-	if workers < 1 {
-		workers = 1
-	}
 	log.Printf("    creating %d index(es) with %d worker(s) (%d skipped)...", len(jobs), workers, skipped)
+	start := time.Now()
 
-	if workers == 1 {
+	err := execIndexJobs(ctx, jobs, workers, func(ctx context.Context, j indexJob) error {
+		return createIndex(ctx, pool, pgSchema, j.table, j.index)
+	})
+
+	log.Printf("    indexes completed in %s", time.Since(start).Round(time.Millisecond))
+	return err
+}
+
+// execIndexJobs runs index creation jobs with bounded parallelism.
+// The exec callback is invoked for each job. When workers == 1, jobs run
+// sequentially; otherwise they run in parallel with a semaphore.
+func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(ctx context.Context, j indexJob) error) error {
+	if workers <= 1 {
 		for _, job := range jobs {
-			if err := createIndex(ctx, pool, pgSchema, job.table, job.index); err != nil {
+			if err := exec(ctx, job); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
 
+	// Parallel path: log lines may interleave across workers.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -322,7 +332,7 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 			}
 			defer func() { <-sem }()
 
-			if err := createIndex(ctx, pool, pgSchema, j.table, j.index); err != nil {
+			if err := exec(ctx, j); err != nil {
 				setErr(err)
 			}
 		}(job)

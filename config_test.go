@@ -596,6 +596,38 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.Workers != 1 {
 		t.Errorf("Workers = %d, want 1 (SQLite caps at 1)", cfg.Workers)
 	}
+	if cfg.IndexWorkers != 1 {
+		t.Errorf("IndexWorkers = %d, want 1 (SQLite caps at 1)", cfg.IndexWorkers)
+	}
+}
+
+func TestLoadConfig_SQLiteIndexWorkersCapped(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_index_workers.toml")
+
+	content := `
+schema = "target"
+index_workers = 4
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.IndexWorkers != 1 {
+		t.Errorf("IndexWorkers = %d, want 1 (SQLite caps at 1)", cfg.IndexWorkers)
+	}
 }
 
 func TestLoadConfig_SQLiteMySQLOnlyTypeMappingRejected(t *testing.T) {

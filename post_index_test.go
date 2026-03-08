@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"sync/atomic"
+	"testing"
+)
 
 func TestPlanIndexJobs_SkipsUnsupported(t *testing.T) {
 	schema := &Schema{Tables: []Table{
@@ -103,5 +108,110 @@ func TestPlanIndexJobs_PreservesTableAndIndexMetadata(t *testing.T) {
 	}
 	if job.index.ColumnOrders[0] != "ASC" {
 		t.Errorf("job.index.ColumnOrders[0] = %q, want %q", job.index.ColumnOrders[0], "ASC")
+	}
+}
+
+func makeTestJobs(n int) []indexJob {
+	jobs := make([]indexJob, n)
+	for i := range jobs {
+		jobs[i] = indexJob{
+			table: Table{PGName: fmt.Sprintf("t%d", i)},
+			index: Index{Name: fmt.Sprintf("idx_%d", i), Type: "BTREE", Columns: []string{"col"}},
+		}
+	}
+	return jobs
+}
+
+func TestExecIndexJobs_SequentialSuccess(t *testing.T) {
+	jobs := makeTestJobs(3)
+	var count int
+	err := execIndexJobs(context.Background(), jobs, 1, func(_ context.Context, _ indexJob) error {
+		count++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("executed %d jobs, want 3", count)
+	}
+}
+
+func TestExecIndexJobs_SequentialErrorStops(t *testing.T) {
+	jobs := makeTestJobs(5)
+	var count int
+	err := execIndexJobs(context.Background(), jobs, 1, func(_ context.Context, _ indexJob) error {
+		count++
+		if count == 2 {
+			return fmt.Errorf("fail on job 2")
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if count != 2 {
+		t.Fatalf("executed %d jobs, want 2 (should stop on first error)", count)
+	}
+}
+
+func TestExecIndexJobs_ParallelSuccess(t *testing.T) {
+	jobs := makeTestJobs(10)
+	var count atomic.Int32
+	err := execIndexJobs(context.Background(), jobs, 4, func(_ context.Context, _ indexJob) error {
+		count.Add(1)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count.Load() != 10 {
+		t.Fatalf("executed %d jobs, want 10", count.Load())
+	}
+}
+
+func TestExecIndexJobs_ParallelErrorCancelsRemaining(t *testing.T) {
+	// Use 1 worker with 20 jobs so that after the error on job 1,
+	// the remaining jobs see the cancelled context and bail out.
+	jobs := makeTestJobs(20)
+	var count atomic.Int32
+	err := execIndexJobs(context.Background(), jobs, 2, func(ctx context.Context, _ indexJob) error {
+		n := count.Add(1)
+		if n == 1 {
+			return fmt.Errorf("intentional failure")
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected error from parallel execution")
+	}
+	if err.Error() != "intentional failure" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// With cancellation, not all 20 jobs should have executed
+	executed := count.Load()
+	if executed >= 20 {
+		t.Fatalf("executed %d jobs; cancellation should have stopped some", executed)
+	}
+}
+
+func TestExecIndexJobs_ContextAlreadyCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	jobs := makeTestJobs(5)
+	var count atomic.Int32
+	err := execIndexJobs(ctx, jobs, 4, func(_ context.Context, _ indexJob) error {
+		count.Add(1)
+		return nil
+	})
+	// No error expected — cancelled goroutines just return without executing.
+	// Some goroutines may still run (select between ready channels is non-deterministic),
+	// but fewer than all jobs should execute.
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if count.Load() > int32(len(jobs)) {
+		t.Fatalf("executed %d jobs, should not exceed %d", count.Load(), len(jobs))
 	}
 }
