@@ -160,7 +160,8 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 		        COALESCE(NUMERIC_SCALE, 0),
 		        IS_NULLABLE, COLUMN_DEFAULT, EXTRA, ORDINAL_POSITION,
 		        COALESCE(CHARACTER_SET_NAME, ''),
-		        COALESCE(COLLATION_NAME, '')
+		        COALESCE(COLLATION_NAME, ''),
+		        COALESCE(GENERATION_EXPRESSION, '')
 		 FROM INFORMATION_SCHEMA.COLUMNS
 		 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
 		 ORDER BY ORDINAL_POSITION`,
@@ -181,6 +182,7 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 			&c.CharMaxLen, &c.Precision, &c.Scale,
 			&nullable, &dflt, &c.Extra, &c.OrdinalPos,
 			&c.Charset, &c.Collation,
+			&c.GenerationExpression,
 		); err != nil {
 			return nil, err
 		}

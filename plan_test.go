@@ -34,7 +34,7 @@ func TestBuildPlanReport_Full(t *testing.T) {
 				PGName:     "users",
 				Columns: []Column{
 					{SourceName: "id", PGName: "id", DataType: "int"},
-					{SourceName: "full_name", PGName: "full_name", DataType: "varchar", Extra: "VIRTUAL GENERATED"},
+					{SourceName: "full_name", PGName: "full_name", DataType: "varchar", Extra: "VIRTUAL GENERATED", GenerationExpression: "concat(`first_name`,' ',`last_name`)"},
 				},
 				Indexes: []Index{
 					{Name: "idx_ft", SourceName: "idx_ft", Type: "FULLTEXT", Columns: []string{"full_name"}},
@@ -64,8 +64,12 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	if len(report.GeneratedColumns) != 1 {
 		t.Fatalf("generated columns = %d, want 1", len(report.GeneratedColumns))
 	}
-	if report.GeneratedColumns[0].Table != "users" || report.GeneratedColumns[0].Column != "full_name" {
-		t.Errorf("generated column = %+v", report.GeneratedColumns[0])
+	gc := report.GeneratedColumns[0]
+	if gc.Table != "users" || gc.Column != "full_name" {
+		t.Errorf("generated column = %+v", gc)
+	}
+	if gc.Expression != "concat(`first_name`,' ',`last_name`)" {
+		t.Errorf("generated column expression = %q, want source formula", gc.Expression)
 	}
 	if len(report.SkippedIndexes) != 1 {
 		t.Fatalf("skipped indexes = %d, want 1", len(report.SkippedIndexes))
@@ -199,7 +203,7 @@ func TestWriteHookSkeletons_GeneratedColumns(t *testing.T) {
 	dir := t.TempDir()
 	report := &PlanReport{
 		GeneratedColumns: []PlanGeneratedColumn{
-			{Table: "users", Column: "display_name", Expression: "VIRTUAL GENERATED"},
+			{Table: "users", Column: "display_name", Expression: "concat(`first`,`last`)"},
 		},
 	}
 
@@ -219,7 +223,7 @@ func TestWriteHookSkeletons_GeneratedColumns(t *testing.T) {
 	if !strings.Contains(content, "display_name") {
 		t.Error("after_data.sql should mention the generated column")
 	}
-	if !strings.Contains(content, "VIRTUAL GENERATED") {
+	if !strings.Contains(content, "concat(`first`,`last`)") {
 		t.Error("after_data.sql should mention the source expression")
 	}
 }
@@ -283,32 +287,39 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 
 	report := buildPlanReport(schema, nil, cfg)
 
-	if report.SourceObjects.Views != nil {
-		t.Errorf("views should be nil, got %v", report.SourceObjects.Views)
+	if len(report.SourceObjects.Views) != 0 {
+		t.Errorf("views should be empty, got %v", report.SourceObjects.Views)
 	}
-	if report.SourceObjects.Routines != nil {
-		t.Errorf("routines should be nil, got %v", report.SourceObjects.Routines)
+	if len(report.SourceObjects.Routines) != 0 {
+		t.Errorf("routines should be empty, got %v", report.SourceObjects.Routines)
 	}
-	if report.SourceObjects.Triggers != nil {
-		t.Errorf("triggers should be nil, got %v", report.SourceObjects.Triggers)
+	if len(report.SourceObjects.Triggers) != 0 {
+		t.Errorf("triggers should be empty, got %v", report.SourceObjects.Triggers)
 	}
 }
 
-func TestWritePlanJSON_NilSlicesAsEmpty(t *testing.T) {
-	report := &PlanReport{}
+func TestWritePlanJSON_EmptySlices(t *testing.T) {
+	schema := &Schema{}
+	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
+	report := buildPlanReport(schema, nil, cfg)
 
 	var buf bytes.Buffer
 	if err := writePlanJSON(&buf, report); err != nil {
 		t.Fatalf("writePlanJSON: %v", err)
 	}
 
-	// Verify the JSON has null arrays rather than causing decode issues
+	output := buf.String()
+
+	// Verify empty slices serialize as [] not null
+	if strings.Contains(output, ": null") {
+		t.Errorf("JSON output contains null values, expected empty arrays:\n%s", output)
+	}
+
+	// Source objects should be present as an object
 	var decoded map[string]any
 	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
 		t.Fatalf("decode JSON: %v", err)
 	}
-
-	// Source objects should be present as an object
 	if _, ok := decoded["source_objects"]; !ok {
 		t.Error("missing source_objects key")
 	}

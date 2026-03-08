@@ -119,11 +119,9 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("introspect schema: %w", err)
 	}
 
-	var sourceObjects *SourceObjects
-	if objs, err := src.IntrospectSourceObjects(sourceDB, dbName); err != nil {
-		log.Printf("WARN: failed to introspect non-table source objects: %v", err)
-	} else {
-		sourceObjects = objs
+	sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName)
+	if err != nil {
+		return fmt.Errorf("introspect source objects: %w", err)
 	}
 
 	report := buildPlanReport(schema, sourceObjects, cfg)
@@ -147,13 +145,21 @@ func runPlan(cmd *cobra.Command, args []string) error {
 }
 
 func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *MigrationConfig) *PlanReport {
-	report := &PlanReport{}
+	report := &PlanReport{
+		GeneratedColumns:  []PlanGeneratedColumn{},
+		SkippedIndexes:    []PlanSkippedIndex{},
+		CollationWarnings: []string{},
+	}
 
 	// Source objects
 	if sourceObjects != nil {
-		report.SourceObjects.Views = sourceObjects.Views
-		report.SourceObjects.Routines = sourceObjects.Routines
-		report.SourceObjects.Triggers = sourceObjects.Triggers
+		report.SourceObjects.Views = ensureStringSlice(sourceObjects.Views)
+		report.SourceObjects.Routines = ensureStringSlice(sourceObjects.Routines)
+		report.SourceObjects.Triggers = ensureStringSlice(sourceObjects.Triggers)
+	} else {
+		report.SourceObjects.Views = []string{}
+		report.SourceObjects.Routines = []string{}
+		report.SourceObjects.Triggers = []string{}
 	}
 
 	// Generated columns
@@ -162,10 +168,14 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *Migratio
 			if !isGeneratedColumn(col) {
 				continue
 			}
+			expr := col.GenerationExpression
+			if expr == "" {
+				expr = col.Extra
+			}
 			report.GeneratedColumns = append(report.GeneratedColumns, PlanGeneratedColumn{
 				Table:      t.PGName,
 				Column:     col.PGName,
-				Expression: col.Extra,
+				Expression: expr,
 			})
 		}
 	}
@@ -184,9 +194,18 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *Migratio
 	}
 
 	// Collation warnings
-	report.CollationWarnings = collectCollationWarnings(schema, cfg.TypeMapping)
+	if warnings := collectCollationWarnings(schema, cfg.TypeMapping); len(warnings) > 0 {
+		report.CollationWarnings = warnings
+	}
 
 	return report
+}
+
+func ensureStringSlice(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func writePlanJSON(w io.Writer, report *PlanReport) error {
@@ -278,7 +297,7 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	var files []hookFile
 
 	// before_data: rarely needed for plan items, but generate if useful
-	if body := buildBeforeDataSkeleton(schema); body != "" {
+	if body := buildBeforeDataSkeleton(); body != "" {
 		files = append(files, hookFile{"before_data.sql", body})
 	}
 
@@ -288,7 +307,7 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	}
 
 	// before_fk: rarely needed, skip unless there's content
-	if body := buildBeforeFkSkeleton(schema); body != "" {
+	if body := buildBeforeFkSkeleton(); body != "" {
 		files = append(files, hookFile{"before_fk.sql", body})
 	}
 
@@ -311,11 +330,11 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	return nil
 }
 
-func buildBeforeDataSkeleton(schema string) string {
+func buildBeforeDataSkeleton() string {
 	return ""
 }
 
-func buildBeforeFkSkeleton(schema string) string {
+func buildBeforeFkSkeleton() string {
 	return ""
 }
 
@@ -338,8 +357,8 @@ func buildAfterDataSkeleton(report *PlanReport, schema string) string {
 		fmt.Fprintf(&b, "-- Table: %s\n", table)
 		for _, gc := range cols {
 			fmt.Fprintf(&b, "-- TODO: ALTER TABLE {{schema}}.%s\n", pgIdent(gc.Table))
-			fmt.Fprintf(&b, "--   ALTER COLUMN %s SET EXPRESSION AS (...);\n", pgIdent(gc.Column))
-			fmt.Fprintf(&b, "--   Source expression: %s\n", gc.Expression)
+			fmt.Fprintf(&b, "--        ALTER COLUMN %s SET EXPRESSION AS (...);\n", pgIdent(gc.Column))
+			fmt.Fprintf(&b, "-- Source expression: %s\n", gc.Expression)
 		}
 		b.WriteByte('\n')
 	}

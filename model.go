@@ -11,7 +11,8 @@ type Column struct {
 	Scale      int64
 	Nullable   bool
 	Default    *string
-	Extra      string // e.g. "auto_increment", "on update CURRENT_TIMESTAMP"
+	Extra                string // e.g. "auto_increment", "on update CURRENT_TIMESTAMP"
+	GenerationExpression string // actual expression for generated columns (MySQL GENERATION_EXPRESSION)
 	OrdinalPos int
 	Charset    string // e.g. "utf8mb4" — MySQL only, zero-value for SQLite
 	Collation  string // e.g. "utf8mb4_general_ci" — MySQL only, zero-value for SQLite
