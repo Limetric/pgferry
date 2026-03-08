@@ -167,17 +167,17 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	switch cfg.Validation {
 	case "none", "row_count":
 	default:
-		return nil, fmt.Errorf("validation must be one of: none, row_count")
+		return fmt.Errorf("validation must be one of: none, row_count")
 	}
 
 	if cfg.SchemaOnly && cfg.DataOnly {
 		return fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
 	if cfg.Resume && cfg.OnSchemaExists == "recreate" {
-		return nil, fmt.Errorf("resume is incompatible with on_schema_exists=recreate (would destroy data to resume into)")
+		return fmt.Errorf("resume is incompatible with on_schema_exists=recreate (would destroy data to resume into)")
 	}
 	if cfg.Resume && cfg.SchemaOnly {
-		return nil, fmt.Errorf("resume is incompatible with schema_only (no data to resume)")
+		return fmt.Errorf("resume is incompatible with schema_only (no data to resume)")
 	}
 
 	// Source validation
