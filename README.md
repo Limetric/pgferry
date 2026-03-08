@@ -14,10 +14,12 @@ post-load validation.
 
 ## Install
 
-Download the latest binary from the [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest) page, or:
+Download the latest binary from the [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest) page, or build from source:
 
 ```bash
-go install github.com/Limetric/pgferry@latest
+git clone https://github.com/Limetric/pgferry.git
+cd pgferry
+go build -o build/pgferry .
 ```
 
 ## Quick start
@@ -61,6 +63,17 @@ pgferry generate
 ```
 
 The wizard can save a reusable `migration.toml`, run the migration immediately, or do both.
+
+Analyze a source database before migrating:
+
+```bash
+pgferry plan migration.toml
+pgferry plan migration.toml --output-dir hooks --format json
+```
+
+`plan` introspects the source schema and reports objects that need manual attention &mdash;
+views, routines, triggers, generated columns, unsupported indexes, and collation warnings.
+With `--output-dir` it generates skeleton SQL hook files you can fill in.
 
 pgferry will introspect the source, create tables under the `app` schema, stream all data,
 then add primary keys, indexes, foreign keys, and auto-increment sequences.
