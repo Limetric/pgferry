@@ -242,6 +242,44 @@ func TestChunkKeyForTable_SQLiteInteger(t *testing.T) {
 	}
 }
 
+func TestChunkKeyForTable_UnsignedBigintExcluded(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "big_table",
+		PGName:     "big_table",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "bigint unsigned"},
+		},
+		PrimaryKey: &Index{
+			Columns: []string{"id"},
+		},
+	}
+
+	key := chunkKeyForTable(table, src)
+	if key != nil {
+		t.Fatal("expected nil ChunkKey for unsigned bigint PK (exceeds int64 range)")
+	}
+}
+
+func TestChunkKeyForTable_SignedBigintAllowed(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "big_table",
+		PGName:     "big_table",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "bigint"},
+		},
+		PrimaryKey: &Index{
+			Columns: []string{"id"},
+		},
+	}
+
+	key := chunkKeyForTable(table, src)
+	if key == nil {
+		t.Fatal("expected non-nil ChunkKey for signed bigint PK")
+	}
+}
+
 func TestPlanChunks_IndexesAreSequential(t *testing.T) {
 	chunks := planChunks(1, 500, 100)
 	for i, c := range chunks {

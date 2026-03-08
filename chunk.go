@@ -36,8 +36,10 @@ func planChunks(min, max, chunkSize int64) []Chunk {
 		chunkSize = 100000
 	}
 
-	rangeSize := max - min + 1
-	if rangeSize <= chunkSize {
+	// Guard against int64 overflow: if max-min would overflow when adding 1,
+	// the range is larger than any chunkSize so we skip the single-chunk path.
+	rangeSize := max - min // safe: max >= min
+	if rangeSize < chunkSize {
 		return []Chunk{{
 			Index:      0,
 			LowerBound: min,
@@ -119,10 +121,15 @@ func chunkKeyForTable(table Table, src SourceDB) *ChunkKey {
 }
 
 // isNumericChunkableType returns true if the column has a numeric integer type
-// suitable for range-based chunking.
+// suitable for range-based chunking. Unsigned bigint is excluded because its
+// values can exceed int64 range, causing scan failures in queryMinMax.
 func isNumericChunkableType(col Column, src SourceDB) bool {
 	switch src.Name() {
 	case "MySQL":
+		isUnsigned := strings.Contains(strings.ToLower(col.ColumnType), "unsigned")
+		if col.DataType == "bigint" && isUnsigned {
+			return false
+		}
 		switch col.DataType {
 		case "tinyint", "smallint", "mediumint", "int", "bigint":
 			return true

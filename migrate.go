@@ -63,6 +63,25 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 
 	var cpMu sync.Mutex
 
+	// Pre-compute skip sets from checkpoint BEFORE launching workers to avoid
+	// concurrent map reads (in skip checks) racing with map writes (in workers).
+	skipTables := make(map[string]bool)       // tables fully done
+	skipChunks := make(map[string]map[int]bool) // table → chunk indices done
+	if resume {
+		for name, tc := range cp.Tables {
+			if tc.FullTableDone {
+				skipTables[name] = true
+			}
+			if len(tc.CompletedChunks) > 0 {
+				s := make(map[int]bool, len(tc.CompletedChunks))
+				for idx := range tc.CompletedChunks {
+					s[idx] = true
+				}
+				skipChunks[name] = s
+			}
+		}
+	}
+
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
 
@@ -80,7 +99,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	for _, plan := range plans {
 		if plan.ChunkKey == nil {
 			// Non-chunkable: fall back to full-table copy
-			if resume && cp.isTableDone(plan.Table.SourceName) {
+			if skipTables[plan.Table.SourceName] {
 				log.Printf("  [%s] skipping (completed in previous run)", plan.Table.SourceName)
 				continue
 			}
@@ -104,8 +123,9 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 			}(plan.Table)
 		} else {
 			// Chunkable: dispatch each chunk
+			tableSkips := skipChunks[plan.Table.SourceName]
 			for _, chunk := range plan.Chunks {
-				if resume && cp.isChunkCompleted(plan.Table.SourceName, chunk.Index) {
+				if tableSkips[chunk.Index] {
 					continue
 				}
 				wg.Add(1)

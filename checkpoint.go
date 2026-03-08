@@ -53,6 +53,9 @@ func loadCheckpoint(path string) (*CheckpointState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("parse checkpoint: %w", err)
 	}
+	if state.Version != 1 {
+		return nil, fmt.Errorf("unsupported checkpoint version %d (expected 1)", state.Version)
+	}
 	if state.Tables == nil {
 		state.Tables = make(map[string]*TableCheckpoint)
 	}

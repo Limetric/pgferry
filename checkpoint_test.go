@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -117,6 +118,23 @@ func TestCheckpointRecordChunkAccumulates(t *testing.T) {
 	}
 	if len(tc.CompletedChunks) != 3 {
 		t.Errorf("CompletedChunks count = %d, want 3", len(tc.CompletedChunks))
+	}
+}
+
+func TestCheckpointUnsupportedVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	if err := os.WriteFile(path, []byte(`{"version":99,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadCheckpoint(path)
+	if err == nil {
+		t.Fatal("expected error for unsupported checkpoint version")
+	}
+	if !strings.Contains(err.Error(), "unsupported checkpoint version") {
+		t.Errorf("error should mention unsupported version, got: %v", err)
 	}
 }
 

@@ -47,6 +47,9 @@ func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *p
 				srcRows.Close()
 				return nil, fmt.Errorf("scan source count for %s: %w", t.SourceName, err)
 			}
+		} else if err := srcRows.Err(); err != nil {
+			srcRows.Close()
+			return nil, fmt.Errorf("count source rows for %s: %w", t.SourceName, err)
 		}
 		srcRows.Close()
 
