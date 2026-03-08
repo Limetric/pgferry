@@ -58,13 +58,23 @@ func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *p
 
 	sem := make(chan struct{}, workers)
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(schema.Tables))
+	var firstErr error
+	var errOnce sync.Once
+
+	setErr := func(err error) {
+		errOnce.Do(func() { firstErr = err })
+		cancel()
+	}
 
 	for i, t := range schema.Tables {
 		wg.Add(1)
 		go func(idx int, tbl Table) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
 			defer func() { <-sem }()
 
 			result := ValidationResult{Table: tbl.SourceName}
@@ -72,16 +82,14 @@ func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *p
 			// Count source rows
 			srcQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", src.QuoteIdentifier(tbl.SourceName))
 			if err := srcDB.QueryRowContext(ctx, srcQuery).Scan(&result.SourceCount); err != nil {
-				errCh <- fmt.Errorf("count source rows for %s: %w", tbl.SourceName, err)
-				cancel()
+				setErr(fmt.Errorf("count source rows for %s: %w", tbl.SourceName, err))
 				return
 			}
 
 			// Count target rows
 			pgQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", pgIdent(pgSchema), pgIdent(tbl.PGName))
 			if err := pool.QueryRow(ctx, pgQuery).Scan(&result.TargetCount); err != nil {
-				errCh <- fmt.Errorf("count target rows for %s: %w", tbl.PGName, err)
-				cancel()
+				setErr(fmt.Errorf("count target rows for %s: %w", tbl.PGName, err))
 				return
 			}
 
@@ -91,11 +99,9 @@ func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *p
 	}
 
 	wg.Wait()
-	close(errCh)
 
-	// Return first error if any
-	if err := <-errCh; err != nil {
-		return nil, err
+	if firstErr != nil {
+		return nil, firstErr
 	}
 
 	// Report results deterministically (in original table order)

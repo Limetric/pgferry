@@ -76,10 +76,12 @@ func TestValidationWorkers(t *testing.T) {
 	}
 }
 
-// stubSourceDB is a minimal SourceDB stub for unit tests that only need MaxWorkers.
+// stubSourceDB is a minimal SourceDB stub for unit tests.
+// Embeds the interface so only the methods under test need implementing;
+// calling any other method panics, signalling unintended use.
 type stubSourceDB struct {
+	SourceDB // interface embedding — panics on unimplemented methods
 	maxWorkers int
-	mysqlSourceDB
 }
 
 func (s *stubSourceDB) MaxWorkers() int { return s.maxWorkers }
