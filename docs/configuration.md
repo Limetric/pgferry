@@ -77,6 +77,23 @@ replicate_on_update_current_timestamp = false
 # SQLite sources are capped at 1 worker regardless of this setting
 workers = 4
 
+# Target number of rows per chunk for range-based table splitting
+# Tables with a single-column numeric primary key are split into chunks of this size
+# Tables without a chunkable PK fall back to full-table copy
+# Default: 100000
+chunk_size = 100000
+
+# Resume from a previous incomplete migration using the checkpoint file
+# When true, completed chunks/tables are skipped on rerun
+# Incompatible with on_schema_exists=recreate and schema_only
+# Default: false
+resume = false
+
+# Post-load validation mode:
+#   "none"      — no validation (default)
+#   "row_count" — compare source and target row counts per table after data load
+validation = "none"
+
 # Source database configuration (required)
 [source]
 type = "mysql"                                       # "mysql" or "sqlite"
@@ -182,6 +199,10 @@ pgferry validates the config at load time and reports errors before connecting t
 | `type_mapping.set_mode` | Must be `"text"` or `"text_array"` |
 | `type_mapping.collation_mode` | Must be `"none"` or `"auto"` |
 | `source.charset` | MySQL-only; config error for SQLite if not `"utf8mb4"` |
+| `validation` | Must be `"none"` or `"row_count"` |
+| `chunk_size` | Defaults to `100000` if &le; 0 |
+| `resume` + `on_schema_exists=recreate` | Incompatible &mdash; recreate would destroy data to resume into |
+| `resume` + `schema_only` | Incompatible &mdash; no data to resume |
 | `schema_only` + `data_only` | Mutually exclusive &mdash; cannot both be `true` |
 | `target.dsn` | Required |
 | `workers` | Defaults to `min(NumCPU, 8)` if &le; 0; capped at 1 for SQLite |
@@ -204,6 +225,9 @@ Fields omitted from the TOML file use these defaults:
 | `clean_orphans` | `true` |
 | `replicate_on_update_current_timestamp` | `false` |
 | `workers` | `min(NumCPU, 8)` |
+| `chunk_size` | `100000` |
+| `resume` | `false` |
+| `validation` | `"none"` |
 | `tinyint1_as_boolean` | `false` |
 | `binary16_as_uuid` | `false` |
 | `datetime_as_timestamptz` | `false` |

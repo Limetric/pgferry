@@ -10,8 +10,9 @@ migration mode (`schema_only` or `data_only`).
 | 1 | **Introspect** &mdash; query source database for tables, columns, indexes, FKs. Report views, routines, triggers that need manual migration. Detect unsupported index types and generated columns. Abort if unsupported column types are found. | Yes | Yes | Yes |
 | 2 | **Create tables** &mdash; columns only, no constraints. Optionally `UNLOGGED` for faster writes. Column defaults included by default; set `preserve_defaults = false` to omit. | Yes | Yes | &mdash; |
 | 3 | **`before_data` hooks** | Yes | &mdash; | Yes |
-| 4 | **Stream data** &mdash; parallel `COPY` workers per table (or sequential inside a single read-only transaction when `source_snapshot_mode = "single_tx"`, MySQL only). SQLite always uses 1 worker. In `data_only` mode, triggers are disabled before COPY and re-enabled after. | Yes | &mdash; | Yes |
+| 4 | **Stream data** &mdash; tables with a single-column numeric PK are split into range-based chunks; other tables use full-table COPY. Chunks/tables run in parallel (or sequentially with `source_snapshot_mode = "single_tx"`). SQLite always uses 1 worker. Checkpoint state is saved after each chunk for resumability. In `data_only` mode, triggers are disabled before COPY and re-enabled after. | Yes | &mdash; | Yes |
 | 5 | **`after_data` hooks** | Yes | &mdash; | Yes |
+| 5b | **Validation** &mdash; compare source and target row counts per table (when `validation = "row_count"`). Fails the migration if any mismatch is found. | Yes | &mdash; | Yes |
 | 6 | **SET LOGGED** &mdash; convert `UNLOGGED` tables back to `LOGGED` | Yes | &mdash; | &mdash; |
 | 7 | **Primary keys** | Yes | Yes | &mdash; |
 | 8 | **Indexes** &mdash; unsupported index types (MySQL FULLTEXT, SPATIAL, prefix, expression; SQLite partial, expression) are reported and skipped | Yes | Yes | &mdash; |
@@ -113,3 +114,93 @@ referential consistency in the migrated data.
 
 **Note:** `single_tx` is not supported for SQLite sources and produces a config
 validation error.
+
+## Chunked migration
+
+pgferry automatically splits large tables into smaller range-based chunks for
+improved performance and crash resilience. This happens transparently &mdash;
+no special configuration is needed beyond the defaults.
+
+### How it works
+
+1. During the data migration phase, pgferry checks each table for a
+   **single-column numeric primary key** (integer types).
+2. If found, it queries `MIN(pk)` and `MAX(pk)` to determine the key range.
+3. The range is divided into chunks of approximately `chunk_size` rows (default:
+   100,000). Each chunk becomes a bounded `SELECT ... WHERE pk >= lower AND pk < upper`.
+4. Chunks can run in parallel across multiple workers, just like full-table copies.
+
+Tables without a chunkable primary key (composite PKs, non-numeric PKs like
+UUID/VARCHAR, or no PK at all) fall back to the existing full-table `SELECT` +
+`COPY` approach.
+
+### Benefits
+
+- **Large tables no longer dominate runtime** &mdash; multiple chunks of the same
+  table can run in parallel.
+- **Failures are cheaper** &mdash; only the failed chunk needs to be retried
+  instead of the entire table.
+- **Resume support** &mdash; completed chunks are checkpointed and skipped on rerun.
+
+### Configuration
+
+```toml
+chunk_size = 100000   # rows per chunk (default)
+```
+
+### Interaction with snapshot mode
+
+When `source_snapshot_mode = "single_tx"`, chunks run sequentially within the
+snapshot transaction (no intra-table parallelism), but chunking still provides
+resume capability and progress tracking.
+
+## Resume
+
+When `resume = true`, pgferry persists a checkpoint file
+(`pgferry_checkpoint.json` in the config file directory) that tracks which
+chunks and tables have been successfully copied.
+
+If the migration is interrupted (crash, Ctrl+C, error), rerunning with
+`resume = true` will skip completed work and continue from where it left off.
+
+```toml
+resume = true
+```
+
+### Checkpoint lifecycle
+
+1. **On start:** if a checkpoint file exists, load it and skip completed chunks.
+   If no checkpoint exists, create a fresh one.
+2. **During migration:** the checkpoint is atomically updated after each chunk
+   completes (write to temp file, then rename &mdash; safe against crashes).
+3. **On success:** the checkpoint file is deleted.
+
+### Constraints
+
+- `resume = true` is incompatible with `on_schema_exists = "recreate"` (which
+  would drop the schema containing data to resume into).
+- `resume = true` is incompatible with `schema_only = true` (no data to resume).
+- If the source data changes between runs, the resumed migration may produce
+  inconsistent results. Ensure source stability during resumed migrations.
+
+## Post-load validation
+
+pgferry can optionally verify the migration by comparing source and target row
+counts after data streaming completes.
+
+```toml
+validation = "row_count"
+```
+
+### `row_count` mode
+
+For each table, pgferry runs `SELECT COUNT(*)` on both the source and target
+databases and compares the results. If any table has a mismatch, the migration
+fails with a clear error listing the affected tables.
+
+Validation runs after the `after_data` hooks and before post-migration steps
+(SET LOGGED, PKs, indexes, FKs, etc.).
+
+### `none` (default)
+
+No validation is performed.

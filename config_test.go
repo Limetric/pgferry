@@ -926,3 +926,185 @@ func TestDefaultWorkers(t *testing.T) {
 		t.Fatalf("defaultWorkers() = %d, want %d", got, want)
 	}
 }
+
+func TestLoadConfig_ChunkingDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "chunk_defaults.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.ChunkSize != 100000 {
+		t.Errorf("default ChunkSize = %d, want 100000", cfg.ChunkSize)
+	}
+	if cfg.Resume {
+		t.Errorf("default Resume = %t, want false", cfg.Resume)
+	}
+	if cfg.Validation != "none" {
+		t.Errorf("default Validation = %q, want %q", cfg.Validation, "none")
+	}
+}
+
+func TestLoadConfig_ChunkingExplicit(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "chunk_explicit.toml")
+
+	content := `
+schema = "target"
+chunk_size = 50000
+resume = true
+validation = "row_count"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.ChunkSize != 50000 {
+		t.Errorf("ChunkSize = %d, want 50000", cfg.ChunkSize)
+	}
+	if !cfg.Resume {
+		t.Errorf("Resume = %t, want true", cfg.Resume)
+	}
+	if cfg.Validation != "row_count" {
+		t.Errorf("Validation = %q, want %q", cfg.Validation, "row_count")
+	}
+}
+
+func TestLoadConfig_InvalidValidation(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_validation.toml")
+
+	content := `
+schema = "target"
+validation = "full_hash"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid validation mode")
+	}
+	if !strings.Contains(err.Error(), "validation") {
+		t.Errorf("error should mention validation, got: %v", err)
+	}
+}
+
+func TestLoadConfig_ResumeWithRecreateConflict(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "resume_recreate.toml")
+
+	content := `
+schema = "target"
+resume = true
+on_schema_exists = "recreate"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for resume + recreate")
+	}
+	if !strings.Contains(err.Error(), "resume") {
+		t.Errorf("error should mention resume, got: %v", err)
+	}
+}
+
+func TestLoadConfig_ResumeWithSchemaOnlyConflict(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "resume_schema_only.toml")
+
+	content := `
+schema = "target"
+resume = true
+schema_only = true
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for resume + schema_only")
+	}
+}
+
+func TestLoadConfig_ChunkSizeNonPositiveUsesDefault(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "chunk_size_zero.toml")
+
+	content := `
+schema = "target"
+chunk_size = 0
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.ChunkSize != 100000 {
+		t.Errorf("ChunkSize = %d, want 100000 (default)", cfg.ChunkSize)
+	}
+}
