@@ -265,7 +265,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			log.Printf("WARN: validation with source_snapshot_mode=single_tx compares against current source state, not the snapshot; results may be inaccurate if the source was modified during migration")
 		}
 		log.Printf("running post-load validation (mode=%s)...", cfg.Validation)
-		if _, err := validateMigration(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Validation); err != nil {
+		if _, err := validateMigration(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Validation, cfg.Workers); err != nil {
 			return fmt.Errorf("validation: %w", err)
 		}
 		log.Printf("validation passed")
