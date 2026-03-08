@@ -33,10 +33,16 @@ jobs:
         with:
           model: opencode/minimax-m2.5-free
           prompt: |
-            Review this pull request:
-            - Check for code quality issues
-            - Look for potential bugs
-            - Suggest improvements
+            Review this pull request and provide feedback on:
+            - Code quality and best practices
+            - Potential bugs or issues
+            - Performance considerations
+            - Security concerns
+            - Test coverage
+
+            Use AGENTS.md file for guidance on style and conventions.
+
+            IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
 
       - name: Remove review label
         if: github.event.action == 'labeled'
