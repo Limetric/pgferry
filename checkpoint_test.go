@@ -153,7 +153,9 @@ func TestNewCheckpointState(t *testing.T) {
 }
 
 func TestNoopCheckpointManager(t *testing.T) {
-	mgr := &noopCheckpointManager{}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	mgr := &noopCheckpointManager{path: path}
 
 	if mgr.IsTableDone("anything") {
 		t.Error("noop should never report table done")
@@ -171,6 +173,33 @@ func TestNoopCheckpointManager(t *testing.T) {
 	}
 	if err := mgr.Cleanup(); err != nil {
 		t.Errorf("Cleanup: %v", err)
+	}
+}
+
+func TestNoopCheckpointManager_CleansUpStaleFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	// Simulate a stale checkpoint from a previous resume=true run
+	state := newCheckpointState()
+	state.recordFullTable("users", 1000)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save stale checkpoint: %v", err)
+	}
+
+	mgr := &noopCheckpointManager{path: path}
+
+	// Cleanup should remove the stale file
+	if err := mgr.Cleanup(); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("stale checkpoint file should be removed after noop cleanup")
+	}
+
+	// Cleanup on already-removed file should not error
+	if err := mgr.Cleanup(); err != nil {
+		t.Fatalf("second cleanup: %v", err)
 	}
 }
 

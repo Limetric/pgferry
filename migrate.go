@@ -47,15 +47,16 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 
 	// Create checkpoint manager: noop when resume is disabled to avoid
 	// all checkpoint file I/O in the hot path.
+	cpPath := checkpointPath(configDir)
 	var mgr checkpointManager
 	if resume {
-		pm, mgrErr := newPersistentCheckpointManager(checkpointPath(configDir))
+		pm, mgrErr := newPersistentCheckpointManager(cpPath)
 		if mgrErr != nil {
 			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
 		mgr = pm
 	} else {
-		mgr = &noopCheckpointManager{}
+		mgr = &noopCheckpointManager{path: cpPath}
 	}
 
 	sem := make(chan struct{}, workers)
@@ -134,7 +135,8 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 		return fmt.Errorf("%d chunk(s)/table(s) failed migration", len(errs))
 	}
 
-	// All succeeded — remove checkpoint
+	// All succeeded — remove checkpoint file (no flush needed; there is
+	// nothing to resume and any batched state can be discarded).
 	if err := mgr.Cleanup(); err != nil {
 		log.Printf("WARN: failed to delete checkpoint: %v", err)
 	}
@@ -164,15 +166,16 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	defer tx.Rollback()
 
 	// Create checkpoint manager: noop when resume is disabled.
+	cpPath := checkpointPath(configDir)
 	var mgr checkpointManager
 	if resume {
-		pm, mgrErr := newPersistentCheckpointManager(checkpointPath(configDir))
+		pm, mgrErr := newPersistentCheckpointManager(cpPath)
 		if mgrErr != nil {
 			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
 		mgr = pm
 	} else {
-		mgr = &noopCheckpointManager{}
+		mgr = &noopCheckpointManager{path: cpPath}
 	}
 
 	// On error, flush partial checkpoint progress so a resumed run can skip
@@ -233,7 +236,8 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	}
 
 	success = true
-	// All succeeded — remove checkpoint
+	// All succeeded — remove checkpoint file (no flush needed; there is
+	// nothing to resume and any batched state can be discarded).
 	if err := mgr.Cleanup(); err != nil {
 		log.Printf("WARN: failed to delete checkpoint: %v", err)
 	}

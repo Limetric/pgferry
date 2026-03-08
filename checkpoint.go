@@ -183,16 +183,20 @@ type checkpointManager interface {
 	Cleanup() error
 }
 
-// noopCheckpointManager is used when resume=false. All methods are no-ops,
-// avoiding any checkpoint file I/O during the data copy hot path.
-type noopCheckpointManager struct{}
+// noopCheckpointManager is used when resume=false. All methods are no-ops
+// during the hot path, avoiding any checkpoint file I/O. Cleanup still removes
+// stale checkpoint files left by previous resume=true runs so they cannot be
+// accidentally loaded if resume is later re-enabled.
+type noopCheckpointManager struct {
+	path string // checkpoint file path, used only by Cleanup
+}
 
 func (n *noopCheckpointManager) IsTableDone(string) bool             { return false }
 func (n *noopCheckpointManager) IsChunkCompleted(string, int) bool   { return false }
 func (n *noopCheckpointManager) RecordFullTable(string, int64)       {}
 func (n *noopCheckpointManager) RecordChunk(string, int, int64, int) {}
 func (n *noopCheckpointManager) Flush() error                        { return nil }
-func (n *noopCheckpointManager) Cleanup() error                      { return nil }
+func (n *noopCheckpointManager) Cleanup() error                      { return deleteCheckpoint(n.path) }
 
 const (
 	// checkpointFlushCount is the number of completed items before a flush is triggered.
@@ -210,6 +214,7 @@ type persistentCheckpointManager struct {
 	dirty     bool
 	unflushed int
 	lastFlush time.Time
+	flushing  bool // true while a file write is in progress, prevents concurrent flushes
 
 	// Pre-computed skip sets from loaded checkpoint (read-only after init).
 	skipTables map[string]bool
@@ -303,32 +308,40 @@ func (m *persistentCheckpointManager) shouldFlush() bool {
 	return m.unflushed >= checkpointFlushCount || time.Since(m.lastFlush) >= checkpointFlushInterval
 }
 
-// Flush writes pending checkpoint state to disk. The mutex is held only during
-// marshaling (CPU-bound), then released before file I/O. The dirty/unflushed
-// counters are reset only after a successful write so that a failed flush
-// (e.g. disk full) does not silently extend the recovery window.
+// Flush writes pending checkpoint state to disk. Only one flush runs at a time
+// (guarded by m.flushing) to prevent concurrent writes from racing on file
+// rename. The unflushed counter is decremented by the snapshot count rather
+// than zeroed, so records added during the write are preserved for the next
+// flush cycle. Counters are reset only after a successful write.
 func (m *persistentCheckpointManager) Flush() error {
 	m.mu.Lock()
-	if !m.dirty {
+	if !m.dirty || m.flushing {
 		m.mu.Unlock()
 		return nil
 	}
+	m.flushing = true
+	flushedCount := m.unflushed
 	data, err := json.Marshal(m.state)
 	m.mu.Unlock()
 
 	if err != nil {
+		m.mu.Lock()
+		m.flushing = false
+		m.mu.Unlock()
 		return fmt.Errorf("marshal checkpoint: %w", err)
 	}
-	if err := writeCheckpointFile(m.path, data); err != nil {
-		return err
-	}
+
+	writeErr := writeCheckpointFile(m.path, data)
 
 	m.mu.Lock()
-	m.dirty = false
-	m.unflushed = 0
-	m.lastFlush = time.Now()
+	m.flushing = false
+	if writeErr == nil {
+		m.unflushed -= flushedCount
+		m.dirty = m.unflushed > 0
+		m.lastFlush = time.Now()
+	}
 	m.mu.Unlock()
-	return nil
+	return writeErr
 }
 
 func (m *persistentCheckpointManager) Cleanup() error {
