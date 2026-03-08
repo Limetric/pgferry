@@ -2,19 +2,17 @@
 
 Move MySQL or SQLite databases into PostgreSQL with one config file and one binary.
 
-`pgferry` is easy to pick up without boxing you into a shallow tool. It gets the default path out of your way, then gives you the controls you need when a real migration gets messy: planning, hooks, type mapping, checkpoints, validation, and post-load cleanup.
-
-It introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and optional triggers after the load. It is built for migrations that need to be boring in production: resumable, inspectable, and easy to reason about.
+Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy — and real migrations always do — you get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
 - Single binary, zero runtime dependencies
-- Fast to start with sensible defaults
-- MySQL and SQLite source support
-- Parallel loading for MySQL, chunking for large tables
-- Manual control where it matters: hooks, planning, mapping, cleanup
-- Two-phase schema-only and data-only workflows when you need tighter control
+- MySQL and SQLite sources, PostgreSQL target
+- Parallel workers and range-based chunking for large tables
+- Split into `schema_only` and `data_only` phases for tighter control
+- Preflight `plan` reports what needs manual attention
 - Resume interrupted runs from checkpoints
-- Preflight planning for unsupported objects and manual follow-up
-- Optional SQL hooks and post-load validation
+- SQL hooks at four pipeline stages
+
+CI runs integration tests across MySQL 5.7 through latest and PostgreSQL 14 through 18, so combinations like MySQL 5.7 → PostgreSQL 18 are tested on every commit.
 
 | Source | Driver                         | Workers                 | Snapshot mode       |
 | ------ | ------------------------------ | ----------------------- | ------------------- |
@@ -78,20 +76,22 @@ pgferry plan migration.toml --output-dir hooks --format json
 
 `plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
 
-## Built For Real Migrations
+## Why pgferry over pgloader
 
-- Use the default full pipeline when you want the fastest path from source to PostgreSQL.
-- Split the run into `schema_only` and `data_only` phases when your team wants to inspect or adjust the generated schema before loading data.
-- Use MySQL `single_tx` snapshot mode when the source is live and you need a consistent point-in-time read across tables.
-- Turn on `unlogged_tables` or `on_schema_exists = "recreate"` when speed matters more than preserving an existing target schema during iterative test runs.
+We maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes for common upstream issues — this comparison comes from hands-on experience shipping both tools.
 
-## Why pick pgferry over pgloader
+[`pgloader`](https://github.com/dimitri/pgloader) is the established choice, but it has real gaps that `pgferry` fills:
 
-[`pgloader`](https://github.com/dimitri/pgloader) is the OG. It earned that reputation, and it is still an important tool in the ecosystem. `pgferry` is the better default when you want a migration tool that stays simple on the surface without giving up depth underneath: one static binary, one TOML config, native MySQL 8.4+ auth support, flexible [type mapping](docs/type-mapping.md), charset and collation awareness, [SQL hooks](docs/hooks.md), configurable orphan cleanup, resumable checkpoints, and SQLite support.
-
-If `pgloader` is the classic, `pgferry` is the more practical choice for teams that want migrations to be predictable, inspectable, easy to rerun, and still adaptable when the happy path is not enough.
-
-We also maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes for common upstream issues, so that comparison comes from hands-on experience.
+- **MySQL 8.4+ auth**: pgloader's MySQL driver doesn't support `caching_sha2_password`, the default auth plugin since MySQL 8.0. pgferry works out of the box.
+- **Static binary**: no Common Lisp runtime, no SBCL build issues, no dependency problems. One binary, runs anywhere.
+- **TOML config**: declarative, version-controllable, no DSL to learn.
+- **Resumable checkpoints**: interrupt a migration and pick up where you left off. pgloader restarts from scratch.
+- **SQLite sources**: pgloader is MySQL/MS SQL/CSV only.
+- **Flexible type mapping**: control how `tinyint(1)`, `binary(16)`, enums, sets, unsigned integers, and datetimes map to PostgreSQL types.
+- **Charset and collation awareness**: detects mismatches and warns before data moves.
+- **SQL hooks at four stages**: inject custom SQL before data, after data, before foreign keys, and after everything.
+- **Orphan cleanup**: optionally delete rows that would violate foreign keys before constraints are added.
+- **Preflight planning**: `pgferry plan` tells you exactly what will need manual follow-up, before you touch the target.
 
 ## Examples
 
@@ -108,6 +108,10 @@ The [`examples/`](examples/) directory is split by source type.
 - [Migration pipeline](docs/migration-pipeline.md): pipeline stages, snapshot modes, chunking, resume, and validation
 - [Hooks](docs/hooks.md): the four hook phases and template substitution
 - [Conventions and limitations](docs/conventions.md): naming rules, cleanup behavior, and unsupported features
+
+## How it's built
+
+Most of this codebase was written with LLM agents. The architecture, edge case handling, and test coverage reflect that — it moved fast. It runs in production and the integration test matrix catches regressions across MySQL 5.7–latest and PostgreSQL 14–18, but you should know how it was made.
 
 ## License
 
