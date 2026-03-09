@@ -482,9 +482,12 @@ func TestPgEnumTypeName_Deterministic(t *testing.T) {
 		t.Errorf("pgEnumTypeName collision: %q == %q", name1, name3)
 	}
 
-	// Prefix check
+	// Prefix and length check (16 hex digits for 64-bit hash)
 	if !strings.HasPrefix(name1, "pgferry_enum_") {
 		t.Errorf("pgEnumTypeName missing prefix: %q", name1)
+	}
+	if len(name1) != len("pgferry_enum_")+16 {
+		t.Errorf("pgEnumTypeName length = %d, want %d (prefix + 16 hex digits)", len(name1), len("pgferry_enum_")+16)
 	}
 }
 

@@ -127,12 +127,12 @@ func pgEnumTypeName(values []string) string {
 	copy(sorted, values)
 	sort.Strings(sorted)
 
-	h := fnv.New32a()
+	h := fnv.New64a()
 	for _, v := range sorted {
 		h.Write([]byte(v))
 		h.Write([]byte{0})
 	}
-	return fmt.Sprintf("pgferry_enum_%08x", h.Sum32())
+	return fmt.Sprintf("pgferry_enum_%016x", h.Sum64())
 }
 
 // createEnumTypes creates PostgreSQL enum types for all enum columns in the schema.
@@ -160,7 +160,10 @@ func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pg
 			for i, v := range values {
 				lits[i] = pgLiteral(v)
 			}
-			q := fmt.Sprintf("CREATE TYPE %s.%s AS ENUM (%s)",
+			// Use DO block with EXCEPTION handler so the statement is safe
+			// to re-run on a resumed migration where the type already exists.
+			q := fmt.Sprintf(
+				"DO $$ BEGIN CREATE TYPE %s.%s AS ENUM (%s); EXCEPTION WHEN duplicate_object THEN NULL; END $$",
 				pgIdent(pgSchema), pgIdent(typeName), strings.Join(lits, ", "))
 			if _, err := pool.Exec(ctx, q); err != nil {
 				return fmt.Errorf("create enum type %s: %w\nSQL: %s", typeName, err, q)

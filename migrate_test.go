@@ -46,7 +46,7 @@ func TestBuildSourceSelectQuery_UsesExplicitQuotedColumnsInOrder(t *testing.T) {
 		},
 	}
 
-	got := buildSourceSelectQuery(src, table)
+	got := buildSourceSelectQuery(src, table, defaultTypeMappingConfig())
 	want := "SELECT `id`, `Order`, `created-at` FROM `users`"
 	if got != want {
 		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
@@ -64,7 +64,7 @@ func TestBuildSourceSelectQuery_IncludesGeneratedColumns(t *testing.T) {
 		},
 	}
 
-	got := buildSourceSelectQuery(src, table)
+	got := buildSourceSelectQuery(src, table, defaultTypeMappingConfig())
 	want := `SELECT "id", "computed_value", "stored_total" FROM "metrics"`
 	if got != want {
 		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)

@@ -206,7 +206,20 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		if err != nil {
 			return nil, err
 		}
-		cfg.TypeMapping.StringUUIDAaUUID, err = w.promptBool("Map char(36)/varchar(36) to uuid", cfg.TypeMapping.StringUUIDAaUUID)
+		cfg.TypeMapping.Binary16AsUUID, err = w.promptBool("Map binary(16) to uuid", cfg.TypeMapping.Binary16AsUUID)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.TypeMapping.Binary16AsUUID {
+			cfg.TypeMapping.Binary16UUIDMode, err = w.promptChoice("Binary UUID byte order", []wizardOption{
+				{key: "rfc4122"},
+				{key: "mysql_uuid_to_bin_swap"},
+			}, cfg.TypeMapping.Binary16UUIDMode)
+			if err != nil {
+				return nil, err
+			}
+		}
+		cfg.TypeMapping.StringUUIDAsUUID, err = w.promptBool("Map char(36)/varchar(36) to uuid", cfg.TypeMapping.StringUUIDAsUUID)
 		if err != nil {
 			return nil, err
 		}
@@ -429,8 +442,8 @@ func renderTypeMappingLines(cfg TypeMappingConfig, sourceType string) []string {
 	if cfg.BitMode != defaults.BitMode {
 		lines = append(lines, fmt.Sprintf("bit_mode = %s", strconv.Quote(cfg.BitMode)))
 	}
-	if cfg.StringUUIDAaUUID != defaults.StringUUIDAaUUID {
-		lines = append(lines, fmt.Sprintf("string_uuid_as_uuid = %t", cfg.StringUUIDAaUUID))
+	if cfg.StringUUIDAsUUID != defaults.StringUUIDAsUUID {
+		lines = append(lines, fmt.Sprintf("string_uuid_as_uuid = %t", cfg.StringUUIDAsUUID))
 	}
 	if cfg.Binary16UUIDMode != defaults.Binary16UUIDMode {
 		lines = append(lines, fmt.Sprintf("binary16_uuid_mode = %s", strconv.Quote(cfg.Binary16UUIDMode)))

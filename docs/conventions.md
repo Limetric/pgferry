@@ -178,8 +178,11 @@ Enum behavior is controlled by `type_mapping.enum_mode` (MySQL only):
 - **`text`** (default) &mdash; the column is created as `text` with no constraint. Any string value is accepted.
 - **`check`** &mdash; the column is created as `text` with a `CHECK` constraint restricting values to the original MySQL enum's allowed set.
 - **`native`** &mdash; creates a native PostgreSQL enum type. Type names are content-addressable
-  (`pgferry_enum_XXXXXXXX` via FNV32a hash of sorted values), so columns with identical value
-  sets share the same type. Enum types are created before table creation.
+  (`pgferry_enum_XXXXXXXXXXXXXXXX` via FNV64a hash of sorted values), so columns with identical
+  value sets share the same type. Enum types are created before table creation.
+  **Note:** Values are sorted before hashing for deduplication, which means declaration order
+  from MySQL is not preserved. PostgreSQL `ORDER BY` on native enums uses declaration order,
+  so this may change sort semantics. Use `check` mode if MySQL enum ordering matters.
 
 ## Set handling
 

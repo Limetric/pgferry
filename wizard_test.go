@@ -98,6 +98,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		"",                          // unknown_as_text = false
 		"",                          // tinyint1_as_boolean = false
 		"",                          // datetime_as_timestamptz = false
+		"",                          // binary16_as_uuid = false (skips binary16_uuid_mode)
 		"",                          // string_uuid_as_uuid = false
 		"",                          // enum_mode = text
 		"",                          // set_mode = text
@@ -177,7 +178,7 @@ func TestRenderConfigTOMLIncludesNewTypeMappingOptions(t *testing.T) {
 	cfg.TypeMapping.EnumMode = "native"
 	cfg.TypeMapping.SetMode = "text_array_check"
 	cfg.TypeMapping.BitMode = "varbit"
-	cfg.TypeMapping.StringUUIDAaUUID = true
+	cfg.TypeMapping.StringUUIDAsUUID = true
 	cfg.TypeMapping.TimeMode = "interval"
 	cfg.TypeMapping.ZeroDateMode = "error"
 	cfg.TypeMapping.SpatialMode = "wkt_text"

@@ -39,9 +39,9 @@ func TestMapType(t *testing.T) {
 		{"float→real", Column{DataType: "float", ColumnType: "float"}, defaultTypeMappingConfig(), "real", false},
 		{"double", Column{DataType: "double", ColumnType: "double"}, defaultTypeMappingConfig(), "double precision", false},
 		{"decimal", Column{DataType: "decimal", ColumnType: "decimal(10,7)", Precision: 10, Scale: 7}, defaultTypeMappingConfig(), "numeric(10,7)", false},
-		{"char36→uuid opt-in", Column{DataType: "char", ColumnType: "char(36)", CharMaxLen: 36}, TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "uuid", false},
-		{"varchar36→uuid opt-in", Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}, TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "uuid", false},
-		{"varchar35→varchar no match", Column{DataType: "varchar", ColumnType: "varchar(35)", CharMaxLen: 35}, TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "varchar(35)", false},
+		{"char36→uuid opt-in", Column{DataType: "char", ColumnType: "char(36)", CharMaxLen: 36}, TypeMappingConfig{StringUUIDAsUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "uuid", false},
+		{"varchar36→uuid opt-in", Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}, TypeMappingConfig{StringUUIDAsUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "uuid", false},
+		{"varchar35→varchar no match", Column{DataType: "varchar", ColumnType: "varchar(35)", CharMaxLen: 35}, TypeMappingConfig{StringUUIDAsUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "varchar(35)", false},
 		{"varchar36→varchar when disabled", Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}, defaultTypeMappingConfig(), "varchar(36)", false},
 		{"varchar", Column{DataType: "varchar", ColumnType: "varchar(200)", CharMaxLen: 200}, defaultTypeMappingConfig(), "varchar(200)", false},
 		{"varchar→text opt-in", Column{DataType: "varchar", ColumnType: "varchar(200)", CharMaxLen: 200}, TypeMappingConfig{VarcharAsText: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
@@ -485,7 +485,7 @@ func TestTransformValue_BitToVarbit(t *testing.T) {
 
 func TestTransformValue_StringUUID(t *testing.T) {
 	col := Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}
-	tm := TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}
+	tm := TypeMappingConfig{StringUUIDAsUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}
 
 	// Valid UUID string
 	got, err := mysqlTransformValue("550e8400-e29b-41d4-a716-446655440000", col, tm)
@@ -536,7 +536,7 @@ func TestTransformValue_TimeAsInterval(t *testing.T) {
 		want  string
 	}{
 		{"normal", "12:30:45", "12 hours 30 mins 45 secs"},
-		{"negative", "-05:15:00", "-05 hours 15 mins 00 secs"},
+		{"negative", "-05:15:00", "-05 hours -15 mins -00 secs"},
 		{"long duration", "838:59:59", "838 hours 59 mins 59 secs"},
 		{"zero", "00:00:00", "00 hours 00 mins 00 secs"},
 		{"bytes", []byte("10:20:30"), "10 hours 20 mins 30 secs"},
@@ -604,7 +604,9 @@ func TestTransformValue_SpatialWKTText(t *testing.T) {
 	col := Column{DataType: "point", ColumnType: "point"}
 	tm := TypeMappingConfig{SpatialMode: "wkt_text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
 
-	in := []byte{0xAB, 0xCD}
+	// ST_AsText() in the SELECT query produces a WKT string; the transform
+	// receives it as []byte from the MySQL driver and passes it through.
+	in := []byte("POINT(1 2)")
 	got, err := mysqlTransformValue(in, col, tm)
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -613,8 +615,17 @@ func TestTransformValue_SpatialWKTText(t *testing.T) {
 	if !ok {
 		t.Fatalf("type = %T, want string", got)
 	}
-	if s != "abcd" {
-		t.Errorf("got %q, want %q", s, "abcd")
+	if s != "POINT(1 2)" {
+		t.Errorf("got %q, want %q", s, "POINT(1 2)")
+	}
+
+	// String input also passes through
+	got, err = mysqlTransformValue("POLYGON((0 0,1 0,1 1,0 1,0 0))", col, tm)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if got != "POLYGON((0 0,1 0,1 1,0 1,0 0))" {
+		t.Errorf("got %q, want WKT polygon string", got)
 	}
 }
 

@@ -71,7 +71,7 @@ type TypeMappingConfig struct {
 	CollationMap          map[string]string `toml:"collation_map"`  // MySQL collation → PG collation overrides
 	CIAsCitext            bool              `toml:"ci_as_citext"`         // map _ci text columns to citext (MySQL only)
 	BitMode               string            `toml:"bit_mode"`             // bytea|bit|varbit (MySQL only)
-	StringUUIDAaUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
+	StringUUIDAsUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
 	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
 	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
 	ZeroDateMode          string            `toml:"zero_date_mode"`      // null|error (MySQL only)

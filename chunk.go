@@ -70,10 +70,10 @@ func planChunks(min, max, chunkSize int64) []Chunk {
 }
 
 // buildChunkedSelectQuery builds a SELECT query for a single chunk of a table.
-func buildChunkedSelectQuery(src SourceDB, table Table, key ChunkKey, chunk Chunk) string {
+func buildChunkedSelectQuery(src SourceDB, table Table, key ChunkKey, chunk Chunk, typeMap TypeMappingConfig) string {
 	cols := make([]string, len(table.Columns))
 	for i, col := range table.Columns {
-		cols[i] = src.QuoteIdentifier(col.SourceName)
+		cols[i] = columnSelectExpr(src, col, typeMap)
 	}
 
 	quotedKey := src.QuoteIdentifier(key.SourceColumn)

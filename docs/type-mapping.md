@@ -117,9 +117,16 @@ ci_as_citext = false              # _ci text columns → citext (MySQL only)
 - **`check`** &mdash; stores as `text` with a `CHECK` constraint restricting values to the
   MySQL enum's allowed set.
 - **`native`** &mdash; creates a native PostgreSQL enum type per distinct set of values.
-  Type names are content-addressable (`pgferry_enum_XXXXXXXX` using FNV32a hash of
-  sorted values), so columns with identical enum definitions share the same type.
+  Type names are content-addressable (`pgferry_enum_XXXXXXXXXXXXXXXX` using FNV64a hash
+  of sorted values), so columns with identical enum definitions share the same type.
   Enum types are created before table creation.
+
+  **Ordering caveat:** PostgreSQL native enums have a declaration order that affects
+  `ORDER BY`. Because pgferry sorts values before hashing (for deduplication), two
+  MySQL columns with the same values but different declaration order (e.g.
+  `enum('new','old')` vs `enum('old','new')`) will share the same PG type, and
+  `ORDER BY` will use alphabetical order for both. If MySQL-side enum ordering
+  carries business semantics, use `enum_mode = "check"` instead.
 
 ### Set mode
 

@@ -210,7 +210,7 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if typeMap.BitMode != "bytea" {
 		errs = append(errs, fmt.Sprintf("bit_mode=%q is a MySQL-only option", typeMap.BitMode))
 	}
-	if typeMap.StringUUIDAaUUID {
+	if typeMap.StringUUIDAsUUID {
 		errs = append(errs, "string_uuid_as_uuid is a MySQL-only option")
 	}
 	if typeMap.Binary16UUIDMode != "rfc4122" {

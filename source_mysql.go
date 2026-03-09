@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -458,7 +457,7 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		return "double precision", nil
 	case col.DataType == "decimal":
 		return fmt.Sprintf("numeric(%d,%d)", col.Precision, col.Scale), nil
-	case isStringUUIDColumn(col) && typeMap.StringUUIDAaUUID:
+	case isStringUUIDColumn(col) && typeMap.StringUUIDAsUUID:
 		return "uuid", nil
 	case col.DataType == "varchar":
 		if typeMap.VarcharAsText {
@@ -585,7 +584,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		return val, nil
 
-	case isStringUUIDColumn(col) && typeMap.StringUUIDAaUUID:
+	case isStringUUIDColumn(col) && typeMap.StringUUIDAsUUID:
 		var s string
 		switch v := val.(type) {
 		case []byte:
@@ -723,11 +722,16 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		return val, nil
 
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
-		b, ok := val.([]byte)
-		if !ok {
-			return nil, fmt.Errorf("expected []byte for spatial value, got %T", val)
+		// ST_AsText() is used in the SELECT query, so the value arrives as a
+		// string (WKT). Just pass it through.
+		switch v := val.(type) {
+		case []byte:
+			return string(v), nil
+		case string:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("expected string/[]byte for spatial WKT value, got %T", val)
 		}
-		return hex.EncodeToString(b), nil
 
 	case col.DataType == "varchar" || col.DataType == "char" ||
 		col.DataType == "text" || col.DataType == "mediumtext" ||
@@ -861,13 +865,11 @@ func mysqlTimeToInterval(t string) string {
 
 	var b strings.Builder
 	if negative {
-		b.WriteByte('-')
+		// PostgreSQL interval parsing applies the sign only to the immediately
+		// following component, so we must negate each part individually.
+		fmt.Fprintf(&b, "-%s hours -%s mins -%s secs", hours, mins, secs)
+	} else {
+		fmt.Fprintf(&b, "%s hours %s mins %s secs", hours, mins, secs)
 	}
-	b.WriteString(hours)
-	b.WriteString(" hours ")
-	b.WriteString(mins)
-	b.WriteString(" mins ")
-	b.WriteString(secs)
-	b.WriteString(" secs")
 	return b.String()
 }
