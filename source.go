@@ -61,7 +61,9 @@ func newSourceDB(sourceType string) (SourceDB, error) {
 		return &mysqlSourceDB{}, nil
 	case "sqlite":
 		return &sqliteSourceDB{}, nil
+	case "mssql":
+		return &mssqlSourceDB{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported source type %q (must be mysql or sqlite)", sourceType)
+		return nil, fmt.Errorf("unsupported source type %q (must be mysql, sqlite, or mssql)", sourceType)
 	}
 }

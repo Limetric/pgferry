@@ -1,11 +1,11 @@
 # pgferry
 
-Move MySQL or SQLite databases into PostgreSQL with one config file and one binary.
+Move MySQL, SQLite, or MSSQL databases into PostgreSQL with one config file and one binary.
 
 Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy — and real migrations always do — you get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
 - Single binary, zero runtime dependencies
-- MySQL and SQLite sources, PostgreSQL target
+- MySQL, SQLite, and MSSQL sources, PostgreSQL target
 - Parallel workers and range-based chunking for large tables
 - Split into `schema_only` and `data_only` phases for tighter control
 - Preflight `plan` reports what needs manual attention
@@ -18,6 +18,7 @@ CI runs integration tests across MySQL 5.7 through latest and PostgreSQL 14 thro
 | ------ | ------------------------------ | ----------------------- | ------------------- |
 | MySQL  | `go-sql-driver/mysql`          | Parallel (configurable) | `none`, `single_tx` |
 | SQLite | `modernc.org/sqlite` (pure Go) | Sequential (1 worker)   | `none` only         |
+| MSSQL  | `go-mssqldb` (pure Go)         | Parallel (configurable) | `none`, `single_tx` |
 
 ## Install
 
@@ -59,6 +60,19 @@ dsn = "/path/to/database.db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
+**MSSQL -> PostgreSQL**
+
+```toml
+schema = "app"
+
+[source]
+type = "mssql"
+dsn = "sqlserver://sa:YourStrong!Pass@127.0.0.1:1433?database=source_db"
+
+[target]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+```
+
 Run the migration:
 
 ```bash
@@ -82,6 +96,7 @@ We maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes f
 
 [`pgloader`](https://github.com/dimitri/pgloader) is the established choice, but it has real gaps that `pgferry` fills:
 
+- **MSSQL that actually works**: pgloader's MSSQL support depends on FreeTDS (C library), which breaks `datetimeoffset`, `datetime2`, `varbinary(max)`, Unicode text, Azure SQL, and parallel reads. pgferry uses `go-mssqldb` (pure Go, native TDS) and handles all MSSQL types correctly.
 - **MySQL 8.4+ auth**: pgloader's MySQL driver doesn't support `caching_sha2_password`, the default auth plugin since MySQL 8.0. pgferry works out of the box.
 - **Static binary**: no Common Lisp runtime, no SBCL build issues, no dependency problems. One binary, runs anywhere.
 - **TOML config**: declarative, version-controllable, no DSL to learn.
@@ -99,6 +114,8 @@ The [`examples/`](examples/) directory is split by source type.
 **MySQL:** [`minimal-safe`](examples/mysql/minimal-safe/), [`recreate-fast`](examples/mysql/recreate-fast/), [`hooks`](examples/mysql/hooks/), [`sakila`](examples/mysql/sakila/), [`schema-only`](examples/mysql/schema-only/), [`data-only`](examples/mysql/data-only/), [`chunked-resume`](examples/mysql/chunked-resume/)
 
 **SQLite:** [`minimal-safe`](examples/sqlite/minimal-safe/), [`recreate-fast`](examples/sqlite/recreate-fast/), [`hooks`](examples/sqlite/hooks/), [`schema-only`](examples/sqlite/schema-only/), [`data-only`](examples/sqlite/data-only/), [`chunked-resume`](examples/sqlite/chunked-resume/)
+
+**MSSQL:** [`minimal-safe`](examples/mssql/minimal-safe/), [`recreate-fast`](examples/mssql/recreate-fast/)
 
 ## Documentation
 

@@ -91,6 +91,9 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	}
 	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
 	src.SetCharset(cfg.Source.Charset)
+	if m, ok := src.(*mssqlSourceDB); ok {
+		m.sourceSchema = cfg.Source.SourceSchema
+	}
 
 	log.Printf("pgferry — %s → PostgreSQL migration", src.Name())
 	mode := "full"

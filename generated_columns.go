@@ -1,11 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // isGeneratedColumn detects generated columns from the Extra field.
-// Works for both MySQL and SQLite sources.
+// Works for MySQL, SQLite, and MSSQL sources.
 func isGeneratedColumn(col Column) bool {
-	return isMySQLGeneratedColumn(col)
+	if isMySQLGeneratedColumn(col) {
+		return true
+	}
+	return strings.EqualFold(col.Extra, "COMPUTED")
 }
 
 func collectGeneratedColumnWarnings(schema *Schema) []string {

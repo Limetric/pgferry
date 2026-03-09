@@ -140,6 +140,11 @@ func isNumericChunkableType(col Column, src SourceDB) bool {
 		case "INTEGER", "INT", "SMALLINT", "TINYINT", "MEDIUMINT", "BIGINT":
 			return true
 		}
+	case "MSSQL":
+		switch col.DataType {
+		case "tinyint", "smallint", "int", "bigint":
+			return true
+		}
 	}
 	return false
 }

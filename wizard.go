@@ -95,6 +95,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	sourceType, err := w.promptChoice("Source type", []wizardOption{
 		{key: "mysql"},
 		{key: "sqlite"},
+		{key: "mssql"},
 	}, "mysql")
 	if err != nil {
 		return nil, err
@@ -102,8 +103,11 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	cfg.Source.Type = sourceType
 
 	sourcePrompt := "Source DSN"
-	if sourceType == "sqlite" {
+	switch sourceType {
+	case "sqlite":
 		sourcePrompt = "SQLite path or file: URI"
+	case "mssql":
+		sourcePrompt = "MSSQL DSN (e.g., sqlserver://user:pass@host:1433?database=mydb)"
 	}
 	cfg.Source.DSN, err = w.promptString(sourcePrompt, "", validateRequired)
 	if err != nil {
@@ -140,7 +144,8 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		return nil, err
 	}
 
-	if sourceType == "mysql" {
+	switch sourceType {
+	case "mysql", "mssql":
 		cfg.SourceSnapshotMode, err = w.promptChoice("Source snapshot mode", []wizardOption{
 			{key: "none"},
 			{key: "single_tx"},
@@ -148,9 +153,16 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		if err != nil {
 			return nil, err
 		}
-	} else {
+	default:
 		cfg.SourceSnapshotMode = "none"
 		fmt.Fprintln(w.out, "SQLite source detected: source_snapshot_mode is fixed to none and workers are capped at 1.")
+	}
+
+	if sourceType == "mssql" {
+		cfg.Source.SourceSchema, err = w.promptString("MSSQL source schema", "dbo", validateRequired)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !cfg.SchemaOnly && !cfg.DataOnly {
@@ -178,7 +190,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 
 	defaultWorkers := effectiveDefaultWorkers(sourceType)
-	if sourceType == "mysql" {
+	if sourceType == "mysql" || sourceType == "mssql" {
 		cfg.Workers, err = w.promptInt("Parallel workers", defaultWorkers, 1)
 		if err != nil {
 			return nil, err
@@ -195,6 +207,33 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	cfg.TypeMapping.UnknownAsText, err = w.promptBool("Map unknown source types to text instead of failing", cfg.TypeMapping.UnknownAsText)
 	if err != nil {
 		return nil, err
+	}
+
+	if sourceType == "mssql" {
+		cfg.TypeMapping.NvarcharAsText, err = w.promptBool("Map nvarchar(n) to text", cfg.TypeMapping.NvarcharAsText)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.MoneyAsNumeric, err = w.promptBool("Map money to numeric (recommended over PG money)", cfg.TypeMapping.MoneyAsNumeric)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.XmlAsText, err = w.promptBool("Map xml to text", cfg.TypeMapping.XmlAsText)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.DatetimeAsTimestamptz, err = w.promptBool("Map datetime/datetime2 to timestamptz", cfg.TypeMapping.DatetimeAsTimestamptz)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.SpatialMode, err = w.promptChoice("Spatial type mapping", []wizardOption{
+			{key: "off"},
+			{key: "wkb_bytea"},
+			{key: "wkt_text"},
+		}, cfg.TypeMapping.SpatialMode)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if sourceType == "mysql" {
@@ -358,6 +397,9 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	if cfg.Source.Type == "mysql" && cfg.Source.Charset != "" && cfg.Source.Charset != "utf8mb4" {
 		writeLine("charset = %s", strconv.Quote(cfg.Source.Charset))
 	}
+	if cfg.Source.Type == "mssql" && cfg.Source.SourceSchema != "" && cfg.Source.SourceSchema != "dbo" {
+		writeLine("source_schema = %s", strconv.Quote(cfg.Source.SourceSchema))
+	}
 
 	writeSection("target")
 	writeLine("dsn = %s", strconv.Quote(cfg.Target.DSN))
@@ -412,6 +454,25 @@ func renderTypeMappingLines(cfg TypeMappingConfig, sourceType string) []string {
 	}
 	if cfg.UnknownAsText != defaults.UnknownAsText {
 		lines = append(lines, fmt.Sprintf("unknown_as_text = %t", cfg.UnknownAsText))
+	}
+
+	if sourceType == "mssql" {
+		if cfg.NvarcharAsText != defaults.NvarcharAsText {
+			lines = append(lines, fmt.Sprintf("nvarchar_as_text = %t", cfg.NvarcharAsText))
+		}
+		if cfg.MoneyAsNumeric != defaults.MoneyAsNumeric {
+			lines = append(lines, fmt.Sprintf("money_as_numeric = %t", cfg.MoneyAsNumeric))
+		}
+		if cfg.XmlAsText != defaults.XmlAsText {
+			lines = append(lines, fmt.Sprintf("xml_as_text = %t", cfg.XmlAsText))
+		}
+		if cfg.DatetimeAsTimestamptz != defaults.DatetimeAsTimestamptz {
+			lines = append(lines, fmt.Sprintf("datetime_as_timestamptz = %t", cfg.DatetimeAsTimestamptz))
+		}
+		if cfg.SpatialMode != defaults.SpatialMode {
+			lines = append(lines, fmt.Sprintf("spatial_mode = %s", strconv.Quote(cfg.SpatialMode)))
+		}
+		return lines
 	}
 
 	if sourceType != "mysql" {
