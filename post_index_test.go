@@ -171,7 +171,7 @@ func TestExecIndexJobs_ParallelSuccess(t *testing.T) {
 }
 
 func TestExecIndexJobs_ParallelErrorCancelsRemaining(t *testing.T) {
-	// Use 1 worker with 20 jobs so that after the error on job 1,
+	// Use 2 workers with 20 jobs so that after the error on job 1,
 	// the remaining jobs see the cancelled context and bail out.
 	jobs := makeTestJobs(20)
 	var count atomic.Int32
@@ -199,19 +199,15 @@ func TestExecIndexJobs_ContextAlreadyCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
+	// Verify the function completes without error or panic when the
+	// context is already cancelled. Some goroutines may still execute
+	// (select between ready channels is non-deterministic), so we only
+	// assert no error and no hang.
 	jobs := makeTestJobs(5)
-	var count atomic.Int32
 	err := execIndexJobs(ctx, jobs, 4, func(_ context.Context, _ indexJob) error {
-		count.Add(1)
 		return nil
 	})
-	// No error expected — cancelled goroutines just return without executing.
-	// Some goroutines may still run (select between ready channels is non-deterministic),
-	// but fewer than all jobs should execute.
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if count.Load() > int32(len(jobs)) {
-		t.Fatalf("executed %d jobs, should not exceed %d", count.Load(), len(jobs))
 	}
 }

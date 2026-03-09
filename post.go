@@ -290,7 +290,12 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 		return createIndex(ctx, pool, pgSchema, j.table, j.index)
 	})
 
-	log.Printf("    indexes completed in %s", time.Since(start).Round(time.Millisecond))
+	elapsed := time.Since(start).Round(time.Millisecond)
+	if err != nil {
+		log.Printf("    indexes failed after %s", elapsed)
+	} else {
+		log.Printf("    indexes completed in %s", elapsed)
+	}
 	return err
 }
 
