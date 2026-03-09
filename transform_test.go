@@ -116,6 +116,39 @@ func TestTransformValue_UUID(t *testing.T) {
 	}
 }
 
+func TestTransformValue_UUIDSwapMode(t *testing.T) {
+	col := Column{DataType: "binary", Precision: 0, ColumnType: "binary(16)"}
+	swapTm := TypeMappingConfig{Binary16AsUUID: true, Binary16UUIDMode: "mysql_uuid_to_bin_swap", SanitizeJSONNullBytes: true, EnumMode: "text", SetMode: "text", BitMode: "bytea"}
+
+	// UUID_TO_BIN('11223344-5566-7788-99aa-bbccddeeff00', 1) produces:
+	// [77 88] [55 66] [11 22 33 44] [99 aa] [bb cc dd ee ff 00]
+	// which should decode to: 11223344-5566-7788-99aa-bbccddeeff00
+	input := []byte{0x77, 0x88, 0x55, 0x66, 0x11, 0x22, 0x33, 0x44, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00}
+	got, err := mysqlTransformValue(input, col, swapTm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(uuid swap) error: %v", err)
+	}
+	want := "11223344-5566-7788-99aa-bbccddeeff00"
+	if got != want {
+		t.Errorf("mysqlTransformValue(uuid swap) = %q, want %q", got, want)
+	}
+}
+
+func TestTransformValue_UUIDRfc4122Default(t *testing.T) {
+	col := Column{DataType: "binary", Precision: 0, ColumnType: "binary(16)"}
+	rfc := TypeMappingConfig{Binary16AsUUID: true, Binary16UUIDMode: "rfc4122", SanitizeJSONNullBytes: true, EnumMode: "text", SetMode: "text", BitMode: "bytea"}
+
+	input := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}
+	got, err := mysqlTransformValue(input, col, rfc)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(uuid rfc4122) error: %v", err)
+	}
+	want := "01020304-0506-0708-090a-0b0c0d0e0f10"
+	if got != want {
+		t.Errorf("mysqlTransformValue(uuid rfc4122) = %q, want %q", got, want)
+	}
+}
+
 func TestTransformValue_UUIDOptInNonBinary16Passthrough(t *testing.T) {
 	col := Column{DataType: "binary", Precision: 16, ColumnType: "binary(8)"}
 	optIn := TypeMappingConfig{Binary16AsUUID: true, SanitizeJSONNullBytes: true}

@@ -72,6 +72,7 @@ type TypeMappingConfig struct {
 	CIAsCitext            bool              `toml:"ci_as_citext"`         // map _ci text columns to citext (MySQL only)
 	BitMode               string            `toml:"bit_mode"`             // bytea|bit|varbit (MySQL only)
 	StringUUIDAaUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
+	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -178,6 +179,17 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	default:
 		return fmt.Errorf("type_mapping.bit_mode must be one of: bytea, bit, varbit")
 	}
+	if cfg.TypeMapping.Binary16UUIDMode == "" {
+		cfg.TypeMapping.Binary16UUIDMode = "rfc4122"
+	}
+	switch cfg.TypeMapping.Binary16UUIDMode {
+	case "rfc4122", "mysql_uuid_to_bin_swap":
+	default:
+		return fmt.Errorf("type_mapping.binary16_uuid_mode must be one of: rfc4122, mysql_uuid_to_bin_swap")
+	}
+	if cfg.TypeMapping.Binary16UUIDMode != "rfc4122" && !cfg.TypeMapping.Binary16AsUUID {
+		return fmt.Errorf("type_mapping.binary16_uuid_mode requires binary16_as_uuid = true")
+	}
 
 	switch cfg.Validation {
 	case "none", "row_count":
@@ -274,5 +286,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		UnknownAsText:         false,
 		CollationMode:         "none",
 		BitMode:               "bytea",
+		Binary16UUIDMode:      "rfc4122",
 	}
 }
