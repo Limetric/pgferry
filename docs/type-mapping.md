@@ -94,8 +94,8 @@ instead of aborting.
 | `decimal(p,s)` / `numeric(p,s)` | `numeric(p,s)` | | |
 | `float` | `double precision` | | |
 | `real` | `real` | | |
-| `money` | `numeric(19,4)` | `text` (when disabled) | `money_as_numeric` |
-| `smallmoney` | `numeric(10,4)` | `text` (when disabled) | `money_as_numeric` |
+| `money` | `numeric(19,4)` | `text` | `money_as_numeric` |
+| `smallmoney` | `numeric(10,4)` | `text` | `money_as_numeric` |
 | `char(n)` | `char(n)` | | |
 | `varchar(n)` | `varchar(n)` | | |
 | `varchar(max)` | `text` | | |
@@ -110,7 +110,7 @@ instead of aborting.
 | `time` | `time` | | |
 | `datetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
 | `datetime2` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
-| `smalldatetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
+| `smalldatetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` (shared with MySQL) |
 | `datetimeoffset` | `timestamptz` | | always timestamptz |
 | `uniqueidentifier` | `uuid` | | |
 | `xml` | `xml` | `text` | `xml_as_text` |
@@ -137,7 +137,9 @@ instead of aborting.
 - **Snapshot isolation**: `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation level, which requires `ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON` on the source.
 - **Spatial types**: `geography` and `geometry` use method syntax (`.STAsText()`, `.STAsBinary()`) for data extraction, controlled by `spatial_mode`.
 - **`uniqueidentifier`**: SQL Server stores UUIDs with mixed-endian byte ordering (first 3 groups little-endian). pgferry handles byte reordering to produce standard UUID strings.
-- **`money` precision**: Mapped directly to `numeric(19,4)` / `numeric(10,4)` to avoid precision loss through float intermediaries.
+- **`money` precision**: Mapped directly to `numeric(19,4)` / `numeric(10,4)` to avoid precision loss through float intermediaries. When `money_as_numeric = false`, maps to `text`.
+- **`sql_variant`**: Mapped to `text`. Values are cast to `nvarchar(max)` server-side during data extraction, so type information (e.g. integers, dates stored in the variant) is converted to their string representation.
+- **Cross-schema foreign keys**: pgferry migrates a single MSSQL schema at a time. Foreign keys referencing tables in a different schema will produce a warning and may fail during post-migration FK creation if the referenced table is not in the target PostgreSQL schema.
 - **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `enum_mode = "check"/"native"`, `set_mode = "text_array"/"text_array_check"`, `bit_mode` (non-default), `string_uuid_as_uuid`, `binary16_uuid_mode` (non-default), `time_mode` (non-default), `zero_date_mode` (non-default), `widen_unsigned_integers = false`, `collation_mode = "auto"`, `collation_map`, and `ci_as_citext` produce a config error when used with an MSSQL source.
 
 ## Type mapping options

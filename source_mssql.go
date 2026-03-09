@@ -401,11 +401,13 @@ func introspectMSSQLForeignKeys(db *sql.DB, schema, tableName string, identName 
 			OBJECT_NAME(fkc.referenced_object_id) AS ref_table,
 			COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_column,
 			fk.update_referential_action_desc,
-			fk.delete_referential_action_desc
+			fk.delete_referential_action_desc,
+			SCHEMA_NAME(ref_t.schema_id) AS ref_schema
 		FROM sys.foreign_keys fk
 		JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
 		JOIN sys.tables t ON fk.parent_object_id = t.object_id
 		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		JOIN sys.tables ref_t ON fk.referenced_object_id = ref_t.object_id
 		WHERE s.name = @p1 AND t.name = @p2
 		ORDER BY fk.name, fkc.constraint_column_id`,
 		schema, tableName,
@@ -419,17 +421,24 @@ func introspectMSSQLForeignKeys(db *sql.DB, schema, tableName string, identName 
 	var fkOrder []string
 
 	for rows.Next() {
-		var fkName, colName, refTable, refCol, updateAction, deleteAction string
-		if err := rows.Scan(&fkName, &colName, &refTable, &refCol, &updateAction, &deleteAction); err != nil {
+		var fkName, colName, refTable, refCol, updateAction, deleteAction, refSchema string
+		if err := rows.Scan(&fkName, &colName, &refTable, &refCol, &updateAction, &deleteAction, &refSchema); err != nil {
 			return nil, err
 		}
 
 		fk, ok := fkMap[fkName]
 		if !ok {
+			refPGTable := identName(refTable)
+			// If the referenced table is in a different schema, log a warning.
+			// pgferry migrates a single schema at a time, so cross-schema FKs
+			// may fail if the referenced table isn't in the target schema.
+			if refSchema != schema {
+				log.Printf("WARN: FK %s references table %s.%s in a different schema; the FK may fail if that table is not in the target PostgreSQL schema", fkName, refSchema, refTable)
+			}
 			fk = &ForeignKey{
 				Name:       identName(fkName),
 				RefTable:   refTable,
-				RefPGTable: identName(refTable),
+				RefPGTable: refPGTable,
 				UpdateRule: strings.ReplaceAll(updateAction, "_", " "),
 				DeleteRule: strings.ReplaceAll(deleteAction, "_", " "),
 			}
@@ -568,12 +577,12 @@ func mssqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		if typeMap.MoneyAsNumeric {
 			return "numeric(19,4)", nil
 		}
-		return "money", nil
+		return "text", nil
 	case "smallmoney":
 		if typeMap.MoneyAsNumeric {
 			return "numeric(10,4)", nil
 		}
-		return "money", nil
+		return "text", nil
 
 	// Character types
 	case "char":
@@ -623,6 +632,9 @@ func mssqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		}
 		return "timestamp", nil
 	case "smalldatetime":
+		if typeMap.DatetimeAsTimestamptz {
+			return "timestamptz", nil
+		}
 		return "timestamp", nil
 	case "datetimeoffset":
 		return "timestamptz", nil

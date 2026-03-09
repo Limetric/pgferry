@@ -155,7 +155,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		}
 	default:
 		cfg.SourceSnapshotMode = "none"
-		fmt.Fprintln(w.out, "SQLite source detected: source_snapshot_mode is fixed to none and workers are capped at 1.")
+		fmt.Fprintln(w.out, "source_snapshot_mode is fixed to none and workers are capped at 1 for this source type.")
 	}
 
 	if sourceType == "mssql" {

@@ -31,8 +31,8 @@ func TestMSSQLMapType(t *testing.T) {
 		// Money types
 		{"money→numeric(19,4) default", Column{DataType: "money"}, defaultTypeMappingConfig(), "numeric(19,4)", false},
 		{"smallmoney→numeric(10,4) default", Column{DataType: "smallmoney"}, defaultTypeMappingConfig(), "numeric(10,4)", false},
-		{"money→money when disabled", Column{DataType: "money"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.MoneyAsNumeric = false; return t }(), "money", false},
-		{"smallmoney→money when disabled", Column{DataType: "smallmoney"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.MoneyAsNumeric = false; return t }(), "money", false},
+		{"money→text when disabled", Column{DataType: "money"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.MoneyAsNumeric = false; return t }(), "text", false},
+		{"smallmoney→text when disabled", Column{DataType: "smallmoney"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.MoneyAsNumeric = false; return t }(), "text", false},
 
 		// Character types
 		{"char(10)→char(10)", Column{DataType: "char", CharMaxLen: 10}, defaultTypeMappingConfig(), "char(10)", false},
@@ -59,6 +59,7 @@ func TestMSSQLMapType(t *testing.T) {
 		{"datetime→timestamptz", Column{DataType: "datetime"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz", false},
 		{"datetime2→timestamptz", Column{DataType: "datetime2"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz", false},
 		{"smalldatetime→timestamp", Column{DataType: "smalldatetime"}, defaultTypeMappingConfig(), "timestamp", false},
+		{"smalldatetime→timestamptz", Column{DataType: "smalldatetime"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz", false},
 		{"datetimeoffset→timestamptz", Column{DataType: "datetimeoffset"}, defaultTypeMappingConfig(), "timestamptz", false},
 
 		// MSSQL timestamp is NOT a datetime — it's rowversion

@@ -56,7 +56,7 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
 - `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`) — MySQL only
 - Some type mapping options are MySQL-only (`tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `widen_unsigned_integers`, `enum_mode`, `set_mode`); some are MSSQL-only (`nvarchar_as_text`, `money_as_numeric`, `xml_as_text`); some are shared (`datetime_as_timestamptz`, `spatial_mode`). Incompatible sources reject these at config validation
-- Unsupported index features (e.g. MySQL FULLTEXT/SPATIAL/prefix/expression indexes, SQLite partial/expression indexes, MSSQL XML/SPATIAL/FULLTEXT/filtered indexes) are reported and skipped so migration can proceed safely
+- Unsupported index features (e.g. MySQL FULLTEXT/SPATIAL/prefix/expression indexes, SQLite partial/expression indexes, MSSQL XML/SPATIAL/filtered indexes) are reported and skipped so migration can proceed safely
 - Unsupported column types are detected up front with a complete error list before table creation starts
 - Generated columns are migrated as materialized values; expression semantics are reported for manual follow-up
 - SQLite sources use `modernc.org/sqlite` (pure Go, no CGO); DSNs are normalized to read-only URI mode; in-memory databases are rejected
