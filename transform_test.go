@@ -536,7 +536,7 @@ func TestTransformValue_TimeAsInterval(t *testing.T) {
 		want  string
 	}{
 		{"normal", "12:30:45", "12 hours 30 mins 45 secs"},
-		{"negative", "-05:15:00", "-05 hours -15 mins -00 secs"},
+		{"negative", "-05:15:00", "-05 hours -15 mins 00 secs"},
 		{"long duration", "838:59:59", "838 hours 59 mins 59 secs"},
 		{"zero", "00:00:00", "00 hours 00 mins 00 secs"},
 		{"bytes", []byte("10:20:30"), "10 hours 20 mins 30 secs"},

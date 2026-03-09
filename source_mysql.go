@@ -721,6 +721,11 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		return val, nil
 
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
+		// Raw MySQL spatial bytes (4-byte SRID prefix + WKB) pass through as
+		// bytea. Explicit case to avoid relying on default passthrough.
+		return val, nil
+
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
 		// ST_AsText() is used in the SELECT query, so the value arrives as a
 		// string (WKT). Just pass it through.
@@ -863,7 +868,16 @@ func mysqlTimeToInterval(t string) (string, error) {
 	if negative {
 		// PostgreSQL interval parsing applies the sign only to the immediately
 		// following component, so we must negate each part individually.
-		fmt.Fprintf(&b, "-%s hours -%s mins -%s secs", hours, mins, secs)
+		// Skip the minus for zero components to avoid cosmetic "-00" output.
+		negateComponent := func(s string) string {
+			for _, c := range s {
+				if c != '0' && c != '.' {
+					return "-" + s
+				}
+			}
+			return s
+		}
+		fmt.Fprintf(&b, "%s hours %s mins %s secs", negateComponent(hours), negateComponent(mins), negateComponent(secs))
 	} else {
 		fmt.Fprintf(&b, "%s hours %s mins %s secs", hours, mins, secs)
 	}

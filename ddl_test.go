@@ -491,6 +491,48 @@ func TestPgEnumTypeName_Deterministic(t *testing.T) {
 	}
 }
 
+func TestCreateEnumTypes_CrossTableDedup(t *testing.T) {
+	// Two tables with the same enum values in different order should produce
+	// exactly one PG type with deterministic (sorted) declaration order.
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "t1",
+				Columns: []Column{
+					{PGName: "status", DataType: "enum", ColumnType: "enum('b','a')"},
+				},
+			},
+			{
+				PGName: "t2",
+				Columns: []Column{
+					{PGName: "status", DataType: "enum", ColumnType: "enum('a','b')"},
+				},
+			},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.EnumMode = "native"
+
+	// Both should map to the same type name
+	name1 := pgEnumTypeName([]string{"b", "a"})
+	name2 := pgEnumTypeName([]string{"a", "b"})
+	if name1 != name2 {
+		t.Fatalf("cross-table enum type names differ: %q vs %q", name1, name2)
+	}
+
+	// Verify both columns reference the same type in DDL
+	for _, table := range schema.Tables {
+		ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+		if err != nil {
+			t.Fatalf("generateCreateTable(%s): %v", table.PGName, err)
+		}
+		if !strings.Contains(ddl, name1) {
+			t.Errorf("table %s DDL missing enum type %s:\n%s", table.PGName, name1, ddl)
+		}
+	}
+}
+
 func TestGenerateCreateTable_EnumNativeDefault(t *testing.T) {
 	table := Table{
 		PGName: "enum_default_demo",
