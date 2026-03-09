@@ -71,8 +71,13 @@ func TestMapType(t *testing.T) {
 		{"bit→varbit", Column{DataType: "bit", ColumnType: "bit(16)", Precision: 16}, TypeMappingConfig{BitMode: "varbit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "varbit", false},
 		{"binary→bytea", Column{DataType: "binary", ColumnType: "binary(32)", Precision: 32}, defaultTypeMappingConfig(), "bytea", false},
 		{"varbinary→bytea", Column{DataType: "varbinary", ColumnType: "varbinary(32)"}, defaultTypeMappingConfig(), "bytea", false},
-		{"unknown→error default", Column{DataType: "geometry", ColumnType: "geometry"}, defaultTypeMappingConfig(), "", true},
-		{"unknown→text opt-in", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{UnknownAsText: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
+		{"geometry→error when off", Column{DataType: "geometry", ColumnType: "geometry"}, defaultTypeMappingConfig(), "", true},
+		{"geometry→bytea wkb", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "bytea", false},
+		{"point→bytea wkb", Column{DataType: "point", ColumnType: "point"}, TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "bytea", false},
+		{"geometry→text wkt", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{SpatialMode: "wkt_text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "text", false},
+		{"polygon→text wkt", Column{DataType: "polygon", ColumnType: "polygon"}, TypeMappingConfig{SpatialMode: "wkt_text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "text", false},
+		{"multipoint→bytea wkb", Column{DataType: "multipoint", ColumnType: "multipoint"}, TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "bytea", false},
+		{"unknown→text opt-in", Column{DataType: "sometype", ColumnType: "sometype"}, TypeMappingConfig{UnknownAsText: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -573,6 +578,53 @@ func TestTransformValue_TimeAsText(t *testing.T) {
 	}
 	if got != "838:59:59" {
 		t.Errorf("got %q, want %q", got, "838:59:59")
+	}
+}
+
+func TestTransformValue_SpatialWKBBytea(t *testing.T) {
+	col := Column{DataType: "geometry", ColumnType: "geometry"}
+	tm := TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	// wkb_bytea mode: raw bytes pass through as-is (bytea)
+	in := []byte{0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00}
+	got, err := mysqlTransformValue(in, col, tm)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("type = %T, want []byte", got)
+	}
+	if len(out) != len(in) {
+		t.Errorf("len = %d, want %d", len(out), len(in))
+	}
+}
+
+func TestTransformValue_SpatialWKTText(t *testing.T) {
+	col := Column{DataType: "point", ColumnType: "point"}
+	tm := TypeMappingConfig{SpatialMode: "wkt_text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{0xAB, 0xCD}
+	got, err := mysqlTransformValue(in, col, tm)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	s, ok := got.(string)
+	if !ok {
+		t.Fatalf("type = %T, want string", got)
+	}
+	if s != "abcd" {
+		t.Errorf("got %q, want %q", s, "abcd")
+	}
+}
+
+func TestTransformValue_SpatialNil(t *testing.T) {
+	col := Column{DataType: "geometry", ColumnType: "geometry"}
+	tm := TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	got, err := mysqlTransformValue(nil, col, tm)
+	if err != nil || got != nil {
+		t.Errorf("nil spatial: got %v, want nil", got)
 	}
 }
 

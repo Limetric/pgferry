@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -382,6 +383,16 @@ func isStringUUIDColumn(col Column) bool {
 	return (col.DataType == "char" || col.DataType == "varchar") && col.CharMaxLen == 36
 }
 
+// isMySQLSpatialType returns true for MySQL spatial/geometry types.
+func isMySQLSpatialType(dataType string) bool {
+	switch dataType {
+	case "geometry", "point", "linestring", "polygon",
+		"multipoint", "multilinestring", "multipolygon", "geometrycollection":
+		return true
+	}
+	return false
+}
+
 func isTinyInt1Column(col Column) bool {
 	return isMySQLTypeWithLength(col, "tinyint", 1)
 }
@@ -529,6 +540,10 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
 		return "bytea", nil
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
+		return "bytea", nil
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
+		return "text", nil
 	default:
 		if typeMap.UnknownAsText {
 			return "text", nil
@@ -706,6 +721,13 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 			return nil, nil
 		}
 		return val, nil
+
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
+		b, ok := val.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("expected []byte for spatial value, got %T", val)
+		}
+		return hex.EncodeToString(b), nil
 
 	case col.DataType == "varchar" || col.DataType == "char" ||
 		col.DataType == "text" || col.DataType == "mediumtext" ||

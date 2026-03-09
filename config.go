@@ -75,6 +75,7 @@ type TypeMappingConfig struct {
 	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
 	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
 	ZeroDateMode          string            `toml:"zero_date_mode"`      // null|error (MySQL only)
+	SpatialMode           string            `toml:"spatial_mode"`        // off|wkb_bytea|wkt_text (MySQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -208,6 +209,14 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	default:
 		return fmt.Errorf("type_mapping.zero_date_mode must be one of: null, error")
 	}
+	if cfg.TypeMapping.SpatialMode == "" {
+		cfg.TypeMapping.SpatialMode = "off"
+	}
+	switch cfg.TypeMapping.SpatialMode {
+	case "off", "wkb_bytea", "wkt_text":
+	default:
+		return fmt.Errorf("type_mapping.spatial_mode must be one of: off, wkb_bytea, wkt_text")
+	}
 
 	switch cfg.Validation {
 	case "none", "row_count":
@@ -307,5 +316,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		Binary16UUIDMode:      "rfc4122",
 		TimeMode:              "time",
 		ZeroDateMode:          "null",
+		SpatialMode:           "off",
 	}
 }
