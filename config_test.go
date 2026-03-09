@@ -505,7 +505,7 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
-enum_mode = "native"
+enum_mode = "pg_enum"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -514,6 +514,36 @@ enum_mode = "native"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for invalid type_mapping.enum_mode")
+	}
+}
+
+func TestLoadConfig_EnumModeNative(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "enum_native.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+enum_mode = "native"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.EnumMode != "native" {
+		t.Errorf("TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "native")
 	}
 }
 

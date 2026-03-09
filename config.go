@@ -154,9 +154,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("source_snapshot_mode must be one of: none, single_tx")
 	}
 	switch cfg.TypeMapping.EnumMode {
-	case "text", "check":
+	case "text", "check", "native":
 	default:
-		return fmt.Errorf("type_mapping.enum_mode must be one of: text, check")
+		return fmt.Errorf("type_mapping.enum_mode must be one of: text, check, native")
 	}
 	switch cfg.TypeMapping.SetMode {
 	case "text", "text_array":

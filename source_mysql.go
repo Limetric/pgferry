@@ -459,6 +459,12 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		switch typeMap.EnumMode {
 		case "text", "check":
 			return "text", nil
+		case "native":
+			values, err := parseMySQLEnumSetValues(col.ColumnType)
+			if err != nil {
+				return "", err
+			}
+			return pgEnumTypeName(values), nil
 		default:
 			return "", fmt.Errorf("unsupported enum_mode %q", typeMap.EnumMode)
 		}

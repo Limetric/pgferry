@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -40,6 +42,10 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 			return "", fmt.Errorf("column %s: %w", col.PGName, err)
 		}
 		pgType = pgTypeForCollation(col, pgType, typeMap)
+		// Schema-qualify custom enum types created by createEnumTypes
+		if typeMap.EnumMode == "native" && col.DataType == "enum" {
+			pgType = fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(pgType))
+		}
 		fmt.Fprintf(&b, "  %s %s", pgIdent(col.PGName), pgType)
 
 		if isTextLikePGType(pgType) {
@@ -103,6 +109,58 @@ func isNumericType(pgType string) bool {
 	default:
 		return false
 	}
+}
+
+// pgEnumTypeName returns a deterministic PostgreSQL enum type name derived from
+// the enum values. Identical value sets produce the same type name, enabling reuse.
+func pgEnumTypeName(values []string) string {
+	sorted := make([]string, len(values))
+	copy(sorted, values)
+	sort.Strings(sorted)
+
+	h := fnv.New32a()
+	for _, v := range sorted {
+		h.Write([]byte(v))
+		h.Write([]byte{0})
+	}
+	return fmt.Sprintf("pgferry_enum_%08x", h.Sum32())
+}
+
+// createEnumTypes creates PostgreSQL enum types for all enum columns in the schema.
+// Identical enum definitions (same value sets) share the same PG type.
+func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
+	if typeMap.EnumMode != "native" {
+		return nil
+	}
+
+	created := make(map[string]bool)
+	for _, t := range schema.Tables {
+		for _, col := range t.Columns {
+			if col.DataType != "enum" {
+				continue
+			}
+			values, err := parseMySQLEnumSetValues(col.ColumnType)
+			if err != nil {
+				return fmt.Errorf("parse enum values for %s.%s: %w", t.PGName, col.PGName, err)
+			}
+			typeName := pgEnumTypeName(values)
+			if created[typeName] {
+				continue
+			}
+			lits := make([]string, len(values))
+			for i, v := range values {
+				lits[i] = pgLiteral(v)
+			}
+			q := fmt.Sprintf("CREATE TYPE %s.%s AS ENUM (%s)",
+				pgIdent(pgSchema), pgIdent(typeName), strings.Join(lits, ", "))
+			if _, err := pool.Exec(ctx, q); err != nil {
+				return fmt.Errorf("create enum type %s: %w\nSQL: %s", typeName, err, q)
+			}
+			created[typeName] = true
+			log.Printf("    enum type %s (%s)", typeName, strings.Join(lits, ", "))
+		}
+	}
+	return nil
 }
 
 func enumCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {

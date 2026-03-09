@@ -214,7 +214,15 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			}
 		}
 
-		// 5b. Create bare tables (no PKs, FKs, indexes)
+		// 5b. Create native enum types if configured (must precede table creation)
+		if cfg.TypeMapping.EnumMode == "native" {
+			log.Printf("creating enum types...")
+			if err := createEnumTypes(ctx, pgPool, schema, cfg.Schema, cfg.TypeMapping); err != nil {
+				return fmt.Errorf("create enum types: %w", err)
+			}
+		}
+
+		// 5c. Create bare tables (no PKs, FKs, indexes)
 		log.Printf("creating tables...")
 		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
 			return fmt.Errorf("create tables: %w", err)

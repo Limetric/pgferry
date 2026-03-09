@@ -49,6 +49,7 @@ func TestMapType(t *testing.T) {
 		{"json→jsonb opt-in", Column{DataType: "json", ColumnType: "json"}, TypeMappingConfig{JSONAsJSONB: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "jsonb", false},
 		{"enum→text", Column{DataType: "enum", ColumnType: "enum('a','b')"}, defaultTypeMappingConfig(), "text", false},
 		{"enum→text check mode", Column{DataType: "enum", ColumnType: "enum('a','b')"}, TypeMappingConfig{EnumMode: "check", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
+		{"enum→native", Column{DataType: "enum", ColumnType: "enum('new','used')"}, TypeMappingConfig{EnumMode: "native", SetMode: "text", SanitizeJSONNullBytes: true}, pgEnumTypeName([]string{"new", "used"}), false},
 		{"set→text default", Column{DataType: "set", ColumnType: "set('a','b')"}, defaultTypeMappingConfig(), "text", false},
 		{"set→text[] opt-in", Column{DataType: "set", ColumnType: "set('a','b')"}, TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}, "text[]", false},
 		{"timestamp→timestamptz", Column{DataType: "timestamp", ColumnType: "timestamp"}, defaultTypeMappingConfig(), "timestamptz", false},
