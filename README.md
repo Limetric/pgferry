@@ -12,7 +12,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - Resume interrupted runs from checkpoints
 - SQL hooks at four pipeline stages
 
-CI runs integration tests across MySQL 5.7 through latest and PostgreSQL 14 through 18, so combinations like MySQL 5.7 → PostgreSQL 18 are tested on every commit.
+CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation against the latest PostgreSQL release on every commit.
 
 | Source | Driver                         | Workers                 | Snapshot mode       |
 | ------ | ------------------------------ | ----------------------- | ------------------- |
@@ -127,7 +127,7 @@ The [`examples/`](examples/) directory is split by source type.
 
 ## How it's built
 
-Most of this codebase was written with LLM agents. The architecture, edge case handling, and test coverage reflect that — it moved fast. It runs in production and the integration test matrix catches regressions across MySQL 5.7–latest and PostgreSQL 14–18, but you should know how it was made.
+Most of this codebase was written with LLM agents. The architecture, edge case handling, and test coverage reflect that — it moved fast. It runs in production and the integration test matrix catches regressions across MySQL 5.7 to latest and PostgreSQL latest, but you should know how it was made.
 
 ## License
 

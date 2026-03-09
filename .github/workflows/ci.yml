@@ -26,16 +26,12 @@ jobs:
       matrix:
         include:
           - mysql: "5.7"
-            postgres: "14"
-          - mysql: "5.7"
             postgres: "latest"
           - mysql: "8.0"
             postgres: "latest"
           - mysql: "lts"
-            postgres: "17"
-          - mysql: "lts"
             postgres: "latest"
-          - mysql: "latest"
+          - mysql: "innovation"
             postgres: "latest"
     services:
       mysql:
@@ -78,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        postgres: ["14", "15", "16", "17", "18"]
+        postgres: ["latest"]
     services:
       postgres:
         image: postgres:${{ matrix.postgres }}
