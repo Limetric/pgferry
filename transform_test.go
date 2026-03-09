@@ -39,6 +39,10 @@ func TestMapType(t *testing.T) {
 		{"float→real", Column{DataType: "float", ColumnType: "float"}, defaultTypeMappingConfig(), "real", false},
 		{"double", Column{DataType: "double", ColumnType: "double"}, defaultTypeMappingConfig(), "double precision", false},
 		{"decimal", Column{DataType: "decimal", ColumnType: "decimal(10,7)", Precision: 10, Scale: 7}, defaultTypeMappingConfig(), "numeric(10,7)", false},
+		{"char36→uuid opt-in", Column{DataType: "char", ColumnType: "char(36)", CharMaxLen: 36}, TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "uuid", false},
+		{"varchar36→uuid opt-in", Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}, TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "uuid", false},
+		{"varchar35→varchar no match", Column{DataType: "varchar", ColumnType: "varchar(35)", CharMaxLen: 35}, TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}, "varchar(35)", false},
+		{"varchar36→varchar when disabled", Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}, defaultTypeMappingConfig(), "varchar(36)", false},
 		{"varchar", Column{DataType: "varchar", ColumnType: "varchar(200)", CharMaxLen: 200}, defaultTypeMappingConfig(), "varchar(200)", false},
 		{"varchar→text opt-in", Column{DataType: "varchar", ColumnType: "varchar(200)", CharMaxLen: 200}, TypeMappingConfig{VarcharAsText: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "text", false},
 		{"char→varchar", Column{DataType: "char", ColumnType: "char(64)", CharMaxLen: 64}, defaultTypeMappingConfig(), "varchar(64)", false},
@@ -396,6 +400,60 @@ func TestTransformValue_BitToVarbit(t *testing.T) {
 	}
 	if s != "10101011" {
 		t.Errorf("mysqlTransformValue(varbit) = %q, want %q", s, "10101011")
+	}
+}
+
+func TestTransformValue_StringUUID(t *testing.T) {
+	col := Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}
+	tm := TypeMappingConfig{StringUUIDAaUUID: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea"}
+
+	// Valid UUID string
+	got, err := mysqlTransformValue("550e8400-e29b-41d4-a716-446655440000", col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(string uuid) error: %v", err)
+	}
+	if got != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Errorf("mysqlTransformValue(string uuid) = %q, want canonical UUID", got)
+	}
+
+	// Upper case → lowered
+	got, err = mysqlTransformValue("550E8400-E29B-41D4-A716-446655440000", col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(upper uuid) error: %v", err)
+	}
+	if got != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Errorf("mysqlTransformValue(upper uuid) = %q, want lowered", got)
+	}
+
+	// []byte input
+	got, err = mysqlTransformValue([]byte("550e8400-e29b-41d4-a716-446655440000"), col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue([]byte uuid) error: %v", err)
+	}
+	if got != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Errorf("mysqlTransformValue([]byte uuid) = %q", got)
+	}
+
+	// Invalid UUID → error
+	if _, err := mysqlTransformValue("not-a-uuid", col, tm); err == nil {
+		t.Fatal("expected error for invalid UUID string")
+	}
+
+	// Nil → nil
+	got, err = mysqlTransformValue(nil, col, tm)
+	if err != nil || got != nil {
+		t.Errorf("mysqlTransformValue(nil uuid) = %v, want nil", got)
+	}
+}
+
+func TestTransformValue_StringUUIDDisabledPassthrough(t *testing.T) {
+	col := Column{DataType: "varchar", ColumnType: "varchar(36)", CharMaxLen: 36}
+	got, err := mysqlTransformValue("hello", col, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "hello" {
+		t.Errorf("got %q, want passthrough", got)
 	}
 }
 

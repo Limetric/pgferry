@@ -69,8 +69,9 @@ type TypeMappingConfig struct {
 	UnknownAsText         bool              `toml:"unknown_as_text"`
 	CollationMode         string            `toml:"collation_mode"` // none|auto
 	CollationMap          map[string]string `toml:"collation_map"`  // MySQL collation → PG collation overrides
-	CIAsCitext            bool              `toml:"ci_as_citext"`   // map _ci text columns to citext (MySQL only)
-	BitMode               string            `toml:"bit_mode"`       // bytea|bit|varbit (MySQL only)
+	CIAsCitext            bool              `toml:"ci_as_citext"`         // map _ci text columns to citext (MySQL only)
+	BitMode               string            `toml:"bit_mode"`             // bytea|bit|varbit (MySQL only)
+	StringUUIDAaUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.

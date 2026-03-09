@@ -3,12 +3,15 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
 )
+
+var uuidRegexp = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type mysqlSourceDB struct {
 	snakeCaseIDs bool
@@ -373,6 +376,12 @@ func isBinary16Column(col Column) bool {
 	return isMySQLTypeWithLength(col, "binary", 16)
 }
 
+// isStringUUIDColumn returns true for CHAR(36) and VARCHAR(36) columns,
+// which are commonly used for storing UUID strings.
+func isStringUUIDColumn(col Column) bool {
+	return (col.DataType == "char" || col.DataType == "varchar") && col.CharMaxLen == 36
+}
+
 func isTinyInt1Column(col Column) bool {
 	return isMySQLTypeWithLength(col, "tinyint", 1)
 }
@@ -438,6 +447,8 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		return "double precision", nil
 	case col.DataType == "decimal":
 		return fmt.Sprintf("numeric(%d,%d)", col.Precision, col.Scale), nil
+	case isStringUUIDColumn(col) && typeMap.StringUUIDAaUUID:
+		return "uuid", nil
 	case col.DataType == "varchar":
 		if typeMap.VarcharAsText {
 			return "text", nil
@@ -536,6 +547,22 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 			return strings.ReplaceAll(v, "\x00", ""), nil
 		}
 		return val, nil
+
+	case isStringUUIDColumn(col) && typeMap.StringUUIDAaUUID:
+		var s string
+		switch v := val.(type) {
+		case []byte:
+			s = string(v)
+		case string:
+			s = v
+		default:
+			return nil, fmt.Errorf("expected string UUID value, got %T", val)
+		}
+		s = strings.TrimSpace(s)
+		if !uuidRegexp.MatchString(s) {
+			return nil, fmt.Errorf("invalid UUID value %q for string_uuid_as_uuid", s)
+		}
+		return strings.ToLower(s), nil
 
 	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
 		switch v := val.(type) {
