@@ -20,6 +20,7 @@ type mssqlSourceDB struct {
 func (m *mssqlSourceDB) Name() string                         { return "MSSQL" }
 func (m *mssqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
 func (m *mssqlSourceDB) SetCharset(_ string)                  {}
+func (m *mssqlSourceDB) SetSourceSchema(schema string)        { m.sourceSchema = schema }
 func (m *mssqlSourceDB) SupportsSnapshotMode() bool           { return true }
 func (m *mssqlSourceDB) MaxWorkers() int                      { return 0 }
 
@@ -710,10 +711,12 @@ func mssqlMapDefault(col Column, pgType string, _ TypeMappingConfig) (string, er
 
 	// Function mapping
 	switch lower {
-	case "getdate()", "sysdatetime()", "sysutcdatetime()", "sysdatetimeoffset()":
+	case "getdate()", "sysdatetime()", "sysutcdatetime()", "sysdatetimeoffset()", "getutcdate()":
 		return "CURRENT_TIMESTAMP", nil
 	case "newid()", "newsequentialid()":
 		return "gen_random_uuid()", nil
+	case "suser_sname()", "user_name()":
+		return "CURRENT_USER", nil
 	}
 
 	// Boolean defaults for bit columns
@@ -762,10 +765,30 @@ func mssqlMapDefault(col Column, pgType string, _ TypeMappingConfig) (string, er
 	return pgLiteral(raw), nil
 }
 
-// mssqlStripParens removes outer parentheses from MSSQL default expressions.
-// MSSQL stores defaults like ((0)), (getdate()), (N'hello').
+// mssqlStripParens removes balanced outer parentheses from MSSQL default expressions.
+// MSSQL's sys.default_constraints stores defaults wrapped in extra parens by the engine:
+// ((0)), (getdate()), (N'hello'). This function strips matched outer pairs only,
+// so compound expressions like ((1)+(2)) correctly reduce to (1)+(2), not 1)+(2.
 func mssqlStripParens(s string) string {
 	for len(s) >= 2 && s[0] == '(' && s[len(s)-1] == ')' {
+		// Verify the opening paren at position 0 is balanced with the closing
+		// paren at the final position (not with an inner close).
+		depth := 0
+		outerMatched := true
+		for i := 0; i < len(s); i++ {
+			if s[i] == '(' {
+				depth++
+			} else if s[i] == ')' {
+				depth--
+			}
+			if depth == 0 && i < len(s)-1 {
+				outerMatched = false
+				break
+			}
+		}
+		if !outerMatched {
+			break
+		}
 		s = s[1 : len(s)-1]
 	}
 	return s
@@ -808,7 +831,8 @@ func mssqlTransformValue(val any, col Column, _ TypeMappingConfig) (any, error) 
 		return val, nil
 
 	case "money", "smallmoney":
-		// Avoid float intermediary — parse to clean numeric string
+		// go-mssqldb may return float64; format with fixed 4-decimal precision
+		// to avoid floating-point representation issues in the COPY text stream
 		switch v := val.(type) {
 		case []byte:
 			return string(v), nil

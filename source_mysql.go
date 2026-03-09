@@ -20,6 +20,7 @@ type mysqlSourceDB struct {
 
 func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
 func (m *mysqlSourceDB) SetCharset(charset string)            { m.charset = charset }
+func (m *mysqlSourceDB) SetSourceSchema(_ string)             {}
 
 // identName converts a source identifier to its PostgreSQL name.
 // When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.

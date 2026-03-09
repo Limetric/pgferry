@@ -52,6 +52,11 @@ type SourceDB interface {
 	// SetCharset sets the character set for the source connection.
 	// For MySQL, this is injected into the DSN. For SQLite, this is a no-op.
 	SetCharset(charset string)
+
+	// SetSourceSchema sets the source schema to introspect.
+	// For MSSQL, this filters sys.* queries by schema name (default "dbo").
+	// No-op for MySQL and SQLite.
+	SetSourceSchema(schema string)
 }
 
 // newSourceDB returns a SourceDB implementation for the given source type.

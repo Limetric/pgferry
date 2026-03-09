@@ -125,6 +125,9 @@ func TestMSSQLMapDefault(t *testing.T) {
 		{"sysutcdatetime", "sysutcdatetime()", "timestamptz", "CURRENT_TIMESTAMP"},
 		{"newid", "newid()", "uuid", "gen_random_uuid()"},
 		{"newsequentialid", "newsequentialid()", "uuid", "gen_random_uuid()"},
+		{"getutcdate", "getutcdate()", "timestamp", "CURRENT_TIMESTAMP"},
+		{"suser_sname", "suser_sname()", "text", "CURRENT_USER"},
+		{"user_name", "user_name()", "text", "CURRENT_USER"},
 
 		// Boolean defaults
 		{"bit 0→FALSE", "0", "boolean", "FALSE"},
@@ -168,6 +171,10 @@ func TestMSSQLStripParens(t *testing.T) {
 		{"plain", "plain"},
 		{"(single)", "single"},
 		{"((double))", "double"},
+		// Compound expressions: outer parens are balanced but inner aren't a wrapping pair
+		{"((1)+(2))", "(1)+(2)"},
+		{"((1)*(3))", "(1)*(3)"},
+		{"(a()+(b()))", "a()+(b())"},
 	}
 	for _, tt := range tests {
 		got := mssqlStripParens(tt.in)

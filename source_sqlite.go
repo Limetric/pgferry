@@ -18,6 +18,7 @@ type sqliteSourceDB struct {
 
 func (s *sqliteSourceDB) SetSnakeCaseIdentifiers(enabled bool) { s.snakeCaseIDs = enabled }
 func (s *sqliteSourceDB) SetCharset(_ string)                  {}
+func (s *sqliteSourceDB) SetSourceSchema(_ string)             {}
 
 // identName converts a source identifier to its PostgreSQL name.
 // When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
