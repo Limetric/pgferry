@@ -605,6 +605,63 @@ binary16_uuid_mode = "mysql_uuid_to_bin_swap"
 	}
 }
 
+func TestLoadConfig_ZeroDateModeError(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "zero_date.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+zero_date_mode = "error"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.ZeroDateMode != "error" {
+		t.Errorf("ZeroDateMode = %q, want %q", cfg.TypeMapping.ZeroDateMode, "error")
+	}
+}
+
+func TestLoadConfig_InvalidZeroDateMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_zero_date.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+zero_date_mode = "text"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid zero_date_mode")
+	}
+}
+
 func TestLoadConfig_Binary16UUIDModeInvalid(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "uuid_bad_mode.toml")

@@ -690,6 +690,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 	case col.DataType == "date":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
+			if typeMap.ZeroDateMode == "error" {
+				return nil, fmt.Errorf("zero date value in column %s (zero_date_mode=error)", col.SourceName)
+			}
 			return nil, nil
 		}
 		return val, nil
@@ -697,6 +700,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 	case col.DataType == "timestamp" || col.DataType == "datetime":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
+			if typeMap.ZeroDateMode == "error" {
+				return nil, fmt.Errorf("zero date/time value in column %s (zero_date_mode=error)", col.SourceName)
+			}
 			return nil, nil
 		}
 		return val, nil

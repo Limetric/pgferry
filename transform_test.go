@@ -279,6 +279,45 @@ func TestTransformValue_ZeroDates(t *testing.T) {
 	}
 }
 
+func TestTransformValue_ZeroDatesErrorMode(t *testing.T) {
+	errTm := defaultTypeMappingConfig()
+	errTm.ZeroDateMode = "error"
+
+	for _, dt := range []string{"date", "timestamp", "datetime"} {
+		col := Column{DataType: dt, SourceName: "test_col"}
+
+		// Zero time → error
+		_, err := mysqlTransformValue(time.Time{}, col, errTm)
+		if err == nil {
+			t.Errorf("zero %s with error mode: expected error", dt)
+		}
+
+		// Valid time → pass through
+		valid := time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC)
+		got, err := mysqlTransformValue(valid, col, errTm)
+		if err != nil || got != valid {
+			t.Errorf("valid %s with error mode: got %v, want %v", dt, got, valid)
+		}
+
+		// Nil → nil (even in error mode)
+		got, err = mysqlTransformValue(nil, col, errTm)
+		if err != nil || got != nil {
+			t.Errorf("nil %s with error mode: got %v, want nil", dt, got)
+		}
+	}
+}
+
+func TestTransformValue_ZeroDatesNullMode(t *testing.T) {
+	// Default behavior (null mode) should still work
+	for _, dt := range []string{"date", "timestamp", "datetime"} {
+		col := Column{DataType: dt}
+		got, err := mysqlTransformValue(time.Time{}, col, defaultTypeMappingConfig())
+		if err != nil || got != nil {
+			t.Errorf("zero %s with null mode: got %v, want nil", dt, got)
+		}
+	}
+}
+
 func TestTransformValue_Year(t *testing.T) {
 	col := Column{DataType: "year"}
 
