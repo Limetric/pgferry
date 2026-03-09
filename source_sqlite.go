@@ -216,6 +216,9 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if typeMap.Binary16UUIDMode != "rfc4122" {
 		errs = append(errs, fmt.Sprintf("binary16_uuid_mode=%q is a MySQL-only option", typeMap.Binary16UUIDMode))
 	}
+	if typeMap.TimeMode != "time" {
+		errs = append(errs, fmt.Sprintf("time_mode=%q is a MySQL-only option", typeMap.TimeMode))
+	}
 	if typeMap.CIAsCitext {
 		errs = append(errs, "ci_as_citext is a MySQL-only option")
 	}

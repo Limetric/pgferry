@@ -73,6 +73,7 @@ type TypeMappingConfig struct {
 	BitMode               string            `toml:"bit_mode"`             // bytea|bit|varbit (MySQL only)
 	StringUUIDAaUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
 	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
+	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -190,6 +191,14 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.TypeMapping.Binary16UUIDMode != "rfc4122" && !cfg.TypeMapping.Binary16AsUUID {
 		return fmt.Errorf("type_mapping.binary16_uuid_mode requires binary16_as_uuid = true")
 	}
+	if cfg.TypeMapping.TimeMode == "" {
+		cfg.TypeMapping.TimeMode = "time"
+	}
+	switch cfg.TypeMapping.TimeMode {
+	case "text", "time", "interval":
+	default:
+		return fmt.Errorf("type_mapping.time_mode must be one of: text, time, interval")
+	}
 
 	switch cfg.Validation {
 	case "none", "row_count":
@@ -287,5 +296,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		CollationMode:         "none",
 		BitMode:               "bytea",
 		Binary16UUIDMode:      "rfc4122",
+		TimeMode:              "time",
 	}
 }

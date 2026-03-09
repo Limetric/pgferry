@@ -499,6 +499,17 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		return "integer", nil
 	case col.DataType == "date":
 		return "date", nil
+	case col.DataType == "time":
+		switch typeMap.TimeMode {
+		case "text":
+			return "text", nil
+		case "time":
+			return "time", nil
+		case "interval":
+			return "interval", nil
+		default:
+			return "", fmt.Errorf("unsupported time_mode %q", typeMap.TimeMode)
+		}
 	case col.DataType == "bit":
 		switch typeMap.BitMode {
 		case "bit":
@@ -659,6 +670,23 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		return nil, fmt.Errorf("cannot coerce year value of type %T to integer", val)
 
+	case col.DataType == "time":
+		var raw string
+		switch v := val.(type) {
+		case []byte:
+			raw = string(v)
+		case string:
+			raw = v
+		default:
+			return val, nil
+		}
+		raw = strings.TrimSpace(raw)
+		if typeMap.TimeMode == "interval" {
+			return mysqlTimeToInterval(raw), nil
+		}
+		// For time and text modes, pass through as-is
+		return raw, nil
+
 	case col.DataType == "date":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
@@ -776,4 +804,42 @@ func mysqlDefaultUnquote(v string) string {
 		return strings.ReplaceAll(inner, "''", "'")
 	}
 	return v
+}
+
+// mysqlTimeToInterval converts a MySQL TIME string (e.g. "838:59:59", "-12:30:00")
+// to a PostgreSQL interval literal (e.g. "838 hours 59 mins 59 secs").
+func mysqlTimeToInterval(t string) string {
+	negative := false
+	if strings.HasPrefix(t, "-") {
+		negative = true
+		t = t[1:]
+	}
+
+	parts := strings.Split(t, ":")
+	var hours, mins, secs string
+	switch len(parts) {
+	case 3:
+		hours, mins, secs = parts[0], parts[1], parts[2]
+	case 2:
+		hours, mins = parts[0], parts[1]
+		secs = "0"
+	default:
+		// Fallback: treat as-is
+		if negative {
+			return "-" + t
+		}
+		return t
+	}
+
+	var b strings.Builder
+	if negative {
+		b.WriteByte('-')
+	}
+	b.WriteString(hours)
+	b.WriteString(" hours ")
+	b.WriteString(mins)
+	b.WriteString(" mins ")
+	b.WriteString(secs)
+	b.WriteString(" secs")
+	return b.String()
 }

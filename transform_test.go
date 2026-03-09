@@ -61,6 +61,9 @@ func TestMapType(t *testing.T) {
 		{"datetime→timestamp default", Column{DataType: "datetime", ColumnType: "datetime"}, defaultTypeMappingConfig(), "timestamp", false},
 		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "timestamptz", false},
 		{"year→integer", Column{DataType: "year", ColumnType: "year"}, defaultTypeMappingConfig(), "integer", false},
+		{"time→time default", Column{DataType: "time", ColumnType: "time"}, defaultTypeMappingConfig(), "time", false},
+		{"time→text", Column{DataType: "time", ColumnType: "time"}, TypeMappingConfig{TimeMode: "text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122"}, "text", false},
+		{"time→interval", Column{DataType: "time", ColumnType: "time"}, TypeMappingConfig{TimeMode: "interval", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122"}, "interval", false},
 		{"date", Column{DataType: "date", ColumnType: "date"}, defaultTypeMappingConfig(), "date", false},
 		{"bit→bytea default", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, defaultTypeMappingConfig(), "bytea", false},
 		{"bit→bit(8)", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, TypeMappingConfig{BitMode: "bit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "bit(8)", false},
@@ -476,6 +479,69 @@ func TestTransformValue_StringUUID(t *testing.T) {
 	got, err = mysqlTransformValue(nil, col, tm)
 	if err != nil || got != nil {
 		t.Errorf("mysqlTransformValue(nil uuid) = %v, want nil", got)
+	}
+}
+
+func TestTransformValue_TimeAsInterval(t *testing.T) {
+	col := Column{DataType: "time", ColumnType: "time"}
+	tm := TypeMappingConfig{TimeMode: "interval", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122"}
+
+	tests := []struct {
+		name  string
+		input any
+		want  string
+	}{
+		{"normal", "12:30:45", "12 hours 30 mins 45 secs"},
+		{"negative", "-05:15:00", "-05 hours 15 mins 00 secs"},
+		{"long duration", "838:59:59", "838 hours 59 mins 59 secs"},
+		{"zero", "00:00:00", "00 hours 00 mins 00 secs"},
+		{"bytes", []byte("10:20:30"), "10 hours 20 mins 30 secs"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := mysqlTransformValue(tt.input, col, tm)
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTransformValue_TimeAsTime(t *testing.T) {
+	col := Column{DataType: "time", ColumnType: "time"}
+	tm := defaultTypeMappingConfig()
+
+	got, err := mysqlTransformValue("12:30:45", col, tm)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if got != "12:30:45" {
+		t.Errorf("got %q, want %q", got, "12:30:45")
+	}
+}
+
+func TestTransformValue_TimeAsText(t *testing.T) {
+	col := Column{DataType: "time", ColumnType: "time"}
+	tm := TypeMappingConfig{TimeMode: "text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122"}
+
+	got, err := mysqlTransformValue("838:59:59", col, tm)
+	if err != nil {
+		t.Fatalf("error: %v", err)
+	}
+	if got != "838:59:59" {
+		t.Errorf("got %q, want %q", got, "838:59:59")
+	}
+}
+
+func TestTransformValue_TimeNil(t *testing.T) {
+	col := Column{DataType: "time", ColumnType: "time"}
+	got, err := mysqlTransformValue(nil, col, defaultTypeMappingConfig())
+	if err != nil || got != nil {
+		t.Errorf("nil TIME: got %v, want nil", got)
 	}
 }
 
