@@ -52,6 +52,7 @@ func TestMapType(t *testing.T) {
 		{"enum→native", Column{DataType: "enum", ColumnType: "enum('new','used')"}, TypeMappingConfig{EnumMode: "native", SetMode: "text", SanitizeJSONNullBytes: true}, pgEnumTypeName([]string{"new", "used"}), false},
 		{"set→text default", Column{DataType: "set", ColumnType: "set('a','b')"}, defaultTypeMappingConfig(), "text", false},
 		{"set→text[] opt-in", Column{DataType: "set", ColumnType: "set('a','b')"}, TypeMappingConfig{EnumMode: "text", SetMode: "text_array", SanitizeJSONNullBytes: true}, "text[]", false},
+		{"set→text[] check", Column{DataType: "set", ColumnType: "set('a','b')"}, TypeMappingConfig{EnumMode: "text", SetMode: "text_array_check", SanitizeJSONNullBytes: true}, "text[]", false},
 		{"timestamp→timestamptz", Column{DataType: "timestamp", ColumnType: "timestamp"}, defaultTypeMappingConfig(), "timestamptz", false},
 		{"datetime→timestamp default", Column{DataType: "datetime", ColumnType: "datetime"}, defaultTypeMappingConfig(), "timestamp", false},
 		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "timestamptz", false},
@@ -297,6 +298,35 @@ func TestTransformValue_SetTextArrayNullByteStripping(t *testing.T) {
 	}
 	if len(arr) != 2 || arr[0] != "ab" || arr[1] != "c" {
 		t.Errorf("mysqlTransformValue(set text_array with null byte) = %v, want [ab c]", arr)
+	}
+}
+
+func TestTransformValue_SetTextArrayCheck(t *testing.T) {
+	col := Column{DataType: "set"}
+	optIn := TypeMappingConfig{EnumMode: "text", SetMode: "text_array_check", SanitizeJSONNullBytes: true}
+
+	got, err := mysqlTransformValue([]byte("a,b"), col, optIn)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(set text_array_check) error: %v", err)
+	}
+	vals, ok := got.([]string)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(set text_array_check) type = %T, want []string", got)
+	}
+	if len(vals) != 2 || vals[0] != "a" || vals[1] != "b" {
+		t.Fatalf("mysqlTransformValue(set text_array_check) = %#v, want [a b]", vals)
+	}
+
+	got, err = mysqlTransformValue([]byte(""), col, optIn)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(empty set text_array_check) error: %v", err)
+	}
+	vals, ok = got.([]string)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(empty set text_array_check) type = %T, want []string", got)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("mysqlTransformValue(empty set text_array_check) = %#v, want empty slice", vals)
 	}
 }
 

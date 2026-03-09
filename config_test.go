@@ -547,6 +547,36 @@ enum_mode = "native"
 	}
 }
 
+func TestLoadConfig_SetModeTextArrayCheck(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "set_text_array_check.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+set_mode = "text_array_check"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.SetMode != "text_array_check" {
+		t.Errorf("TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text_array_check")
+	}
+}
+
 func TestLoadConfig_InvalidSetMode(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "bad_set_mode.toml")

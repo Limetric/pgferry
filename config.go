@@ -159,9 +159,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("type_mapping.enum_mode must be one of: text, check, native")
 	}
 	switch cfg.TypeMapping.SetMode {
-	case "text", "text_array":
+	case "text", "text_array", "text_array_check":
 	default:
-		return fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
+		return fmt.Errorf("type_mapping.set_mode must be one of: text, text_array, text_array_check")
 	}
 	switch cfg.TypeMapping.CollationMode {
 	case "none", "auto":

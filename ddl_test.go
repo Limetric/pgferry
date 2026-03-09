@@ -376,6 +376,47 @@ func TestGenerateCreateTable_CIAsCitextWithCollationMap(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_SetArrayCheckMode(t *testing.T) {
+	table := Table{
+		PGName: "set_check_demo",
+		Columns: []Column{
+			{PGName: "flags", DataType: "set", ColumnType: "set('a','b','c')", Nullable: false},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.SetMode = "text_array_check"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, "text[]") {
+		t.Errorf("expected text[] type, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "CHECK (flags <@ ARRAY['a', 'b', 'c']::text[])") {
+		t.Errorf("expected set CHECK constraint, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_SetArrayCheckDefault(t *testing.T) {
+	table := Table{
+		PGName: "set_check_default",
+		Columns: []Column{
+			{PGName: "tags", DataType: "set", ColumnType: "set('x','y','z')", Nullable: false, Default: strPtr("x,z")},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.SetMode = "text_array_check"
+
+	ddl, err := generateCreateTable(table, "app", false, true, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, "DEFAULT ARRAY['x', 'z']::text[]") {
+		t.Errorf("expected array default in DDL, got:\n%s", ddl)
+	}
+}
+
 func TestGenerateCreateTable_EnumNativeMode(t *testing.T) {
 	table := Table{
 		PGName: "enum_native_demo",

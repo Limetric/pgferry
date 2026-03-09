@@ -73,6 +73,15 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 			b.WriteString(checkClause)
 		}
 
+		setCheck, err := setArrayCheckClause(col, typeMap)
+		if err != nil {
+			return "", fmt.Errorf("column %s set check: %w", col.PGName, err)
+		}
+		if setCheck != "" {
+			b.WriteByte(' ')
+			b.WriteString(setCheck)
+		}
+
 		if !col.Nullable {
 			b.WriteString(" NOT NULL")
 		}
@@ -179,4 +188,24 @@ func enumCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
 		lits[i] = pgLiteral(v)
 	}
 	return fmt.Sprintf("CHECK (%s IN (%s))", pgIdent(col.PGName), strings.Join(lits, ", ")), nil
+}
+
+// setArrayCheckClause generates a CHECK constraint ensuring every array element
+// is one of the allowed source SET members (text_array_check mode only).
+func setArrayCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
+	if col.DataType != "set" || typeMap.SetMode != "text_array_check" {
+		return "", nil
+	}
+	values, err := parseMySQLEnumSetValues(col.ColumnType)
+	if err != nil {
+		return "", err
+	}
+	if len(values) == 0 {
+		return "", nil
+	}
+	lits := make([]string, len(values))
+	for i, v := range values {
+		lits[i] = pgLiteral(v)
+	}
+	return fmt.Sprintf("CHECK (%s <@ ARRAY[%s]::text[])", pgIdent(col.PGName), strings.Join(lits, ", ")), nil
 }

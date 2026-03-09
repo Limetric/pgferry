@@ -472,7 +472,7 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		switch typeMap.SetMode {
 		case "text":
 			return "text", nil
-		case "text_array":
+		case "text_array", "text_array_check":
 			return "text[]", nil
 		default:
 			return "", fmt.Errorf("unsupported set_mode %q", typeMap.SetMode)
@@ -546,7 +546,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		return nil, fmt.Errorf("cannot coerce tinyint(1) value of type %T to boolean", val)
 
-	case col.DataType == "set" && typeMap.SetMode == "text_array":
+	case col.DataType == "set" && (typeMap.SetMode == "text_array" || typeMap.SetMode == "text_array_check"):
 		var raw string
 		switch v := val.(type) {
 		case []byte:
