@@ -86,8 +86,7 @@ We maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes f
 - **Static binary**: no Common Lisp runtime, no SBCL build issues, no dependency problems. One binary, runs anywhere.
 - **TOML config**: declarative, version-controllable, no DSL to learn.
 - **Resumable checkpoints**: interrupt a migration and pick up where you left off. pgloader restarts from scratch.
-- **SQLite sources**: pgloader is MySQL/MS SQL/CSV only.
-- **Flexible type mapping**: control how `tinyint(1)`, `binary(16)`, enums, sets, unsigned integers, and datetimes map to PostgreSQL types.
+- **Granular type mapping**: fine-grained control over how MySQL and SQLite types map to PostgreSQL — booleans, UUIDs, timestamps, enums, sets, unsigned integers, text widening, and more, each with its own toggle.
 - **Charset and collation awareness**: detects mismatches and warns before data moves.
 - **SQL hooks at four stages**: inject custom SQL before data, after data, before foreign keys, and after everything.
 - **Orphan cleanup**: optionally delete rows that would violate foreign keys before constraints are added.
