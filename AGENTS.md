@@ -32,14 +32,14 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 
 **Migration pipeline** (orchestrated in `main.go:runMigration`):
 
-1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `unlogged_tables=false`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `snake_case_identifiers=true`, `replicate_on_update_current_timestamp=false`, `chunk_size=100000`, `resume=false`, `validation=none`)
+1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `index_workers=workers`, `unlogged_tables=false`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `snake_case_identifiers=true`, `replicate_on_update_current_timestamp=false`, `chunk_size=100000`, `resume=false`, `validation=none`)
 2. `src.IntrospectSchema` — source-specific schema introspection (tables, columns, indexes, FKs). Also reports source views/routines/triggers that require manual migration.
 3. `createTables` — columns only, no constraints (UNLOGGED only when enabled, defaults included by default; omitted when `preserve_defaults=false`)
 4. `loadAndExecSQLFiles` — before_data hooks
 5. `migrateData` — tables with a single-column numeric PK are split into range-based chunks; other tables use full-table copy. Either parallel goroutines per chunk/table (`source_snapshot_mode=none`) or sequential within a single read-only transaction (`source_snapshot_mode=single_tx`, MySQL only). Checkpoint state is persisted to `pgferry_checkpoint.json` after each chunk; when `resume=true`, completed chunks are skipped.
 6. `loadAndExecSQLFiles` — after_data hooks
 7. `validateMigration` — optional post-load validation (`validation=row_count` compares source and target row counts per table)
-8. `postMigrate` — SET LOGGED → PKs → indexes → before_fk hooks → optional orphan cleanup (`clean_orphans=true`) → FKs → sequences → optional unsigned checks → optional triggers → after_all hooks
+8. `postMigrate` — SET LOGGED → PKs → indexes (parallel with bounded `index_workers` concurrency) → before_fk hooks → optional orphan cleanup (`clean_orphans=true`) → FKs → sequences → optional unsigned checks → optional triggers → after_all hooks
 
 **Hooks system:** SQL files run at 4 phases (before_data, after_data, before_fk, after_all). All occurrences of `{{schema}}` are replaced with the configured schema name. Paths are resolved relative to the TOML config file directory.
 

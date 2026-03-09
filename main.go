@@ -100,9 +100,10 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d resume=%t validation=%s",
+		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d resume=%t validation=%s",
 		mode,
 		cfg.Workers,
+		cfg.IndexWorkers,
 		cfg.Schema,
 		cfg.OnSchemaExists,
 		cfg.SourceSnapshotMode,

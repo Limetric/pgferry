@@ -146,6 +146,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.Workers != wantWorkers {
 		t.Errorf("default Workers = %d, want %d", cfg.Workers, wantWorkers)
 	}
+	if cfg.IndexWorkers != wantWorkers {
+		t.Errorf("default IndexWorkers = %d, want %d (should default to Workers)", cfg.IndexWorkers, wantWorkers)
+	}
 	if cfg.TypeMapping.TinyInt1AsBoolean {
 		t.Errorf("default TypeMapping.TinyInt1AsBoolean = %t, want false", cfg.TypeMapping.TinyInt1AsBoolean)
 	}
@@ -592,6 +595,38 @@ dsn = "postgres://u:p@h:5432/db"
 
 	if cfg.Workers != 1 {
 		t.Errorf("Workers = %d, want 1 (SQLite caps at 1)", cfg.Workers)
+	}
+	if cfg.IndexWorkers != 1 {
+		t.Errorf("IndexWorkers = %d, want 1 (SQLite caps at 1)", cfg.IndexWorkers)
+	}
+}
+
+func TestLoadConfig_SQLiteIndexWorkersCapped(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "sqlite_index_workers.toml")
+
+	content := `
+schema = "target"
+index_workers = 4
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.IndexWorkers != 1 {
+		t.Errorf("IndexWorkers = %d, want 1 (SQLite caps at 1)", cfg.IndexWorkers)
 	}
 }
 
@@ -1078,6 +1113,68 @@ dsn = "postgres://u:p@h:5432/db"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for resume + schema_only")
+	}
+}
+
+func TestLoadConfig_IndexWorkersExplicit(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "index_workers.toml")
+
+	content := `
+schema = "target"
+workers = 8
+index_workers = 2
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.Workers != 8 {
+		t.Errorf("Workers = %d, want 8", cfg.Workers)
+	}
+	if cfg.IndexWorkers != 2 {
+		t.Errorf("IndexWorkers = %d, want 2", cfg.IndexWorkers)
+	}
+}
+
+func TestLoadConfig_IndexWorkersDefaultsToWorkers(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "index_workers_default.toml")
+
+	content := `
+schema = "target"
+workers = 6
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.IndexWorkers != 6 {
+		t.Errorf("IndexWorkers = %d, want 6 (should default to Workers)", cfg.IndexWorkers)
 	}
 }
 
