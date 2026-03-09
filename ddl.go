@@ -156,8 +156,14 @@ func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pg
 			if created[typeName] {
 				continue
 			}
-			lits := make([]string, len(values))
-			for i, v := range values {
+			// Sort values to match the hash order used by pgEnumTypeName,
+			// ensuring deterministic PG enum declaration order regardless of
+			// which column definition is encountered first.
+			sorted := make([]string, len(values))
+			copy(sorted, values)
+			sort.Strings(sorted)
+			lits := make([]string, len(sorted))
+			for i, v := range sorted {
 				lits[i] = pgLiteral(v)
 			}
 			// Use DO block with EXCEPTION handler so the statement is safe

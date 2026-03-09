@@ -696,7 +696,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		raw = strings.TrimSpace(raw)
 		if typeMap.TimeMode == "interval" {
-			return mysqlTimeToInterval(raw), nil
+			return mysqlTimeToInterval(raw)
 		}
 		// For time and text modes, pass through as-is
 		return raw, nil
@@ -840,7 +840,7 @@ func mysqlDefaultUnquote(v string) string {
 
 // mysqlTimeToInterval converts a MySQL TIME string (e.g. "838:59:59", "-12:30:00")
 // to a PostgreSQL interval literal (e.g. "838 hours 59 mins 59 secs").
-func mysqlTimeToInterval(t string) string {
+func mysqlTimeToInterval(t string) (string, error) {
 	negative := false
 	if strings.HasPrefix(t, "-") {
 		negative = true
@@ -856,11 +856,7 @@ func mysqlTimeToInterval(t string) string {
 		hours, mins = parts[0], parts[1]
 		secs = "0"
 	default:
-		// Fallback: treat as-is
-		if negative {
-			return "-" + t
-		}
-		return t
+		return "", fmt.Errorf("cannot parse MySQL TIME value %q as interval", t)
 	}
 
 	var b strings.Builder
@@ -871,5 +867,5 @@ func mysqlTimeToInterval(t string) string {
 	} else {
 		fmt.Fprintf(&b, "%s hours %s mins %s secs", hours, mins, secs)
 	}
-	return b.String()
+	return b.String(), nil
 }

@@ -540,6 +540,7 @@ func TestTransformValue_TimeAsInterval(t *testing.T) {
 		{"long duration", "838:59:59", "838 hours 59 mins 59 secs"},
 		{"zero", "00:00:00", "00 hours 00 mins 00 secs"},
 		{"bytes", []byte("10:20:30"), "10 hours 20 mins 30 secs"},
+		{"two parts", "10:30", "10 hours 30 mins 0 secs"},
 	}
 
 	for _, tt := range tests {
@@ -636,6 +637,16 @@ func TestTransformValue_SpatialNil(t *testing.T) {
 	got, err := mysqlTransformValue(nil, col, tm)
 	if err != nil || got != nil {
 		t.Errorf("nil spatial: got %v, want nil", got)
+	}
+}
+
+func TestTransformValue_TimeIntervalUnparseable(t *testing.T) {
+	col := Column{DataType: "time", ColumnType: "time"}
+	tm := TypeMappingConfig{TimeMode: "interval", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122"}
+
+	_, err := mysqlTransformValue("garbage", col, tm)
+	if err == nil {
+		t.Fatal("expected error for unparseable TIME value in interval mode")
 	}
 }
 

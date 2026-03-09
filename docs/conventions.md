@@ -214,7 +214,10 @@ TIME column behavior is controlled by `type_mapping.time_mode` (MySQL only):
 Spatial type behavior is controlled by `type_mapping.spatial_mode` (MySQL only):
 
 - **`off`** (default) &mdash; spatial columns are unsupported (error or `text` with `unknown_as_text`).
-- **`wkb_bytea`** &mdash; stores as `bytea` using MySQL's internal binary representation.
+- **`wkb_bytea`** &mdash; stores as `bytea` using MySQL's internal binary representation
+  (4-byte SRID prefix + WKB). **Note:** this is not standard WKB and is not
+  directly compatible with PostGIS. Prefer `wkt_text` if you plan to load data
+  into PostGIS geometry columns.
 - **`wkt_text`** &mdash; stores as `text` using Well-Known Text via `ST_AsText()`.
 
 ## String UUID mapping

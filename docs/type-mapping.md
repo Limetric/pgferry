@@ -189,6 +189,11 @@ Controls how MySQL spatial types (`geometry`, `point`, `linestring`, `polygon`,
   types cause an error (or map to `text` if `unknown_as_text = true`).
 - **`wkb_bytea`** &mdash; stores spatial data as `bytea` using MySQL's internal
   binary representation (4-byte SRID prefix + WKB).
+  **Warning:** MySQL's internal binary format prepends a 4-byte SRID before the
+  standard WKB payload. This is **not** standard OGC WKB and is **not** directly
+  compatible with PostGIS `geometry` columns (which expect pure WKB or EWKB).
+  Use `wkb_bytea` only for raw archival; if you plan to use PostGIS, prefer
+  `wkt_text` or post-process the `bytea` values to strip the SRID prefix.
 - **`wkt_text`** &mdash; stores spatial data as `text` using Well-Known Text (WKT)
   representation via MySQL's `ST_AsText()` function.
 
