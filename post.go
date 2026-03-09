@@ -302,8 +302,9 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 // execIndexJobs runs index creation jobs with bounded parallelism.
 // The exec callback is invoked for each job. When workers == 1, jobs run
 // sequentially; otherwise they run in parallel with a semaphore.
+// Callers must pass workers >= 1.
 func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(ctx context.Context, j indexJob) error) error {
-	if workers <= 1 {
+	if workers == 1 {
 		for _, job := range jobs {
 			if err := exec(ctx, job); err != nil {
 				return err
@@ -344,6 +345,11 @@ func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(
 	}
 
 	wg.Wait()
+	// If no job failed but the parent context was cancelled (e.g. Ctrl+C),
+	// surface that so the caller does not treat the run as successful.
+	if firstErr == nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	return firstErr
 }
 

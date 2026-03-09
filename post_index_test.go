@@ -199,15 +199,16 @@ func TestExecIndexJobs_ContextAlreadyCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	// Verify the function completes without error or panic when the
-	// context is already cancelled. Some goroutines may still execute
-	// (select between ready channels is non-deterministic), so we only
-	// assert no error and no hang.
+	// A pre-cancelled context should surface context.Canceled so the
+	// caller knows index creation did not complete successfully.
 	jobs := makeTestJobs(5)
 	err := execIndexJobs(ctx, jobs, 4, func(_ context.Context, _ indexJob) error {
 		return nil
 	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected context.Canceled error, got nil")
+	}
+	if err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got: %v", err)
 	}
 }
