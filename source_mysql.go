@@ -3,12 +3,15 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
 )
+
+var uuidRegexp = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type mysqlSourceDB struct {
 	snakeCaseIDs bool
@@ -373,6 +376,22 @@ func isBinary16Column(col Column) bool {
 	return isMySQLTypeWithLength(col, "binary", 16)
 }
 
+// isStringUUIDColumn returns true for CHAR(36) and VARCHAR(36) columns,
+// which are commonly used for storing UUID strings.
+func isStringUUIDColumn(col Column) bool {
+	return (col.DataType == "char" || col.DataType == "varchar") && col.CharMaxLen == 36
+}
+
+// isMySQLSpatialType returns true for MySQL spatial/geometry types.
+func isMySQLSpatialType(dataType string) bool {
+	switch dataType {
+	case "geometry", "point", "linestring", "polygon",
+		"multipoint", "multilinestring", "multipolygon", "geometrycollection":
+		return true
+	}
+	return false
+}
+
 func isTinyInt1Column(col Column) bool {
 	return isMySQLTypeWithLength(col, "tinyint", 1)
 }
@@ -438,6 +457,8 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		return "double precision", nil
 	case col.DataType == "decimal":
 		return fmt.Sprintf("numeric(%d,%d)", col.Precision, col.Scale), nil
+	case isStringUUIDColumn(col) && typeMap.StringUUIDAsUUID:
+		return "uuid", nil
 	case col.DataType == "varchar":
 		if typeMap.VarcharAsText {
 			return "text", nil
@@ -459,6 +480,12 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		switch typeMap.EnumMode {
 		case "text", "check":
 			return "text", nil
+		case "native":
+			values, err := parseMySQLEnumSetValues(col.ColumnType)
+			if err != nil {
+				return "", err
+			}
+			return pgEnumTypeName(values), nil
 		default:
 			return "", fmt.Errorf("unsupported enum_mode %q", typeMap.EnumMode)
 		}
@@ -466,7 +493,7 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		switch typeMap.SetMode {
 		case "text":
 			return "text", nil
-		case "text_array":
+		case "text_array", "text_array_check":
 			return "text[]", nil
 		default:
 			return "", fmt.Errorf("unsupported set_mode %q", typeMap.SetMode)
@@ -482,11 +509,40 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		return "integer", nil
 	case col.DataType == "date":
 		return "date", nil
+	case col.DataType == "time":
+		switch typeMap.TimeMode {
+		case "text":
+			return "text", nil
+		case "time":
+			return "time", nil
+		case "interval":
+			return "interval", nil
+		default:
+			return "", fmt.Errorf("unsupported time_mode %q", typeMap.TimeMode)
+		}
 	case col.DataType == "bit":
-		return "bytea", nil
+		switch typeMap.BitMode {
+		case "bit":
+			n, ok := mysqlColumnTypeLength(col.ColumnType, "bit")
+			if !ok {
+				n = col.Precision
+			}
+			if n <= 0 {
+				n = 1
+			}
+			return fmt.Sprintf("bit(%d)", n), nil
+		case "varbit":
+			return "varbit", nil
+		default:
+			return "bytea", nil
+		}
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
 		return "bytea", nil
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
+		return "bytea", nil
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
+		return "text", nil
 	default:
 		if typeMap.UnknownAsText {
 			return "text", nil
@@ -506,6 +562,17 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		if !ok || len(b) != 16 {
 			return nil, fmt.Errorf("expected 16-byte binary UUID payload, got %T", val)
 		}
+		if typeMap.Binary16UUIDMode == "mysql_uuid_to_bin_swap" {
+			// MySQL UUID_TO_BIN(uuid, 1) swaps time_low and time_hi_and_version:
+			// Storage:  [time_hi(2)][time_mid(2)][time_low(4)][clock_seq(2)][node(6)]
+			// RFC 4122: [time_low(4)][time_mid(2)][time_hi(2)][clock_seq(2)][node(6)]
+			var unswapped [16]byte
+			copy(unswapped[0:4], b[4:8])  // time_low
+			copy(unswapped[4:6], b[2:4])  // time_mid
+			copy(unswapped[6:8], b[0:2])  // time_hi_and_version
+			copy(unswapped[8:16], b[8:16]) // clock_seq + node
+			b = unswapped[:]
+		}
 		return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 
 	case col.DataType == "json" && typeMap.SanitizeJSONNullBytes:
@@ -516,6 +583,22 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 			return strings.ReplaceAll(v, "\x00", ""), nil
 		}
 		return val, nil
+
+	case isStringUUIDColumn(col) && typeMap.StringUUIDAsUUID:
+		var s string
+		switch v := val.(type) {
+		case []byte:
+			s = string(v)
+		case string:
+			s = v
+		default:
+			return nil, fmt.Errorf("expected string UUID value, got %T", val)
+		}
+		s = strings.TrimSpace(s)
+		if !uuidRegexp.MatchString(s) {
+			return nil, fmt.Errorf("invalid UUID value %q for string_uuid_as_uuid", s)
+		}
+		return strings.ToLower(s), nil
 
 	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
 		switch v := val.(type) {
@@ -540,7 +623,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		return nil, fmt.Errorf("cannot coerce tinyint(1) value of type %T to boolean", val)
 
-	case col.DataType == "set" && typeMap.SetMode == "text_array":
+	case col.DataType == "set" && (typeMap.SetMode == "text_array" || typeMap.SetMode == "text_array_check"):
 		var raw string
 		switch v := val.(type) {
 		case []byte:
@@ -556,6 +639,31 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		parts := strings.Split(raw, ",")
 		return parts, nil
+
+	case col.DataType == "bit" && (typeMap.BitMode == "bit" || typeMap.BitMode == "varbit"):
+		b, ok := val.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("expected []byte for BIT value, got %T", val)
+		}
+		// Determine bit width from column type
+		bitWidth, wOk := mysqlColumnTypeLength(col.ColumnType, "bit")
+		if !wOk {
+			bitWidth = col.Precision
+		}
+		if bitWidth <= 0 {
+			bitWidth = int64(len(b)) * 8
+		}
+		// Convert bytes to binary string, then truncate to the actual bit width
+		var sb strings.Builder
+		for _, byt := range b {
+			fmt.Fprintf(&sb, "%08b", byt)
+		}
+		bits := sb.String()
+		// MySQL may send more bytes than needed; take the rightmost bitWidth bits
+		if int64(len(bits)) > bitWidth {
+			bits = bits[len(bits)-int(bitWidth):]
+		}
+		return bits, nil
 
 	case col.DataType == "year":
 		switch v := val.(type) {
@@ -576,9 +684,29 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		return nil, fmt.Errorf("cannot coerce year value of type %T to integer", val)
 
+	case col.DataType == "time":
+		var raw string
+		switch v := val.(type) {
+		case []byte:
+			raw = string(v)
+		case string:
+			raw = v
+		default:
+			return val, nil
+		}
+		raw = strings.TrimSpace(raw)
+		if typeMap.TimeMode == "interval" {
+			return mysqlTimeToInterval(raw)
+		}
+		// For time and text modes, pass through as-is
+		return raw, nil
+
 	case col.DataType == "date":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
+			if typeMap.ZeroDateMode == "error" {
+				return nil, fmt.Errorf("zero date value in column %s (zero_date_mode=error)", col.SourceName)
+			}
 			return nil, nil
 		}
 		return val, nil
@@ -586,9 +714,29 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 	case col.DataType == "timestamp" || col.DataType == "datetime":
 		t, ok := val.(time.Time)
 		if ok && t.IsZero() {
+			if typeMap.ZeroDateMode == "error" {
+				return nil, fmt.Errorf("zero date/time value in column %s (zero_date_mode=error)", col.SourceName)
+			}
 			return nil, nil
 		}
 		return val, nil
+
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
+		// Raw MySQL spatial bytes (4-byte SRID prefix + WKB) pass through as
+		// bytea. Explicit case to avoid relying on default passthrough.
+		return val, nil
+
+	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
+		// ST_AsText() is used in the SELECT query, so the value arrives as a
+		// string (WKT). Just pass it through.
+		switch v := val.(type) {
+		case []byte:
+			return string(v), nil
+		case string:
+			return v, nil
+		default:
+			return nil, fmt.Errorf("expected string/[]byte for spatial WKT value, got %T", val)
+		}
 
 	case col.DataType == "varchar" || col.DataType == "char" ||
 		col.DataType == "text" || col.DataType == "mediumtext" ||
@@ -654,6 +802,14 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 	case pgType == "bytea":
 		return "", fmt.Errorf("bytea defaults are not supported (value %q)", raw)
 
+	case strings.HasPrefix(pgType, "bit(") || pgType == "varbit":
+		// MySQL BIT defaults are typically binary literals like b'0' or b'101'
+		if strings.HasPrefix(unquoted, "b'") && strings.HasSuffix(unquoted, "'") {
+			bits := unquoted[2 : len(unquoted)-1]
+			return fmt.Sprintf("B'%s'", bits), nil
+		}
+		return fmt.Sprintf("B'%s'", unquoted), nil
+
 	case pgType == "text[]":
 		vals := parseMySQLSetDefault(unquoted)
 		if len(vals) == 0 {
@@ -685,4 +841,45 @@ func mysqlDefaultUnquote(v string) string {
 		return strings.ReplaceAll(inner, "''", "'")
 	}
 	return v
+}
+
+// mysqlTimeToInterval converts a MySQL TIME string (e.g. "838:59:59", "-12:30:00")
+// to a PostgreSQL interval literal (e.g. "838 hours 59 mins 59 secs").
+func mysqlTimeToInterval(t string) (string, error) {
+	negative := false
+	if strings.HasPrefix(t, "-") {
+		negative = true
+		t = t[1:]
+	}
+
+	parts := strings.Split(t, ":")
+	var hours, mins, secs string
+	switch len(parts) {
+	case 3:
+		hours, mins, secs = parts[0], parts[1], parts[2]
+	case 2:
+		hours, mins = parts[0], parts[1]
+		secs = "0"
+	default:
+		return "", fmt.Errorf("cannot parse MySQL TIME value %q as interval", t)
+	}
+
+	var b strings.Builder
+	if negative {
+		// PostgreSQL interval parsing applies the sign only to the immediately
+		// following component, so we must negate each part individually.
+		// Skip the minus for zero components to avoid cosmetic "-00" output.
+		negateComponent := func(s string) string {
+			for _, c := range s {
+				if c != '0' && c != '.' {
+					return "-" + s
+				}
+			}
+			return s
+		}
+		fmt.Fprintf(&b, "%s hours %s mins %s secs", negateComponent(hours), negateComponent(mins), negateComponent(secs))
+	} else {
+		fmt.Fprintf(&b, "%s hours %s mins %s secs", hours, mins, secs)
+	}
+	return b.String(), nil
 }

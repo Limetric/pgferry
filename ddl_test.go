@@ -376,6 +376,183 @@ func TestGenerateCreateTable_CIAsCitextWithCollationMap(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_SetArrayCheckMode(t *testing.T) {
+	table := Table{
+		PGName: "set_check_demo",
+		Columns: []Column{
+			{PGName: "flags", DataType: "set", ColumnType: "set('a','b','c')", Nullable: false},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.SetMode = "text_array_check"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, "text[]") {
+		t.Errorf("expected text[] type, got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "CHECK (flags <@ ARRAY['a', 'b', 'c']::text[])") {
+		t.Errorf("expected set CHECK constraint, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_SetArrayCheckDefault(t *testing.T) {
+	table := Table{
+		PGName: "set_check_default",
+		Columns: []Column{
+			{PGName: "tags", DataType: "set", ColumnType: "set('x','y','z')", Nullable: false, Default: strPtr("x,z")},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.SetMode = "text_array_check"
+
+	ddl, err := generateCreateTable(table, "app", false, true, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, "DEFAULT ARRAY['x', 'z']::text[]") {
+		t.Errorf("expected array default in DDL, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_EnumNativeMode(t *testing.T) {
+	table := Table{
+		PGName: "enum_native_demo",
+		Columns: []Column{
+			{PGName: "status", DataType: "enum", ColumnType: "enum('new','used')", Nullable: false},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.EnumMode = "native"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	typeName := pgEnumTypeName([]string{"new", "used"})
+	expected := "app." + typeName
+	if !strings.Contains(ddl, expected) {
+		t.Errorf("expected schema-qualified enum type %q in DDL, got:\n%s", expected, ddl)
+	}
+	// Should NOT have CHECK clause
+	if strings.Contains(ddl, "CHECK") {
+		t.Errorf("native enum mode should not produce CHECK clause, got:\n%s", ddl)
+	}
+}
+
+func TestGenerateCreateTable_EnumNativeReusesType(t *testing.T) {
+	// Two columns with the same enum definition should produce the same type name
+	table := Table{
+		PGName: "reuse_demo",
+		Columns: []Column{
+			{PGName: "status1", DataType: "enum", ColumnType: "enum('a','b')", Nullable: false},
+			{PGName: "status2", DataType: "enum", ColumnType: "enum('b','a')", Nullable: false},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.EnumMode = "native"
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	// Both should use the same type name since pgEnumTypeName sorts values
+	typeName := pgEnumTypeName([]string{"a", "b"})
+	count := strings.Count(ddl, typeName)
+	if count != 2 {
+		t.Errorf("expected type %s to appear 2 times, got %d in DDL:\n%s", typeName, count, ddl)
+	}
+}
+
+func TestPgEnumTypeName_Deterministic(t *testing.T) {
+	// Same values in different order produce the same name
+	name1 := pgEnumTypeName([]string{"c", "a", "b"})
+	name2 := pgEnumTypeName([]string{"a", "b", "c"})
+	if name1 != name2 {
+		t.Errorf("pgEnumTypeName order-dependent: %q != %q", name1, name2)
+	}
+
+	// Different values produce different names
+	name3 := pgEnumTypeName([]string{"x", "y"})
+	if name1 == name3 {
+		t.Errorf("pgEnumTypeName collision: %q == %q", name1, name3)
+	}
+
+	// Prefix and length check (16 hex digits for 64-bit hash)
+	if !strings.HasPrefix(name1, "pgferry_enum_") {
+		t.Errorf("pgEnumTypeName missing prefix: %q", name1)
+	}
+	if len(name1) != len("pgferry_enum_")+16 {
+		t.Errorf("pgEnumTypeName length = %d, want %d (prefix + 16 hex digits)", len(name1), len("pgferry_enum_")+16)
+	}
+}
+
+func TestCreateEnumTypes_CrossTableDedup(t *testing.T) {
+	// Two tables with the same enum values in different order should produce
+	// exactly one PG type with deterministic (sorted) declaration order.
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "t1",
+				Columns: []Column{
+					{PGName: "status", DataType: "enum", ColumnType: "enum('b','a')"},
+				},
+			},
+			{
+				PGName: "t2",
+				Columns: []Column{
+					{PGName: "status", DataType: "enum", ColumnType: "enum('a','b')"},
+				},
+			},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.EnumMode = "native"
+
+	// Both should map to the same type name
+	name1 := pgEnumTypeName([]string{"b", "a"})
+	name2 := pgEnumTypeName([]string{"a", "b"})
+	if name1 != name2 {
+		t.Fatalf("cross-table enum type names differ: %q vs %q", name1, name2)
+	}
+
+	// Verify both columns reference the same type in DDL
+	for _, table := range schema.Tables {
+		ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+		if err != nil {
+			t.Fatalf("generateCreateTable(%s): %v", table.PGName, err)
+		}
+		if !strings.Contains(ddl, name1) {
+			t.Errorf("table %s DDL missing enum type %s:\n%s", table.PGName, name1, ddl)
+		}
+	}
+}
+
+func TestGenerateCreateTable_EnumNativeDefault(t *testing.T) {
+	table := Table{
+		PGName: "enum_default_demo",
+		Columns: []Column{
+			{PGName: "status", DataType: "enum", ColumnType: "enum('active','inactive')", Nullable: false, Default: strPtr("active")},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.EnumMode = "native"
+
+	ddl, err := generateCreateTable(table, "app", false, true, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	if !strings.Contains(ddl, "DEFAULT 'active'") {
+		t.Errorf("expected DEFAULT 'active' in DDL, got:\n%s", ddl)
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }

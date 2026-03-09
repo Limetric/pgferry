@@ -505,7 +505,7 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 dsn = "postgres://u:p@h:5432/db"
 
 [type_mapping]
-enum_mode = "native"
+enum_mode = "pg_enum"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -514,6 +514,266 @@ enum_mode = "native"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for invalid type_mapping.enum_mode")
+	}
+}
+
+func TestLoadConfig_EnumModeNative(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "enum_native.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+enum_mode = "native"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.EnumMode != "native" {
+		t.Errorf("TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "native")
+	}
+}
+
+func TestLoadConfig_Binary16UUIDModeSwap(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "uuid_swap.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+binary16_as_uuid = true
+binary16_uuid_mode = "mysql_uuid_to_bin_swap"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.Binary16UUIDMode != "mysql_uuid_to_bin_swap" {
+		t.Errorf("Binary16UUIDMode = %q, want %q", cfg.TypeMapping.Binary16UUIDMode, "mysql_uuid_to_bin_swap")
+	}
+}
+
+func TestLoadConfig_Binary16UUIDModeWithoutBinary16Rejected(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "uuid_swap_no_b16.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+binary16_uuid_mode = "mysql_uuid_to_bin_swap"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for binary16_uuid_mode without binary16_as_uuid")
+	}
+}
+
+func TestLoadConfig_ZeroDateModeError(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "zero_date.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+zero_date_mode = "error"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.ZeroDateMode != "error" {
+		t.Errorf("ZeroDateMode = %q, want %q", cfg.TypeMapping.ZeroDateMode, "error")
+	}
+}
+
+func TestLoadConfig_SpatialModeWKBBytea(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "spatial_wkb.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+spatial_mode = "wkb_bytea"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.SpatialMode != "wkb_bytea" {
+		t.Errorf("SpatialMode = %q, want %q", cfg.TypeMapping.SpatialMode, "wkb_bytea")
+	}
+}
+
+func TestLoadConfig_InvalidSpatialMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_spatial.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+spatial_mode = "postgis"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid spatial_mode")
+	}
+}
+
+func TestLoadConfig_InvalidZeroDateMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_zero_date.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+zero_date_mode = "text"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid zero_date_mode")
+	}
+}
+
+func TestLoadConfig_Binary16UUIDModeInvalid(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "uuid_bad_mode.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+binary16_as_uuid = true
+binary16_uuid_mode = "comb"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid binary16_uuid_mode")
+	}
+}
+
+func TestLoadConfig_SetModeTextArrayCheck(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "set_text_array_check.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[type_mapping]
+set_mode = "text_array_check"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TypeMapping.SetMode != "text_array_check" {
+		t.Errorf("TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text_array_check")
 	}
 }
 

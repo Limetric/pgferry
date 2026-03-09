@@ -23,14 +23,25 @@ pgferry defaults to conservative, lossless type conversions. Semantic mappings
 | `mediumtext` | `text` | | |
 | `longtext` | `text` | | |
 | `json` | `json` | `jsonb` | `json_as_jsonb` |
-| `enum(...)` | `text` | `text` + CHECK | `enum_mode` |
-| `set(...)` | `text` | `text[]` | `set_mode` |
+| `enum(...)` | `text` | `text` + CHECK, native enum | `enum_mode` |
+| `set(...)` | `text` | `text[]`, `text[]` + CHECK | `set_mode` |
 | `timestamp` | `timestamptz` | | |
 | `datetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
 | `year` | `integer` | | |
 | `date` | `date` | | |
-| `bit(n)` | `bytea` | | |
+| `time` | `time` | `text`, `interval` | `time_mode` |
+| `bit(n)` | `bytea` | `bit(n)`, `varbit` | `bit_mode` |
 | `binary(16)` | `bytea` | `uuid` | `binary16_as_uuid` |
+| `char(36)` | `varchar(36)` | `uuid` | `string_uuid_as_uuid` |
+| `varchar(36)` | `varchar(36)` | `uuid` | `string_uuid_as_uuid` |
+| `geometry` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `point` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `linestring` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `polygon` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `multipoint` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `multilinestring` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `multipolygon` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `geometrycollection` | unsupported | `bytea`, `text` | `spatial_mode` |
 | `binary(n)` | `bytea` | | |
 | `varbinary(n)` | `bytea` | | |
 | `tinyblob` | `bytea` | | |
@@ -69,7 +80,7 @@ instead of aborting.
 
 - **No unsigned integers**: SQLite has no unsigned concept, so `add_unsigned_checks` has no effect.
 - **No enums or sets**: SQLite has no native enum or set types, so `enum_mode` and `set_mode` must remain at their defaults (`"text"`).
-- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `varchar_as_text`, `enum_mode = "check"`, and `set_mode = "text_array"` produce a config error when used with a SQLite source.
+- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `varchar_as_text`, `enum_mode = "check"/"native"`, `set_mode = "text_array"/"text_array_check"`, `bit_mode` (non-default), `string_uuid_as_uuid`, `binary16_uuid_mode` (non-default), `time_mode` (non-default), `zero_date_mode` (non-default), and `spatial_mode` (non-default) produce a config error when used with a SQLite source.
 
 ## Type mapping options
 
@@ -84,8 +95,14 @@ varchar_as_text = false           # varchar(n)/char(n) → text (MySQL only)
 json_as_jsonb = false             # json → jsonb
 sanitize_json_null_bytes = true   # strip \x00 from JSON values
 unknown_as_text = false           # unknown types → text (instead of error)
-enum_mode = "text"                # "text" or "check" (MySQL only)
-set_mode = "text"                 # "text" or "text_array" (MySQL only)
+enum_mode = "text"                # "text", "check", or "native" (MySQL only)
+set_mode = "text"                 # "text", "text_array", or "text_array_check" (MySQL only)
+bit_mode = "bytea"                # "bytea", "bit", or "varbit" (MySQL only)
+string_uuid_as_uuid = false       # char(36)/varchar(36) → uuid (MySQL only)
+binary16_uuid_mode = "rfc4122"    # "rfc4122" or "mysql_uuid_to_bin_swap" (MySQL only)
+time_mode = "time"                # "text", "time", or "interval" (MySQL only)
+zero_date_mode = "null"           # "null" or "error" (MySQL only)
+spatial_mode = "off"              # "off", "wkb_bytea", or "wkt_text" (MySQL only)
 collation_mode = "none"           # "none" or "auto" (MySQL only)
 ci_as_citext = false              # _ci text columns → citext (MySQL only)
 
@@ -99,18 +116,96 @@ ci_as_citext = false              # _ci text columns → citext (MySQL only)
 - **`text`** (default) &mdash; stores enum values as plain `text`. No constraint enforcement.
 - **`check`** &mdash; stores as `text` with a `CHECK` constraint restricting values to the
   MySQL enum's allowed set.
+- **`native`** &mdash; creates a native PostgreSQL enum type per distinct set of values.
+  Type names are content-addressable (`pgferry_enum_XXXXXXXXXXXXXXXX` using FNV64a hash
+  of sorted values), so columns with identical enum definitions share the same type.
+  Enum types are created before table creation.
+
+  **Ordering caveat:** PostgreSQL native enums have a declaration order that affects
+  `ORDER BY`. Because pgferry sorts values before hashing (for deduplication), two
+  MySQL columns with the same values but different declaration order (e.g.
+  `enum('new','old')` vs `enum('old','new')`) will share the same PG type, and
+  `ORDER BY` will use alphabetical order for both. If MySQL-side enum ordering
+  carries business semantics, use `enum_mode = "check"` instead.
 
 ### Set mode
 
 - **`text`** (default) &mdash; stores the comma-separated set value as a single `text` column.
 - **`text_array`** &mdash; splits the set into a PostgreSQL `text[]` array.
+- **`text_array_check`** &mdash; like `text_array`, but adds a `CHECK` constraint restricting
+  array elements to the MySQL set's allowed values (e.g. `CHECK (col <@ ARRAY['a','b','c']::text[])`).
+
+### BIT mode
+
+Controls how MySQL `BIT(n)` columns are mapped (MySQL only):
+
+- **`bytea`** (default) &mdash; stores as `bytea` (raw bytes).
+- **`bit`** &mdash; stores as PostgreSQL `bit(n)` with a fixed width matching the source.
+  Values are converted to binary string representation during COPY.
+- **`varbit`** &mdash; stores as PostgreSQL `varbit` (variable-length bit string).
+  Values are converted to binary string representation during COPY.
+
+### String UUID mapping
+
+When `string_uuid_as_uuid = true`, MySQL `char(36)` and `varchar(36)` columns are
+mapped to PostgreSQL `uuid`. During data streaming, values are validated as UUIDs
+(must match the `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` pattern) and lowercased.
+Invalid values cause an error.
+
+### Binary UUID mode
+
+When `binary16_as_uuid = true`, the `binary16_uuid_mode` setting controls byte
+interpretation:
+
+- **`rfc4122`** (default) &mdash; bytes are in standard RFC 4122 order. This is
+  the correct mode for applications that store UUIDs as raw 16-byte values.
+- **`mysql_uuid_to_bin_swap`** &mdash; bytes follow MySQL's `UUID_TO_BIN(uuid, 1)`
+  layout where the time-high and time-low fields are swapped for better index
+  locality. pgferry reverses the swap during data streaming to produce standard
+  UUID strings.
+
+`binary16_uuid_mode` requires `binary16_as_uuid = true`; setting a non-default
+mode without it is a config error.
+
+### TIME mode
+
+Controls how MySQL `TIME` columns are mapped (MySQL only):
+
+- **`time`** (default) &mdash; stores as PostgreSQL `time`. Values outside the
+  `00:00:00`&ndash;`23:59:59` range (MySQL TIME supports &minus;838:59:59 to 838:59:59)
+  will cause a PostgreSQL error.
+- **`text`** &mdash; stores as `text`, preserving the original string representation.
+- **`interval`** &mdash; stores as PostgreSQL `interval`. Values are converted from
+  MySQL's `HH:MM:SS` format to `HH hours MM mins SS secs` format, preserving
+  negative durations.
+
+### Spatial mode
+
+Controls how MySQL spatial types (`geometry`, `point`, `linestring`, `polygon`,
+`multipoint`, `multilinestring`, `multipolygon`, `geometrycollection`) are mapped
+(MySQL only):
+
+- **`off`** (default) &mdash; spatial types are unsupported. Columns with spatial
+  types cause an error (or map to `text` if `unknown_as_text = true`).
+- **`wkb_bytea`** &mdash; stores spatial data as `bytea` using MySQL's internal
+  binary representation (4-byte SRID prefix + WKB).
+  **Warning:** MySQL's internal binary format prepends a 4-byte SRID before the
+  standard WKB payload. This is **not** standard OGC WKB and is **not** directly
+  compatible with PostGIS `geometry` columns (which expect pure WKB or EWKB).
+  Use `wkb_bytea` only for raw archival; if you plan to use PostGIS, prefer
+  `wkt_text` or post-process the `bytea` values to strip the SRID prefix.
+- **`wkt_text`** &mdash; stores spatial data as `text` using Well-Known Text (WKT)
+  representation via MySQL's `ST_AsText()` function.
 
 ## Edge cases
 
 ### Zero dates
 
 MySQL allows `0000-00-00` and `0000-00-00 00:00:00` as valid date/datetime values.
-PostgreSQL does not. pgferry converts these to `NULL` during data streaming.
+PostgreSQL does not. The `zero_date_mode` setting controls handling:
+
+- **`null`** (default) &mdash; converts zero dates to `NULL` during data streaming.
+- **`error`** &mdash; aborts the migration with an error when a zero date is encountered.
 
 ### JSON null bytes
 
@@ -162,8 +257,10 @@ collation in the MySQL schema.
 
 ### Set splitting
 
-When `set_mode = "text_array"`, MySQL set values like `"a,b,c"` are split on
-commas and stored as `{"a","b","c"}` in a PostgreSQL `text[]` array.
+When `set_mode = "text_array"` or `"text_array_check"`, MySQL set values like
+`"a,b,c"` are split on commas and stored as `{"a","b","c"}` in a PostgreSQL
+`text[]` array. With `"text_array_check"`, a CHECK constraint additionally
+restricts elements to the original MySQL set's allowed values.
 
 ### Unsigned integers
 

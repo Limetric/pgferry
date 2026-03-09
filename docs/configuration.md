@@ -118,12 +118,37 @@ sanitize_json_null_bytes = true   # strip \x00 from JSON values (PG rejects them
 unknown_as_text = false           # map unrecognized source types to text instead of erroring
 
 # Enum handling (MySQL only): "text" (default) stores as plain text;
-#                              "check" stores as text with a CHECK constraint on allowed values
+#                              "check" stores as text with a CHECK constraint on allowed values;
+#                              "native" creates native PostgreSQL enum types
 enum_mode = "text"
 
 # Set handling (MySQL only): "text" (default) stores as comma-separated text;
-#                             "text_array" stores as text[] (PostgreSQL array)
+#                             "text_array" stores as text[] (PostgreSQL array);
+#                             "text_array_check" stores as text[] with CHECK on allowed values
 set_mode = "text"
+
+# BIT(n) handling (MySQL only): "bytea" (default), "bit" (fixed-width), or "varbit" (variable)
+bit_mode = "bytea"
+
+# Map CHAR(36)/VARCHAR(36) to uuid (MySQL only). Values are validated during COPY.
+# Default: false
+string_uuid_as_uuid = false
+
+# Binary UUID byte order (MySQL only, requires binary16_as_uuid = true):
+#   "rfc4122" (default) — standard byte order
+#   "mysql_uuid_to_bin_swap" — reverses MySQL UUID_TO_BIN(uuid, 1) swap
+binary16_uuid_mode = "rfc4122"
+
+# TIME column handling (MySQL only): "time" (default), "text", or "interval"
+time_mode = "time"
+
+# Zero-date handling (MySQL only): "null" (default) converts to NULL;
+#                                   "error" aborts on zero dates
+zero_date_mode = "null"
+
+# Spatial type handling (MySQL only): "off" (default, unsupported);
+#   "wkb_bytea" stores as bytea; "wkt_text" stores as text via ST_AsText()
+spatial_mode = "off"
 
 # Collation handling (MySQL only):
 #   "none"  (default) — no COLLATE clauses added; warnings are still reported
@@ -177,8 +202,14 @@ SQLite accepts file paths or file URIs. pgferry opens the database in **read-onl
 | `binary16_as_uuid` | Supported | Config error |
 | `datetime_as_timestamptz` | Supported | Config error |
 | `varchar_as_text` | Supported | Config error |
-| `enum_mode = "check"` | Supported | Config error |
-| `set_mode = "text_array"` | Supported | Config error |
+| `enum_mode = "check"` or `"native"` | Supported | Config error |
+| `set_mode = "text_array"` or `"text_array_check"` | Supported | Config error |
+| `bit_mode` (non-default) | Supported | Config error |
+| `string_uuid_as_uuid` | Supported | Config error |
+| `binary16_uuid_mode` (non-default) | Supported | Config error |
+| `time_mode` (non-default) | Supported | Config error |
+| `zero_date_mode` (non-default) | Supported | Config error |
+| `spatial_mode` (non-default) | Supported | Config error |
 | `widen_unsigned_integers = false` | Supported | Config error |
 | `collation_mode = "auto"` | Supported | Config error |
 | `collation_map` | Supported | Config error if non-empty |
@@ -195,8 +226,13 @@ pgferry validates the config at load time and reports errors before connecting t
 | `source_snapshot_mode` | Must be `"none"` or `"single_tx"` |
 | `source.type` | Required, must be `"mysql"` or `"sqlite"` |
 | `source.dsn` | Required |
-| `type_mapping.enum_mode` | Must be `"text"` or `"check"` |
-| `type_mapping.set_mode` | Must be `"text"` or `"text_array"` |
+| `type_mapping.enum_mode` | Must be `"text"`, `"check"`, or `"native"` |
+| `type_mapping.set_mode` | Must be `"text"`, `"text_array"`, or `"text_array_check"` |
+| `type_mapping.bit_mode` | Must be `"bytea"`, `"bit"`, or `"varbit"` |
+| `type_mapping.binary16_uuid_mode` | Must be `"rfc4122"` or `"mysql_uuid_to_bin_swap"`; requires `binary16_as_uuid = true` |
+| `type_mapping.time_mode` | Must be `"text"`, `"time"`, or `"interval"` |
+| `type_mapping.zero_date_mode` | Must be `"null"` or `"error"` |
+| `type_mapping.spatial_mode` | Must be `"off"`, `"wkb_bytea"`, or `"wkt_text"` |
 | `type_mapping.collation_mode` | Must be `"none"` or `"auto"` |
 | `source.charset` | MySQL-only; config error for SQLite if not `"utf8mb4"` |
 | `validation` | Must be `"none"` or `"row_count"` |
@@ -238,6 +274,12 @@ Fields omitted from the TOML file use these defaults:
 | `unknown_as_text` | `false` |
 | `enum_mode` | `"text"` |
 | `set_mode` | `"text"` |
+| `bit_mode` | `"bytea"` |
+| `string_uuid_as_uuid` | `false` |
+| `binary16_uuid_mode` | `"rfc4122"` |
+| `time_mode` | `"time"` |
+| `zero_date_mode` | `"null"` |
+| `spatial_mode` | `"off"` |
 | `collation_mode` | `"none"` |
 | `collation_map` | `nil` (empty) |
 | `ci_as_citext` | `false` |

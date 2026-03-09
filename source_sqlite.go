@@ -207,6 +207,24 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if len(typeMap.CollationMap) > 0 {
 		errs = append(errs, "collation_map is a MySQL-only option")
 	}
+	if typeMap.BitMode != "bytea" {
+		errs = append(errs, fmt.Sprintf("bit_mode=%q is a MySQL-only option", typeMap.BitMode))
+	}
+	if typeMap.StringUUIDAsUUID {
+		errs = append(errs, "string_uuid_as_uuid is a MySQL-only option")
+	}
+	if typeMap.Binary16UUIDMode != "rfc4122" {
+		errs = append(errs, fmt.Sprintf("binary16_uuid_mode=%q is a MySQL-only option", typeMap.Binary16UUIDMode))
+	}
+	if typeMap.TimeMode != "time" {
+		errs = append(errs, fmt.Sprintf("time_mode=%q is a MySQL-only option", typeMap.TimeMode))
+	}
+	if typeMap.ZeroDateMode != "null" {
+		errs = append(errs, fmt.Sprintf("zero_date_mode=%q is a MySQL-only option", typeMap.ZeroDateMode))
+	}
+	if typeMap.SpatialMode != "off" {
+		errs = append(errs, fmt.Sprintf("spatial_mode=%q is a MySQL-only option", typeMap.SpatialMode))
+	}
 	if typeMap.CIAsCitext {
 		errs = append(errs, "ci_as_citext is a MySQL-only option")
 	}

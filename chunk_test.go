@@ -111,7 +111,7 @@ func TestBuildChunkedSelectQuery_MySQL(t *testing.T) {
 
 	// Middle chunk (not last)
 	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 100, IsLast: false}
-	got := buildChunkedSelectQuery(src, table, key, chunk)
+	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
 	want := "SELECT `id`, `name` FROM `users` WHERE `id` >= 1 AND `id` < 100 ORDER BY `id`"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -119,7 +119,7 @@ func TestBuildChunkedSelectQuery_MySQL(t *testing.T) {
 
 	// Last chunk
 	chunk = Chunk{Index: 1, LowerBound: 100, UpperBound: 150, IsLast: true}
-	got = buildChunkedSelectQuery(src, table, key, chunk)
+	got = buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
 	want = "SELECT `id`, `name` FROM `users` WHERE `id` >= 100 AND `id` <= 150 ORDER BY `id`"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -138,7 +138,7 @@ func TestBuildChunkedSelectQuery_SQLite(t *testing.T) {
 	key := ChunkKey{SourceColumn: "rowid", PGColumn: "rowid"}
 
 	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 50, IsLast: true}
-	got := buildChunkedSelectQuery(src, table, key, chunk)
+	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
 	want := `SELECT "rowid", "value" FROM "items" WHERE "rowid" >= 1 AND "rowid" <= 50 ORDER BY "rowid"`
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)

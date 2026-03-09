@@ -264,7 +264,7 @@ type dbQuerier interface {
 func migrateTableFromSourceFull(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) (int64, error) {
 	log.Printf("  [%s] starting row copy", table.SourceName)
 
-	query := buildSourceSelectQuery(src, table)
+	query := buildSourceSelectQuery(src, table, typeMap)
 	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query)
 	if err != nil {
 		return 0, err
@@ -291,7 +291,7 @@ func migrateChunk(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpoo
 func migrateChunkFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, key ChunkKey, chunk Chunk) (int64, error) {
 	log.Printf("  [%s] chunk %d starting", table.SourceName, chunk.Index)
 
-	query := buildChunkedSelectQuery(src, table, key, chunk)
+	query := buildChunkedSelectQuery(src, table, key, chunk, typeMap)
 	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query)
 	if err != nil {
 		return 0, err
@@ -467,10 +467,21 @@ func (r *rowSource) Err() error {
 	return r.err
 }
 
-func buildSourceSelectQuery(src SourceDB, table Table) string {
+func buildSourceSelectQuery(src SourceDB, table Table, typeMap TypeMappingConfig) string {
 	cols := make([]string, len(table.Columns))
 	for i, col := range table.Columns {
-		cols[i] = src.QuoteIdentifier(col.SourceName)
+		cols[i] = columnSelectExpr(src, col, typeMap)
 	}
 	return fmt.Sprintf("SELECT %s FROM %s", strings.Join(cols, ", "), src.QuoteIdentifier(table.SourceName))
+}
+
+// columnSelectExpr returns the SQL expression for selecting a column.
+// For most columns this is just the quoted name, but spatial columns in
+// wkt_text mode use ST_AsText() to produce Well-Known Text output.
+func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) string {
+	quoted := src.QuoteIdentifier(col.SourceName)
+	if src.Name() == "MySQL" && isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text" {
+		return fmt.Sprintf("ST_AsText(%s) AS %s", quoted, quoted)
+	}
+	return quoted
 }

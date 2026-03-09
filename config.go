@@ -69,7 +69,13 @@ type TypeMappingConfig struct {
 	UnknownAsText         bool              `toml:"unknown_as_text"`
 	CollationMode         string            `toml:"collation_mode"` // none|auto
 	CollationMap          map[string]string `toml:"collation_map"`  // MySQL collation → PG collation overrides
-	CIAsCitext            bool              `toml:"ci_as_citext"`   // map _ci text columns to citext (MySQL only)
+	CIAsCitext            bool              `toml:"ci_as_citext"`         // map _ci text columns to citext (MySQL only)
+	BitMode               string            `toml:"bit_mode"`             // bytea|bit|varbit (MySQL only)
+	StringUUIDAsUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
+	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
+	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
+	ZeroDateMode          string            `toml:"zero_date_mode"`      // null|error (MySQL only)
+	SpatialMode           string            `toml:"spatial_mode"`        // off|wkb_bytea|wkt_text (MySQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -154,19 +160,62 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("source_snapshot_mode must be one of: none, single_tx")
 	}
 	switch cfg.TypeMapping.EnumMode {
-	case "text", "check":
+	case "text", "check", "native":
 	default:
-		return fmt.Errorf("type_mapping.enum_mode must be one of: text, check")
+		return fmt.Errorf("type_mapping.enum_mode must be one of: text, check, native")
 	}
 	switch cfg.TypeMapping.SetMode {
-	case "text", "text_array":
+	case "text", "text_array", "text_array_check":
 	default:
-		return fmt.Errorf("type_mapping.set_mode must be one of: text, text_array")
+		return fmt.Errorf("type_mapping.set_mode must be one of: text, text_array, text_array_check")
 	}
 	switch cfg.TypeMapping.CollationMode {
 	case "none", "auto":
 	default:
 		return fmt.Errorf("type_mapping.collation_mode must be one of: none, auto")
+	}
+	if cfg.TypeMapping.BitMode == "" {
+		cfg.TypeMapping.BitMode = "bytea"
+	}
+	switch cfg.TypeMapping.BitMode {
+	case "bytea", "bit", "varbit":
+	default:
+		return fmt.Errorf("type_mapping.bit_mode must be one of: bytea, bit, varbit")
+	}
+	if cfg.TypeMapping.Binary16UUIDMode == "" {
+		cfg.TypeMapping.Binary16UUIDMode = "rfc4122"
+	}
+	switch cfg.TypeMapping.Binary16UUIDMode {
+	case "rfc4122", "mysql_uuid_to_bin_swap":
+	default:
+		return fmt.Errorf("type_mapping.binary16_uuid_mode must be one of: rfc4122, mysql_uuid_to_bin_swap")
+	}
+	if cfg.TypeMapping.Binary16UUIDMode != "rfc4122" && !cfg.TypeMapping.Binary16AsUUID {
+		return fmt.Errorf("type_mapping.binary16_uuid_mode requires binary16_as_uuid = true")
+	}
+	if cfg.TypeMapping.TimeMode == "" {
+		cfg.TypeMapping.TimeMode = "time"
+	}
+	switch cfg.TypeMapping.TimeMode {
+	case "text", "time", "interval":
+	default:
+		return fmt.Errorf("type_mapping.time_mode must be one of: text, time, interval")
+	}
+	if cfg.TypeMapping.ZeroDateMode == "" {
+		cfg.TypeMapping.ZeroDateMode = "null"
+	}
+	switch cfg.TypeMapping.ZeroDateMode {
+	case "null", "error":
+	default:
+		return fmt.Errorf("type_mapping.zero_date_mode must be one of: null, error")
+	}
+	if cfg.TypeMapping.SpatialMode == "" {
+		cfg.TypeMapping.SpatialMode = "off"
+	}
+	switch cfg.TypeMapping.SpatialMode {
+	case "off", "wkb_bytea", "wkt_text":
+	default:
+		return fmt.Errorf("type_mapping.spatial_mode must be one of: off, wkb_bytea, wkt_text")
 	}
 
 	switch cfg.Validation {
@@ -263,5 +312,10 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		SanitizeJSONNullBytes: true,
 		UnknownAsText:         false,
 		CollationMode:         "none",
+		BitMode:               "bytea",
+		Binary16UUIDMode:      "rfc4122",
+		TimeMode:              "time",
+		ZeroDateMode:          "null",
+		SpatialMode:           "off",
 	}
 }

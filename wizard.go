@@ -206,6 +206,70 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		if err != nil {
 			return nil, err
 		}
+		cfg.TypeMapping.Binary16AsUUID, err = w.promptBool("Map binary(16) to uuid", cfg.TypeMapping.Binary16AsUUID)
+		if err != nil {
+			return nil, err
+		}
+		if cfg.TypeMapping.Binary16AsUUID {
+			cfg.TypeMapping.Binary16UUIDMode, err = w.promptChoice("Binary UUID byte order", []wizardOption{
+				{key: "rfc4122"},
+				{key: "mysql_uuid_to_bin_swap"},
+			}, cfg.TypeMapping.Binary16UUIDMode)
+			if err != nil {
+				return nil, err
+			}
+		}
+		cfg.TypeMapping.StringUUIDAsUUID, err = w.promptBool("Map char(36)/varchar(36) to uuid", cfg.TypeMapping.StringUUIDAsUUID)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.EnumMode, err = w.promptChoice("Enum mode", []wizardOption{
+			{key: "text"},
+			{key: "check"},
+			{key: "native"},
+		}, cfg.TypeMapping.EnumMode)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.SetMode, err = w.promptChoice("Set mode", []wizardOption{
+			{key: "text"},
+			{key: "text_array"},
+			{key: "text_array_check"},
+		}, cfg.TypeMapping.SetMode)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.BitMode, err = w.promptChoice("BIT(n) mapping", []wizardOption{
+			{key: "bytea"},
+			{key: "bit"},
+			{key: "varbit"},
+		}, cfg.TypeMapping.BitMode)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.TimeMode, err = w.promptChoice("TIME mapping", []wizardOption{
+			{key: "time"},
+			{key: "text"},
+			{key: "interval"},
+		}, cfg.TypeMapping.TimeMode)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.ZeroDateMode, err = w.promptChoice("Zero-date handling", []wizardOption{
+			{key: "null"},
+			{key: "error"},
+		}, cfg.TypeMapping.ZeroDateMode)
+		if err != nil {
+			return nil, err
+		}
+		cfg.TypeMapping.SpatialMode, err = w.promptChoice("Spatial type mapping", []wizardOption{
+			{key: "off"},
+			{key: "wkb_bytea"},
+			{key: "wkt_text"},
+		}, cfg.TypeMapping.SpatialMode)
+		if err != nil {
+			return nil, err
+		}
 		cfg.AddUnsignedChecks, err = w.promptBool("Add unsigned integer CHECK constraints", cfg.AddUnsignedChecks)
 		if err != nil {
 			return nil, err
@@ -374,6 +438,24 @@ func renderTypeMappingLines(cfg TypeMappingConfig, sourceType string) []string {
 	}
 	if cfg.SetMode != defaults.SetMode {
 		lines = append(lines, fmt.Sprintf("set_mode = %s", strconv.Quote(cfg.SetMode)))
+	}
+	if cfg.BitMode != defaults.BitMode {
+		lines = append(lines, fmt.Sprintf("bit_mode = %s", strconv.Quote(cfg.BitMode)))
+	}
+	if cfg.StringUUIDAsUUID != defaults.StringUUIDAsUUID {
+		lines = append(lines, fmt.Sprintf("string_uuid_as_uuid = %t", cfg.StringUUIDAsUUID))
+	}
+	if cfg.Binary16UUIDMode != defaults.Binary16UUIDMode {
+		lines = append(lines, fmt.Sprintf("binary16_uuid_mode = %s", strconv.Quote(cfg.Binary16UUIDMode)))
+	}
+	if cfg.TimeMode != defaults.TimeMode {
+		lines = append(lines, fmt.Sprintf("time_mode = %s", strconv.Quote(cfg.TimeMode)))
+	}
+	if cfg.ZeroDateMode != defaults.ZeroDateMode {
+		lines = append(lines, fmt.Sprintf("zero_date_mode = %s", strconv.Quote(cfg.ZeroDateMode)))
+	}
+	if cfg.SpatialMode != defaults.SpatialMode {
+		lines = append(lines, fmt.Sprintf("spatial_mode = %s", strconv.Quote(cfg.SpatialMode)))
 	}
 	if cfg.CollationMode != defaults.CollationMode {
 		lines = append(lines, fmt.Sprintf("collation_mode = %s", strconv.Quote(cfg.CollationMode)))
