@@ -1,6 +1,6 @@
 # pgferry
 
-Move MySQL, SQLite, or MSSQL databases into PostgreSQL with one config file and one binary.
+Migrate MySQL, SQLite, or MSSQL databases to PostgreSQL with one config file and one binary.
 
 Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy — and real migrations always do — you get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
