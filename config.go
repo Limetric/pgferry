@@ -70,6 +70,7 @@ type TypeMappingConfig struct {
 	CollationMode         string            `toml:"collation_mode"` // none|auto
 	CollationMap          map[string]string `toml:"collation_map"`  // MySQL collation → PG collation overrides
 	CIAsCitext            bool              `toml:"ci_as_citext"`   // map _ci text columns to citext (MySQL only)
+	BitMode               string            `toml:"bit_mode"`       // bytea|bit|varbit (MySQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -168,6 +169,14 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	default:
 		return fmt.Errorf("type_mapping.collation_mode must be one of: none, auto")
 	}
+	if cfg.TypeMapping.BitMode == "" {
+		cfg.TypeMapping.BitMode = "bytea"
+	}
+	switch cfg.TypeMapping.BitMode {
+	case "bytea", "bit", "varbit":
+	default:
+		return fmt.Errorf("type_mapping.bit_mode must be one of: bytea, bit, varbit")
+	}
 
 	switch cfg.Validation {
 	case "none", "row_count":
@@ -263,5 +272,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		SanitizeJSONNullBytes: true,
 		UnknownAsText:         false,
 		CollationMode:         "none",
+		BitMode:               "bytea",
 	}
 }

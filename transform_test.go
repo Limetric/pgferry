@@ -58,7 +58,10 @@ func TestMapType(t *testing.T) {
 		{"datetime→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "datetime"}, TypeMappingConfig{DatetimeAsTimestamptz: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "timestamptz", false},
 		{"year→integer", Column{DataType: "year", ColumnType: "year"}, defaultTypeMappingConfig(), "integer", false},
 		{"date", Column{DataType: "date", ColumnType: "date"}, defaultTypeMappingConfig(), "date", false},
-		{"bit→bytea", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, defaultTypeMappingConfig(), "bytea", false},
+		{"bit→bytea default", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, defaultTypeMappingConfig(), "bytea", false},
+		{"bit→bit(8)", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, TypeMappingConfig{BitMode: "bit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "bit(8)", false},
+		{"bit→bit(1)", Column{DataType: "bit", ColumnType: "bit(1)", Precision: 1}, TypeMappingConfig{BitMode: "bit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "bit(1)", false},
+		{"bit→varbit", Column{DataType: "bit", ColumnType: "bit(16)", Precision: 16}, TypeMappingConfig{BitMode: "varbit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}, "varbit", false},
 		{"binary→bytea", Column{DataType: "binary", ColumnType: "binary(32)", Precision: 32}, defaultTypeMappingConfig(), "bytea", false},
 		{"varbinary→bytea", Column{DataType: "varbinary", ColumnType: "varbinary(32)"}, defaultTypeMappingConfig(), "bytea", false},
 		{"unknown→error default", Column{DataType: "geometry", ColumnType: "geometry"}, defaultTypeMappingConfig(), "", true},
@@ -331,7 +334,7 @@ func TestTransformValue_SetTextArrayCheck(t *testing.T) {
 }
 
 func TestTransformValue_BitPassthrough(t *testing.T) {
-	col := Column{DataType: "bit", Precision: 8}
+	col := Column{DataType: "bit", Precision: 8, ColumnType: "bit(8)"}
 	in := []byte{0x01}
 	got, err := mysqlTransformValue(in, col, defaultTypeMappingConfig())
 	if err != nil {
@@ -343,5 +346,68 @@ func TestTransformValue_BitPassthrough(t *testing.T) {
 	}
 	if len(out) != 1 || out[0] != 0x01 {
 		t.Fatalf("mysqlTransformValue(bit) = %#v, want %#v", out, in)
+	}
+}
+
+func TestTransformValue_BitToBitString(t *testing.T) {
+	tm := TypeMappingConfig{BitMode: "bit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}
+
+	tests := []struct {
+		name     string
+		col      Column
+		input    []byte
+		wantBits string
+	}{
+		{"bit(8) 0xFF", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, []byte{0xFF}, "11111111"},
+		{"bit(8) 0x01", Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}, []byte{0x01}, "00000001"},
+		{"bit(1) true", Column{DataType: "bit", ColumnType: "bit(1)", Precision: 1}, []byte{0x01}, "1"},
+		{"bit(1) false", Column{DataType: "bit", ColumnType: "bit(1)", Precision: 1}, []byte{0x00}, "0"},
+		{"bit(16)", Column{DataType: "bit", ColumnType: "bit(16)", Precision: 16}, []byte{0xAB, 0xCD}, "1010101111001101"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := mysqlTransformValue(tt.input, tt.col, tm)
+			if err != nil {
+				t.Fatalf("mysqlTransformValue error: %v", err)
+			}
+			s, ok := got.(string)
+			if !ok {
+				t.Fatalf("mysqlTransformValue type = %T, want string", got)
+			}
+			if s != tt.wantBits {
+				t.Errorf("mysqlTransformValue = %q, want %q", s, tt.wantBits)
+			}
+		})
+	}
+}
+
+func TestTransformValue_BitToVarbit(t *testing.T) {
+	col := Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}
+	tm := TypeMappingConfig{BitMode: "varbit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}
+
+	got, err := mysqlTransformValue([]byte{0xAB}, col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(varbit) error: %v", err)
+	}
+	s, ok := got.(string)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(varbit) type = %T, want string", got)
+	}
+	if s != "10101011" {
+		t.Errorf("mysqlTransformValue(varbit) = %q, want %q", s, "10101011")
+	}
+}
+
+func TestTransformValue_BitNilPassthrough(t *testing.T) {
+	col := Column{DataType: "bit", ColumnType: "bit(8)", Precision: 8}
+	tm := TypeMappingConfig{BitMode: "bit", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true}
+
+	got, err := mysqlTransformValue(nil, col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(nil bit) error: %v", err)
+	}
+	if got != nil {
+		t.Errorf("mysqlTransformValue(nil bit) = %v, want nil", got)
 	}
 }

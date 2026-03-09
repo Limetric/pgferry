@@ -489,7 +489,21 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case col.DataType == "date":
 		return "date", nil
 	case col.DataType == "bit":
-		return "bytea", nil
+		switch typeMap.BitMode {
+		case "bit":
+			n, ok := mysqlColumnTypeLength(col.ColumnType, "bit")
+			if !ok {
+				n = col.Precision
+			}
+			if n <= 0 {
+				n = 1
+			}
+			return fmt.Sprintf("bit(%d)", n), nil
+		case "varbit":
+			return "varbit", nil
+		default:
+			return "bytea", nil
+		}
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
 		return "bytea", nil
@@ -562,6 +576,31 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		}
 		parts := strings.Split(raw, ",")
 		return parts, nil
+
+	case col.DataType == "bit" && (typeMap.BitMode == "bit" || typeMap.BitMode == "varbit"):
+		b, ok := val.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("expected []byte for BIT value, got %T", val)
+		}
+		// Determine bit width from column type
+		bitWidth, wOk := mysqlColumnTypeLength(col.ColumnType, "bit")
+		if !wOk {
+			bitWidth = col.Precision
+		}
+		if bitWidth <= 0 {
+			bitWidth = int64(len(b)) * 8
+		}
+		// Convert bytes to binary string, then truncate to the actual bit width
+		var sb strings.Builder
+		for _, byt := range b {
+			fmt.Fprintf(&sb, "%08b", byt)
+		}
+		bits := sb.String()
+		// MySQL may send more bytes than needed; take the rightmost bitWidth bits
+		if int64(len(bits)) > bitWidth {
+			bits = bits[len(bits)-int(bitWidth):]
+		}
+		return bits, nil
 
 	case col.DataType == "year":
 		switch v := val.(type) {
@@ -659,6 +698,14 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 
 	case pgType == "bytea":
 		return "", fmt.Errorf("bytea defaults are not supported (value %q)", raw)
+
+	case strings.HasPrefix(pgType, "bit(") || pgType == "varbit":
+		// MySQL BIT defaults are typically binary literals like b'0' or b'101'
+		if strings.HasPrefix(unquoted, "b'") && strings.HasSuffix(unquoted, "'") {
+			bits := unquoted[2 : len(unquoted)-1]
+			return fmt.Sprintf("B'%s'", bits), nil
+		}
+		return fmt.Sprintf("B'%s'", unquoted), nil
 
 	case pgType == "text[]":
 		vals := parseMySQLSetDefault(unquoted)
