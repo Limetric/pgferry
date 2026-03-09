@@ -80,7 +80,67 @@ instead of aborting.
 
 - **No unsigned integers**: SQLite has no unsigned concept, so `add_unsigned_checks` has no effect.
 - **No enums or sets**: SQLite has no native enum or set types, so `enum_mode` and `set_mode` must remain at their defaults (`"text"`).
-- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `varchar_as_text`, `enum_mode = "check"/"native"`, `set_mode = "text_array"/"text_array_check"`, `bit_mode` (non-default), `string_uuid_as_uuid`, `binary16_uuid_mode` (non-default), `time_mode` (non-default), `zero_date_mode` (non-default), and `spatial_mode` (non-default) produce a config error when used with a SQLite source.
+- **MySQL/MSSQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `varchar_as_text`, `enum_mode = "check"/"native"`, `set_mode = "text_array"/"text_array_check"`, `bit_mode` (non-default), `string_uuid_as_uuid`, `binary16_uuid_mode` (non-default), `time_mode` (non-default), `zero_date_mode` (non-default), `spatial_mode` (non-default), `nvarchar_as_text`, `money_as_numeric = false`, and `xml_as_text` produce a config error when used with a SQLite source.
+
+## MSSQL &rarr; PostgreSQL type table
+
+| MSSQL type | Default PG type | Opt-in PG type | Config flag |
+|---|---|---|---|
+| `int` | `integer` | | |
+| `bigint` | `bigint` | | |
+| `smallint` | `smallint` | | |
+| `tinyint` | `smallint` | | |
+| `bit` | `boolean` | | |
+| `decimal(p,s)` / `numeric(p,s)` | `numeric(p,s)` | | |
+| `float` | `double precision` | | |
+| `real` | `real` | | |
+| `money` | `numeric(19,4)` | `text` | `money_as_numeric` |
+| `smallmoney` | `numeric(10,4)` | `text` | `money_as_numeric` |
+| `char(n)` | `char(n)` | | |
+| `varchar(n)` | `varchar(n)` | | |
+| `varchar(max)` | `text` | | |
+| `nchar(n)` | `char(n)` | `text` | `nvarchar_as_text` |
+| `nvarchar(n)` | `varchar(n)` | `text` | `nvarchar_as_text` |
+| `nvarchar(max)` | `text` | | |
+| `text` / `ntext` | `text` | | |
+| `binary(n)` | `bytea` | | |
+| `varbinary(n)` / `varbinary(max)` | `bytea` | | |
+| `image` | `bytea` | | |
+| `date` | `date` | | |
+| `time` | `time` | | |
+| `datetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
+| `datetime2` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
+| `smalldatetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` (shared with MySQL) |
+| `datetimeoffset` | `timestamptz` | | always timestamptz |
+| `uniqueidentifier` | `uuid` | | |
+| `xml` | `xml` | `text` | `xml_as_text` |
+| `json` | `json` | `jsonb` | `json_as_jsonb` |
+| `sql_variant` | `text` | | |
+| `hierarchyid` | `text` | | |
+| `geography` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `geometry` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `rowversion` / `timestamp` | `bytea` | | MSSQL `timestamp` is NOT a datetime |
+
+Any MSSQL type not in this table is unsupported by default. Set
+`type_mapping.unknown_as_text = true` to coerce unknown types to `text`
+instead of aborting.
+
+### MSSQL type mapping notes
+
+- **`timestamp` is NOT a datetime**: MSSQL's `timestamp` type (alias for `rowversion`) is an 8-byte auto-generated binary value. It maps to `bytea`, not to a PostgreSQL timestamp type.
+- **`nvarchar`/`nchar` length**: MSSQL stores `max_length` in bytes (UCS-2 encoding). pgferry divides by 2 to get the character count used in PostgreSQL `varchar(n)`/`char(n)`.
+- **`(max)` types**: `varchar(max)`, `nvarchar(max)`, and `varbinary(max)` report `max_length = -1` in MSSQL system catalogs. These always map to `text` or `bytea` respectively.
+- **Default expression double-parens**: MSSQL wraps default constraints in extra parentheses (e.g. `((0))`, `(getdate())`). pgferry strips the outer parentheses automatically.
+- **User-defined types**: Resolved to their base system type via `sys.types`. The PostgreSQL mapping uses the underlying system type.
+- **Identity columns**: MSSQL `IDENTITY` columns are mapped to PostgreSQL sequences (same as MySQL `auto_increment`).
+- **Computed columns**: Introspected and reported for manual migration. Values are materialized during data copy.
+- **Snapshot isolation**: `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation level, which requires `ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON` on the source.
+- **Spatial types**: `geography` and `geometry` use method syntax (`.STAsText()`, `.STAsBinary()`) for data extraction, controlled by `spatial_mode`.
+- **`uniqueidentifier`**: SQL Server stores UUIDs with mixed-endian byte ordering (first 3 groups little-endian). pgferry handles byte reordering to produce standard UUID strings.
+- **`money` precision**: Mapped directly to `numeric(19,4)` / `numeric(10,4)` to avoid precision loss through float intermediaries. When `money_as_numeric = false`, maps to `text`.
+- **`sql_variant`**: Mapped to `text`. Values are cast to `nvarchar(max)` server-side during data extraction, so type information (e.g. integers, dates stored in the variant) is converted to their string representation.
+- **Cross-schema foreign keys**: pgferry migrates a single MSSQL schema at a time. Foreign keys referencing tables in a different schema will produce a warning and may fail during post-migration FK creation if the referenced table is not in the target PostgreSQL schema.
+- **MySQL-only options rejected**: `tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `enum_mode = "check"/"native"`, `set_mode = "text_array"/"text_array_check"`, `bit_mode` (non-default), `string_uuid_as_uuid`, `binary16_uuid_mode` (non-default), `time_mode` (non-default), `zero_date_mode` (non-default), `widen_unsigned_integers = false`, `collation_mode = "auto"`, `collation_map`, and `ci_as_citext` produce a config error when used with an MSSQL source.
 
 ## Type mapping options
 
@@ -90,7 +150,7 @@ All options live under `[type_mapping]` in your TOML config:
 [type_mapping]
 tinyint1_as_boolean = false       # tinyint(1) → boolean (MySQL only)
 binary16_as_uuid = false          # binary(16) → uuid (MySQL only)
-datetime_as_timestamptz = false   # datetime → timestamptz (MySQL only)
+datetime_as_timestamptz = false   # datetime → timestamptz (MySQL/MSSQL)
 varchar_as_text = false           # varchar(n)/char(n) → text (MySQL only)
 json_as_jsonb = false             # json → jsonb
 sanitize_json_null_bytes = true   # strip \x00 from JSON values
@@ -102,7 +162,10 @@ string_uuid_as_uuid = false       # char(36)/varchar(36) → uuid (MySQL only)
 binary16_uuid_mode = "rfc4122"    # "rfc4122" or "mysql_uuid_to_bin_swap" (MySQL only)
 time_mode = "time"                # "text", "time", or "interval" (MySQL only)
 zero_date_mode = "null"           # "null" or "error" (MySQL only)
-spatial_mode = "off"              # "off", "wkb_bytea", or "wkt_text" (MySQL only)
+spatial_mode = "off"              # "off", "wkb_bytea", or "wkt_text" (MySQL/MSSQL)
+nvarchar_as_text = false          # nvarchar(n)/nchar(n) → text (MSSQL only)
+money_as_numeric = true           # money/smallmoney → numeric (MSSQL only)
+xml_as_text = false               # xml → text instead of xml (MSSQL only)
 collation_mode = "none"           # "none" or "auto" (MySQL only)
 ci_as_citext = false              # _ci text columns → citext (MySQL only)
 
@@ -181,9 +244,11 @@ Controls how MySQL `TIME` columns are mapped (MySQL only):
 
 ### Spatial mode
 
-Controls how MySQL spatial types (`geometry`, `point`, `linestring`, `polygon`,
-`multipoint`, `multilinestring`, `multipolygon`, `geometrycollection`) are mapped
-(MySQL only):
+Controls how spatial types are mapped (MySQL and MSSQL).
+
+MySQL spatial types: `geometry`, `point`, `linestring`, `polygon`,
+`multipoint`, `multilinestring`, `multipolygon`, `geometrycollection`.
+MSSQL spatial types: `geography`, `geometry`.
 
 - **`off`** (default) &mdash; spatial types are unsupported. Columns with spatial
   types cause an error (or map to `text` if `unknown_as_text = true`).
@@ -284,3 +349,23 @@ SQLite default values are mapped to PostgreSQL equivalents:
 | Numeric literal (`42`, `3.14`) | Passed through |
 | `0`/`1` on boolean column | `FALSE`/`TRUE` |
 | String literal (`'hello'`) | Passed through as-is |
+
+### MSSQL default values
+
+MSSQL wraps default constraint expressions in extra parentheses. pgferry strips
+outer parentheses and maps common functions:
+
+| MSSQL default | PostgreSQL default |
+|---|---|
+| `((0))` | `0` |
+| `((1))` on `bit` column | `TRUE` |
+| `((0))` on `bit` column | `FALSE` |
+| `(getdate())` | `CURRENT_TIMESTAMP` |
+| `(sysdatetime())` | `CURRENT_TIMESTAMP` |
+| `(newid())` | `gen_random_uuid()` |
+| `(newsequentialid())` | `gen_random_uuid()` |
+| `(N'string')` | `'string'` |
+| `(suser_sname())` | `CURRENT_USER` |
+| `(user_name())` | `CURRENT_USER` |
+| Numeric literal (`((42))`) | `42` |
+| String literal (`('hello')`) | `'hello'` |

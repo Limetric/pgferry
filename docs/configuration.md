@@ -37,7 +37,7 @@ data_only = false
 
 # Source read consistency mode:
 #   "none"      — each table is read in its own connection (parallel, default)
-#   "single_tx" — all tables read inside one read-only transaction (sequential, MySQL only)
+#   "single_tx" — all tables read inside one read-only transaction (sequential, MySQL/MSSQL)
 source_snapshot_mode = "none"
 
 # Convert source identifiers to snake_case (e.g. userName → user_name)
@@ -96,13 +96,16 @@ validation = "none"
 
 # Source database configuration (required)
 [source]
-type = "mysql"                                       # "mysql" or "sqlite"
+type = "mysql"                                       # "mysql", "sqlite", or "mssql"
 dsn = "user:pass@tcp(host:port)/dbname"              # MySQL DSN
 # dsn = "/path/to/database.db"                       # SQLite file path
 # dsn = "file:/path/to/database.db?cache=shared"     # SQLite file URI
+# dsn = "sqlserver://user:pass@host:port?database=db"  # MSSQL URL format
 charset = "utf8mb4"                                  # MySQL connection charset (default: "utf8mb4")
                                                      # Injected into DSN as charset= param unless already present
-                                                     # MySQL only — config error for SQLite if not "utf8mb4"
+                                                     # MySQL only — config error for SQLite/MSSQL if not "utf8mb4"
+source_schema = "dbo"                                # MSSQL schema to introspect (default: "dbo")
+                                                     # MSSQL only
 
 [target]
 dsn = "postgres://user:pass@host:port/dbname?sslmode=disable"
@@ -110,7 +113,7 @@ dsn = "postgres://user:pass@host:port/dbname?sslmode=disable"
 [type_mapping]
 tinyint1_as_boolean = false       # tinyint(1) → boolean instead of smallint (MySQL only)
 binary16_as_uuid = false          # binary(16) → uuid instead of bytea (MySQL only)
-datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp (MySQL only)
+datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp (MySQL/MSSQL)
 varchar_as_text = false           # varchar(n)/char(n) → text instead of varchar(n) (MySQL only)
 json_as_jsonb = false             # json → jsonb instead of json
 widen_unsigned_integers = true    # unsigned int → bigint; set false to keep as integer (MySQL only)
@@ -146,9 +149,14 @@ time_mode = "time"
 #                                   "error" aborts on zero dates
 zero_date_mode = "null"
 
-# Spatial type handling (MySQL only): "off" (default, unsupported);
+# Spatial type handling (MySQL/MSSQL): "off" (default, unsupported);
 #   "wkb_bytea" stores as bytea; "wkt_text" stores as text via ST_AsText()
 spatial_mode = "off"
+
+# MSSQL-only type mapping options
+nvarchar_as_text = false          # nvarchar(n)/nchar(n) → text instead of varchar(n)/char(n) (MSSQL only)
+money_as_numeric = true           # money → numeric(19,4), smallmoney → numeric(10,4) (MSSQL only)
+xml_as_text = false               # xml → text instead of xml (MSSQL only)
 
 # Collation handling (MySQL only):
 #   "none"  (default) — no COLLATE clauses added; warnings are still reported
@@ -191,29 +199,47 @@ SQLite accepts file paths or file URIs. pgferry opens the database in **read-onl
 
 **Not supported:** `:memory:`, `file::memory:`, `mode=memory` — pgferry requires a real file.
 
+## MSSQL DSN formats
+
+MSSQL accepts URL-format or ADO-format connection strings:
+
+| Format | Example | Notes |
+|---|---|---|
+| URL format | `sqlserver://user:pass@host:1433?database=mydb` | Recommended |
+| URL with instance | `sqlserver://user:pass@host/instance?database=mydb` | Named instances |
+| ADO format | `server=host;user id=user;password=pass;database=mydb` | Legacy format |
+
+The `database` parameter is required &mdash; pgferry extracts the database name from the DSN for introspection queries.
+
+**Azure SQL Database** is supported. Use the URL format with your Azure SQL server hostname (e.g. `myserver.database.windows.net`).
+
 ## Source-specific constraints
 
-| Constraint | MySQL | SQLite |
-|---|---|---|
-| `source_snapshot_mode = "single_tx"` | Supported | Not supported (config error) |
-| Workers | Configurable (`workers` setting) | Always 1 (capped internally) |
-| `source.charset` | Supported (default `"utf8mb4"`) | Config error if not default |
-| `tinyint1_as_boolean` | Supported | Config error |
-| `binary16_as_uuid` | Supported | Config error |
-| `datetime_as_timestamptz` | Supported | Config error |
-| `varchar_as_text` | Supported | Config error |
-| `enum_mode = "check"` or `"native"` | Supported | Config error |
-| `set_mode = "text_array"` or `"text_array_check"` | Supported | Config error |
-| `bit_mode` (non-default) | Supported | Config error |
-| `string_uuid_as_uuid` | Supported | Config error |
-| `binary16_uuid_mode` (non-default) | Supported | Config error |
-| `time_mode` (non-default) | Supported | Config error |
-| `zero_date_mode` (non-default) | Supported | Config error |
-| `spatial_mode` (non-default) | Supported | Config error |
-| `widen_unsigned_integers = false` | Supported | Config error |
-| `collation_mode = "auto"` | Supported | Config error |
-| `collation_map` | Supported | Config error if non-empty |
-| `ci_as_citext` | Supported | Config error |
+| Constraint | MySQL | SQLite | MSSQL |
+|---|---|---|---|
+| `source_snapshot_mode = "single_tx"` | Supported | Not supported (config error) | Supported (requires `ALLOW_SNAPSHOT_ISOLATION ON`) |
+| Workers | Configurable (`workers` setting) | Always 1 (capped internally) | Configurable (`workers` setting) |
+| `source.charset` | Supported (default `"utf8mb4"`) | Config error if not default | Config error if not default |
+| `source.source_schema` | Not applicable | Not applicable | Supported (default `"dbo"`) |
+| `tinyint1_as_boolean` | Supported | Config error | Config error |
+| `binary16_as_uuid` | Supported | Config error | Config error |
+| `datetime_as_timestamptz` | Supported | Config error | Supported |
+| `varchar_as_text` | Supported | Config error | Config error |
+| `nvarchar_as_text` | Config error | Config error | Supported |
+| `money_as_numeric = false` | Config error | Config error | Supported |
+| `xml_as_text` | Config error | Config error | Supported |
+| `enum_mode = "check"` or `"native"` | Supported | Config error | Config error |
+| `set_mode = "text_array"` or `"text_array_check"` | Supported | Config error | Config error |
+| `bit_mode` (non-default) | Supported | Config error | Config error |
+| `string_uuid_as_uuid` | Supported | Config error | Config error |
+| `binary16_uuid_mode` (non-default) | Supported | Config error | Config error |
+| `time_mode` (non-default) | Supported | Config error | Config error |
+| `zero_date_mode` (non-default) | Supported | Config error | Config error |
+| `spatial_mode` (non-default) | Supported | Config error | Supported |
+| `widen_unsigned_integers = false` | Supported | Config error | Config error |
+| `collation_mode = "auto"` | Supported | Config error | Config error |
+| `collation_map` | Supported | Config error if non-empty | Config error if non-empty |
+| `ci_as_citext` | Supported | Config error | Config error |
 
 ## Validation rules
 
@@ -224,7 +250,7 @@ pgferry validates the config at load time and reports errors before connecting t
 | `schema` | Required, must be non-empty after trimming whitespace |
 | `on_schema_exists` | Must be `"error"` or `"recreate"` |
 | `source_snapshot_mode` | Must be `"none"` or `"single_tx"` |
-| `source.type` | Required, must be `"mysql"` or `"sqlite"` |
+| `source.type` | Required, must be `"mysql"`, `"sqlite"`, or `"mssql"` |
 | `source.dsn` | Required |
 | `type_mapping.enum_mode` | Must be `"text"`, `"check"`, or `"native"` |
 | `type_mapping.set_mode` | Must be `"text"`, `"text_array"`, or `"text_array_check"` |
@@ -234,7 +260,8 @@ pgferry validates the config at load time and reports errors before connecting t
 | `type_mapping.zero_date_mode` | Must be `"null"` or `"error"` |
 | `type_mapping.spatial_mode` | Must be `"off"`, `"wkb_bytea"`, or `"wkt_text"` |
 | `type_mapping.collation_mode` | Must be `"none"` or `"auto"` |
-| `source.charset` | MySQL-only; config error for SQLite if not `"utf8mb4"` |
+| `source.charset` | MySQL-only; config error for SQLite/MSSQL if not `"utf8mb4"` |
+| `source.source_schema` | MSSQL-only; defaults to `"dbo"` |
 | `validation` | Must be `"none"` or `"row_count"` |
 | `chunk_size` | Defaults to `100000` if &le; 0 |
 | `resume` + `on_schema_exists=recreate` | Incompatible &mdash; recreate would destroy data to resume into |
@@ -242,7 +269,7 @@ pgferry validates the config at load time and reports errors before connecting t
 | `schema_only` + `data_only` | Mutually exclusive &mdash; cannot both be `true` |
 | `target.dsn` | Required |
 | `workers` | Defaults to `min(NumCPU, 8)` if &le; 0; capped at 1 for SQLite |
-| Source-specific type mappings | MySQL-only options rejected for SQLite sources |
+| Source-specific type mappings | Source-specific options rejected for incompatible sources |
 
 ## Defaults
 
@@ -283,4 +310,8 @@ Fields omitted from the TOML file use these defaults:
 | `collation_mode` | `"none"` |
 | `collation_map` | `nil` (empty) |
 | `ci_as_citext` | `false` |
+| `nvarchar_as_text` | `false` |
+| `money_as_numeric` | `true` |
+| `xml_as_text` | `false` |
 | `source.charset` | `"utf8mb4"` |
+| `source.source_schema` | `"dbo"` |

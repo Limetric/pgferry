@@ -18,6 +18,7 @@ type sqliteSourceDB struct {
 
 func (s *sqliteSourceDB) SetSnakeCaseIdentifiers(enabled bool) { s.snakeCaseIDs = enabled }
 func (s *sqliteSourceDB) SetCharset(_ string)                  {}
+func (s *sqliteSourceDB) SetSourceSchema(_ string)             {}
 
 // identName converts a source identifier to its PostgreSQL name.
 // When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
@@ -223,10 +224,19 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 		errs = append(errs, fmt.Sprintf("zero_date_mode=%q is a MySQL-only option", typeMap.ZeroDateMode))
 	}
 	if typeMap.SpatialMode != "off" {
-		errs = append(errs, fmt.Sprintf("spatial_mode=%q is a MySQL-only option", typeMap.SpatialMode))
+		errs = append(errs, fmt.Sprintf("spatial_mode=%q is a MySQL/MSSQL-only option", typeMap.SpatialMode))
 	}
 	if typeMap.CIAsCitext {
 		errs = append(errs, "ci_as_citext is a MySQL-only option")
+	}
+	if typeMap.NvarcharAsText {
+		errs = append(errs, "nvarchar_as_text is a MSSQL-only option")
+	}
+	if !typeMap.MoneyAsNumeric {
+		errs = append(errs, "money_as_numeric is a MSSQL-only option")
+	}
+	if typeMap.XmlAsText {
+		errs = append(errs, "xml_as_text is a MSSQL-only option")
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid type_mapping for SQLite source: %s", strings.Join(errs, "; "))

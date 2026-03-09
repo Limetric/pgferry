@@ -39,9 +39,10 @@ type MigrationConfig struct {
 
 // SourceConfig identifies the source database engine and connection string.
 type SourceConfig struct {
-	Type    string `toml:"type"` // "mysql" or "sqlite"
-	DSN     string `toml:"dsn"`
-	Charset string `toml:"charset"` // character set for MySQL connection (default: "utf8mb4")
+	Type         string `toml:"type"`          // "mysql", "sqlite", or "mssql"
+	DSN          string `toml:"dsn"`
+	Charset      string `toml:"charset"`       // character set for MySQL connection (default: "utf8mb4")
+	SourceSchema string `toml:"source_schema"` // MSSQL schema to read from (default: "dbo")
 }
 
 type TargetConfig struct {
@@ -75,7 +76,10 @@ type TypeMappingConfig struct {
 	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
 	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
 	ZeroDateMode          string            `toml:"zero_date_mode"`      // null|error (MySQL only)
-	SpatialMode           string            `toml:"spatial_mode"`        // off|wkb_bytea|wkt_text (MySQL only)
+	SpatialMode           string            `toml:"spatial_mode"`        // off|wkb_bytea|wkt_text (MySQL/MSSQL)
+	NvarcharAsText        bool              `toml:"nvarchar_as_text"`    // map nvarchar(n) to text (MSSQL only)
+	MoneyAsNumeric        bool              `toml:"money_as_numeric"`    // map money to numeric(19,4) (MSSQL only, default true)
+	XmlAsText             bool              `toml:"xml_as_text"`         // map xml to text (MSSQL only)
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -236,7 +240,7 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 
 	// Source validation
 	if cfg.Source.Type == "" {
-		return fmt.Errorf("source.type is required (must be mysql or sqlite)")
+		return fmt.Errorf("source.type is required (must be mysql, sqlite, or mssql)")
 	}
 	src, err := newSourceDB(cfg.Source.Type)
 	if err != nil {
@@ -255,8 +259,13 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 
 	// Source-specific charset validation (charset is MySQL-only)
-	if cfg.Source.Type == "sqlite" && cfg.Source.Charset != "utf8mb4" {
+	if (cfg.Source.Type == "sqlite" || cfg.Source.Type == "mssql") && cfg.Source.Charset != "utf8mb4" {
 		return fmt.Errorf("source.charset is a MySQL-only option")
+	}
+
+	// Default source_schema for MSSQL
+	if cfg.Source.Type == "mssql" && cfg.Source.SourceSchema == "" {
+		cfg.Source.SourceSchema = "dbo"
 	}
 
 	// Source-specific type mapping validation
@@ -317,5 +326,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		TimeMode:              "time",
 		ZeroDateMode:          "null",
 		SpatialMode:           "off",
+		MoneyAsNumeric:        true,
 	}
 }

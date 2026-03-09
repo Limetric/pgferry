@@ -152,14 +152,25 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	srcDB.SetMaxOpenConns(1)
 	srcDB.SetMaxIdleConns(1)
 
-	if _, err := srcDB.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
-		return fmt.Errorf("set source transaction isolation: %w", err)
+	var tx *sql.Tx
+	switch src.Name() {
+	case "MSSQL":
+		if _, err := srcDB.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"); err != nil {
+			return fmt.Errorf("set source transaction isolation (hint: ensure ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON): %w", err)
+		}
+		tx, err = srcDB.BeginTx(ctx, &sql.TxOptions{
+			Isolation: sql.LevelSnapshot,
+			ReadOnly:  true,
+		})
+	default:
+		if _, err := srcDB.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
+			return fmt.Errorf("set source transaction isolation: %w", err)
+		}
+		tx, err = srcDB.BeginTx(ctx, &sql.TxOptions{
+			Isolation: sql.LevelRepeatableRead,
+			ReadOnly:  true,
+		})
 	}
-
-	tx, err := srcDB.BeginTx(ctx, &sql.TxOptions{
-		Isolation: sql.LevelRepeatableRead,
-		ReadOnly:  true,
-	})
 	if err != nil {
 		return fmt.Errorf("begin source transaction: %w", err)
 	}
@@ -480,8 +491,22 @@ func buildSourceSelectQuery(src SourceDB, table Table, typeMap TypeMappingConfig
 // wkt_text mode use ST_AsText() to produce Well-Known Text output.
 func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) string {
 	quoted := src.QuoteIdentifier(col.SourceName)
-	if src.Name() == "MySQL" && isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text" {
-		return fmt.Sprintf("ST_AsText(%s) AS %s", quoted, quoted)
+	switch src.Name() {
+	case "MySQL":
+		if isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text" {
+			return fmt.Sprintf("ST_AsText(%s) AS %s", quoted, quoted)
+		}
+	case "MSSQL":
+		switch {
+		case col.DataType == "hierarchyid":
+			return fmt.Sprintf("%s.ToString() AS %s", quoted, quoted)
+		case isMSSQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
+			return fmt.Sprintf("%s.STAsText() AS %s", quoted, quoted)
+		case isMSSQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
+			return fmt.Sprintf("%s.STAsBinary() AS %s", quoted, quoted)
+		case col.DataType == "sql_variant":
+			return fmt.Sprintf("CAST(%s AS nvarchar(max)) AS %s", quoted, quoted)
+		}
 	}
 	return quoted
 }

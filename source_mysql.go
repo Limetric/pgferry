@@ -20,6 +20,7 @@ type mysqlSourceDB struct {
 
 func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
 func (m *mysqlSourceDB) SetCharset(charset string)            { m.charset = charset }
+func (m *mysqlSourceDB) SetSourceSchema(_ string)             {}
 
 // identName converts a source identifier to its PostgreSQL name.
 // When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
@@ -87,7 +88,22 @@ func (m *mysqlSourceDB) QuoteIdentifier(name string) string {
 func (m *mysqlSourceDB) SupportsSnapshotMode() bool { return true }
 func (m *mysqlSourceDB) MaxWorkers() int             { return 0 }
 
-func (m *mysqlSourceDB) ValidateTypeMapping(_ TypeMappingConfig) error { return nil }
+func (m *mysqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
+	var errs []string
+	if typeMap.NvarcharAsText {
+		errs = append(errs, "nvarchar_as_text is a MSSQL-only option")
+	}
+	if !typeMap.MoneyAsNumeric {
+		errs = append(errs, "money_as_numeric is a MSSQL-only option")
+	}
+	if typeMap.XmlAsText {
+		errs = append(errs, "xml_as_text is a MSSQL-only option")
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("invalid type_mapping for MySQL source: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
 
 // --- Schema introspection (moved from schema.go) ---
 

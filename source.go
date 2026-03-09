@@ -52,6 +52,11 @@ type SourceDB interface {
 	// SetCharset sets the character set for the source connection.
 	// For MySQL, this is injected into the DSN. For SQLite, this is a no-op.
 	SetCharset(charset string)
+
+	// SetSourceSchema sets the source schema to introspect.
+	// For MSSQL, this filters sys.* queries by schema name (default "dbo").
+	// No-op for MySQL and SQLite.
+	SetSourceSchema(schema string)
 }
 
 // newSourceDB returns a SourceDB implementation for the given source type.
@@ -61,7 +66,9 @@ func newSourceDB(sourceType string) (SourceDB, error) {
 		return &mysqlSourceDB{}, nil
 	case "sqlite":
 		return &sqliteSourceDB{}, nil
+	case "mssql":
+		return &mssqlSourceDB{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported source type %q (must be mysql or sqlite)", sourceType)
+		return nil, fmt.Errorf("unsupported source type %q (must be mysql, sqlite, or mssql)", sourceType)
 	}
 }
