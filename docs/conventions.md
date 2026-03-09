@@ -27,8 +27,11 @@ This defers sequence creation to avoid conflicts during parallel COPY.
 ## Zero dates
 
 MySQL allows `0000-00-00` and `0000-00-00 00:00:00` as valid date/datetime
-values. PostgreSQL does not accept these. pgferry converts zero dates to `NULL`
-during data streaming.
+values. PostgreSQL does not accept these. Behavior is controlled by
+`type_mapping.zero_date_mode`:
+
+- **`null`** (default) &mdash; converts zero dates to `NULL` during data streaming.
+- **`error`** &mdash; aborts the migration with an error when a zero date is encountered.
 
 ## Orphan cleanup
 
@@ -135,8 +138,14 @@ The checkpoint records which chunks and tables have been completed.
 
 ### MySQL
 
-- `enum_mode` and `set_mode` control enum/set handling
+- `enum_mode` and `set_mode` control enum/set handling (including `native` enums and `text_array_check` sets)
 - `tinyint1_as_boolean`, `binary16_as_uuid`, `datetime_as_timestamptz`, `varchar_as_text` enable semantic coercions
+- `string_uuid_as_uuid` maps `char(36)`/`varchar(36)` to `uuid`
+- `binary16_uuid_mode` controls byte order for `binary16_as_uuid` (RFC 4122 vs MySQL swap)
+- `bit_mode` controls BIT(n) mapping (`bytea`, `bit`, or `varbit`)
+- `time_mode` controls TIME mapping (`time`, `text`, or `interval`)
+- `zero_date_mode` controls zero-date handling (`null` or `error`)
+- `spatial_mode` controls spatial type mapping (`off`, `wkb_bytea`, or `wkt_text`)
 - `source_snapshot_mode = "single_tx"` enables consistent snapshots
 - Unsigned integers are widened by default (`widen_unsigned_integers = true`) to preserve the full range; set `false` to keep the original type size
 - Unsigned integer ranges can be enforced via `add_unsigned_checks`
@@ -168,6 +177,9 @@ Enum behavior is controlled by `type_mapping.enum_mode` (MySQL only):
 
 - **`text`** (default) &mdash; the column is created as `text` with no constraint. Any string value is accepted.
 - **`check`** &mdash; the column is created as `text` with a `CHECK` constraint restricting values to the original MySQL enum's allowed set.
+- **`native`** &mdash; creates a native PostgreSQL enum type. Type names are content-addressable
+  (`pgferry_enum_XXXXXXXX` via FNV32a hash of sorted values), so columns with identical value
+  sets share the same type. Enum types are created before table creation.
 
 ## Set handling
 
@@ -175,6 +187,45 @@ Set behavior is controlled by `type_mapping.set_mode` (MySQL only):
 
 - **`text`** (default) &mdash; the comma-separated set value is stored as a single `text` string (e.g. `"a,b,c"`).
 - **`text_array`** &mdash; the value is split on commas and stored as a PostgreSQL `text[]` array (e.g. `{"a","b","c"}`).
+- **`text_array_check`** &mdash; like `text_array`, but adds a `CHECK` constraint restricting array
+  elements to the original MySQL set's allowed values.
+
+## BIT handling
+
+BIT column behavior is controlled by `type_mapping.bit_mode` (MySQL only):
+
+- **`bytea`** (default) &mdash; stores as raw bytes.
+- **`bit`** &mdash; stores as PostgreSQL `bit(n)` with the source width. Values are converted to binary strings during COPY.
+- **`varbit`** &mdash; stores as PostgreSQL `varbit`. Values are converted to binary strings during COPY.
+
+## TIME handling
+
+TIME column behavior is controlled by `type_mapping.time_mode` (MySQL only):
+
+- **`time`** (default) &mdash; stores as PostgreSQL `time`. Values outside `00:00:00`&ndash;`23:59:59` will error.
+- **`text`** &mdash; stores the original string representation as `text`.
+- **`interval`** &mdash; stores as PostgreSQL `interval`, converting `HH:MM:SS` to `HH hours MM mins SS secs`.
+
+## Spatial types
+
+Spatial type behavior is controlled by `type_mapping.spatial_mode` (MySQL only):
+
+- **`off`** (default) &mdash; spatial columns are unsupported (error or `text` with `unknown_as_text`).
+- **`wkb_bytea`** &mdash; stores as `bytea` using MySQL's internal binary representation.
+- **`wkt_text`** &mdash; stores as `text` using Well-Known Text via `ST_AsText()`.
+
+## String UUID mapping
+
+When `type_mapping.string_uuid_as_uuid = true` (MySQL only), `char(36)` and
+`varchar(36)` columns are mapped to PostgreSQL `uuid`. Values are validated
+and lowercased during COPY; invalid UUIDs cause an error.
+
+## Binary UUID byte order
+
+When `binary16_as_uuid = true`, the `binary16_uuid_mode` controls byte interpretation:
+
+- **`rfc4122`** (default) &mdash; standard byte order.
+- **`mysql_uuid_to_bin_swap`** &mdash; reverses MySQL's `UUID_TO_BIN(uuid, 1)` time-field swap.
 
 ## Unsigned checks
 
