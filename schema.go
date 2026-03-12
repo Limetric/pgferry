@@ -11,7 +11,7 @@ var pgReservedWords = map[string]bool{
 	"all": true, "analyse": true, "analyze": true, "and": true, "any": true,
 	"array": true, "as": true, "asc": true, "authorization": true, "between": true,
 	"binary": true, "both": true, "case": true, "cast": true, "check": true,
-	"collate": true, "column": true, "constraint": true, "create": true, "cross": true,
+	"collate": true, "collation": true, "column": true, "constraint": true, "create": true, "cross": true,
 	"current_date": true, "current_role": true, "current_time": true,
 	"current_timestamp": true, "current_user": true, "default": true, "deferrable": true,
 	"desc": true, "distinct": true, "do": true, "else": true, "end": true, "except": true,

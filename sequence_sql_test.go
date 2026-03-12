@@ -40,3 +40,16 @@ func TestResetSequenceStatements_QuotesNonTrivialSequenceName(t *testing.T) {
 		t.Fatalf("nextval statement = %q", stmts[2])
 	}
 }
+
+func TestResetSequenceStatements_QuotesReservedColumnName(t *testing.T) {
+	table := Table{PGName: "audit"}
+	col := Column{PGName: "collation", Extra: "auto_increment"}
+
+	stmts := resetSequenceStatements("app", table, col)
+	if !strings.Contains(stmts[1], `SELECT MAX("collation") FROM app.audit`) {
+		t.Fatalf("setval statement = %q", stmts[1])
+	}
+	if !strings.Contains(stmts[2], `ALTER TABLE app.audit ALTER COLUMN "collation" SET DEFAULT`) {
+		t.Fatalf("nextval statement = %q", stmts[2])
+	}
+}
