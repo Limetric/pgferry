@@ -14,6 +14,7 @@ import (
 type MigrationConfig struct {
 	Source                            SourceConfig      `toml:"source"`
 	Target                            TargetConfig      `toml:"target"`
+	PostGIS                           PostGISConfig     `toml:"postgis"`
 	Schema                            string            `toml:"schema"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
@@ -49,6 +50,11 @@ type TargetConfig struct {
 	DSN string `toml:"dsn"`
 }
 
+type PostGISConfig struct {
+	Enabled         bool `toml:"enabled"`
+	CreateExtension bool `toml:"create_extension"`
+}
+
 type HooksConfig struct {
 	BeforeData []string `toml:"before_data"`
 	AfterData  []string `toml:"after_data"`
@@ -80,6 +86,9 @@ type TypeMappingConfig struct {
 	NvarcharAsText        bool              `toml:"nvarchar_as_text"`    // map nvarchar(n) to text (MSSQL only)
 	MoneyAsNumeric        bool              `toml:"money_as_numeric"`    // map money to numeric(19,4) (MSSQL only, default true)
 	XmlAsText             bool              `toml:"xml_as_text"`         // map xml to text (MSSQL only)
+
+	// UsePostGIS is derived from the top-level [postgis] feature config.
+	UsePostGIS bool `toml:"-"`
 }
 
 // loadConfig reads a TOML config file and returns a MigrationConfig with defaults applied.
@@ -246,6 +255,17 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if err != nil {
 		return err
 	}
+	if cfg.PostGIS.CreateExtension && !cfg.PostGIS.Enabled {
+		return fmt.Errorf("postgis.create_extension requires postgis.enabled = true")
+	}
+	if cfg.PostGIS.Enabled {
+		if cfg.Source.Type != "mysql" {
+			return fmt.Errorf("postgis is currently only supported for mysql sources")
+		}
+		if cfg.TypeMapping.SpatialMode != "off" {
+			return fmt.Errorf("postgis.enabled requires type_mapping.spatial_mode = \"off\"")
+		}
+	}
 	if cfg.Source.Charset == "" {
 		cfg.Source.Charset = "utf8mb4"
 	}
@@ -331,4 +351,10 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		SpatialMode:           "off",
 		MoneyAsNumeric:        true,
 	}
+}
+
+func effectiveTypeMapping(cfg *MigrationConfig) TypeMappingConfig {
+	tm := cfg.TypeMapping
+	tm.UsePostGIS = cfg.PostGIS.Enabled
+	return tm
 }

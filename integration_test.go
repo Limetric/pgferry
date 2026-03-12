@@ -661,6 +661,85 @@ dsn = %q
 	}
 }
 
+func TestIntegration_MySQL_PostGIS(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLSpatial(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	if _, err := pgPool.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS postgis"); err != nil {
+		t.Skipf("skipping postgis integration test: %v", err)
+	}
+
+	pgSchema := integrationSchemaName("inttest_postgis")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+
+[postgis]
+enabled = true
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "places", 3)
+	assertFormattedColumnType(t, pgPool, pgSchema, "places", "shape", "geometry")
+	assertIndexMethod(t, pgPool, pgSchema, "places", "gist")
+
+	var (
+		name string
+		wkt  string
+		srid int
+	)
+	err = pgPool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT name, ST_AsText(shape), ST_SRID(shape)
+		FROM %s.places
+		WHERE id = 1
+	`, pgIdent(pgSchema))).Scan(&name, &wkt, &srid)
+	if err != nil {
+		t.Fatalf("query migrated geometry: %v", err)
+	}
+	if name != "amsterdam" {
+		t.Fatalf("name = %q, want amsterdam", name)
+	}
+	if wkt != "POINT(4.9 52.37)" {
+		t.Fatalf("wkt = %q, want POINT(4.9 52.37)", wkt)
+	}
+	if srid != 4326 {
+		t.Fatalf("srid = %d, want 4326", srid)
+	}
+
+	var nullCount int
+	err = pgPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.places WHERE shape IS NULL", pgIdent(pgSchema))).Scan(&nullCount)
+	if err != nil {
+		t.Fatalf("count NULL geometries: %v", err)
+	}
+	if nullCount != 1 {
+		t.Fatalf("NULL geometry rows = %d, want 1", nullCount)
+	}
+}
+
 func seedSQLite(t *testing.T, dbPath string) {
 	t.Helper()
 
@@ -846,6 +925,29 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("seed mysql without orphans %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
+func seedMySQLSpatial(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS places",
+		`CREATE TABLE places (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			shape POINT NULL,
+			SPATIAL INDEX idx_places_shape (shape)
+		)`,
+		"INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326))",
+		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
+		"INSERT INTO places (name, shape) VALUES ('unknown', NULL)",
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql spatial %q: %v", stmt[:min(len(stmt), 60)], err)
 		}
 	}
 }
@@ -1598,5 +1700,41 @@ func assertTablePersistence(t *testing.T, pool *pgxpool.Pool, schema, table, wan
 	}
 	if got != want {
 		t.Errorf("%s.%s relpersistence: got %q, want %q", schema, table, got, want)
+	}
+}
+
+func assertFormattedColumnType(t *testing.T, pool *pgxpool.Pool, schema, table, column, want string) {
+	t.Helper()
+
+	var got string
+	err := pool.QueryRow(context.Background(), `
+		SELECT format_type(a.atttypid, a.atttypmod)
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2 AND a.attname = $3 AND a.attnum > 0
+	`, schema, table, column).Scan(&got)
+	if err != nil {
+		t.Fatalf("check formatted type for %s.%s.%s: %v", schema, table, column, err)
+	}
+	if got != want {
+		t.Fatalf("%s.%s.%s formatted type: got %q, want %q", schema, table, column, got, want)
+	}
+}
+
+func assertIndexMethod(t *testing.T, pool *pgxpool.Pool, schema, table, method string) {
+	t.Helper()
+
+	var count int
+	err := pool.QueryRow(context.Background(), `
+		SELECT COUNT(*)
+		FROM pg_indexes
+		WHERE schemaname = $1 AND tablename = $2 AND indexdef ILIKE '%' || $3 || '%'
+	`, schema, table, method).Scan(&count)
+	if err != nil {
+		t.Fatalf("check index method on %s.%s: %v", schema, table, err)
+	}
+	if count == 0 {
+		t.Fatalf("no %s index found on %s.%s", method, schema, table)
 	}
 }

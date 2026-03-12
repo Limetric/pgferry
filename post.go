@@ -16,6 +16,7 @@ import (
 // 1. SET LOGGED, 2. PKs, 3. Indexes, 4. before_fk hooks, 5. orphan cleanup, 6. FKs, 7. Sequences, 8. optional triggers, 9. after_all hooks
 func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *MigrationConfig) error {
 	pgSchema := cfg.Schema
+	typeMap := effectiveTypeMapping(cfg)
 
 	// data_only: skip all DDL steps, only reset sequences + after_all hooks
 	if cfg.DataOnly {
@@ -43,7 +44,7 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 	}
 
 	log.Printf("  indexes...")
-	if err := addIndexes(ctx, pool, schema, pgSchema, cfg.IndexWorkers); err != nil {
+	if err := addIndexes(ctx, pool, schema, pgSchema, cfg.IndexWorkers, typeMap); err != nil {
 		return fmt.Errorf("indexes: %w", err)
 	}
 
@@ -74,7 +75,7 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 
 	if cfg.AddUnsignedChecks {
 		log.Printf("  unsigned checks...")
-		if err := addUnsignedChecks(ctx, pool, schema, pgSchema, cfg.TypeMapping); err != nil {
+		if err := addUnsignedChecks(ctx, pool, schema, pgSchema, typeMap); err != nil {
 			return fmt.Errorf("unsigned checks: %w", err)
 		}
 	} else {
@@ -244,10 +245,10 @@ type indexJob struct {
 }
 
 // planIndexJobs collects all supported index creation jobs and logs skipped indexes.
-func planIndexJobs(schema *Schema, pgSchema string) (jobs []indexJob, skipped int) {
+func planIndexJobs(schema *Schema, pgSchema string, typeMap TypeMappingConfig) (jobs []indexJob, skipped int) {
 	for _, t := range schema.Tables {
 		for _, idx := range t.Indexes {
-			if reason, unsupported := indexUnsupportedReason(idx); unsupported {
+			if reason, unsupported := indexUnsupportedReason(t, idx, typeMap); unsupported {
 				log.Printf("    skipping index %s on %s.%s: %s", idx.SourceName, pgSchema, t.PGName, reason)
 				skipped++
 				continue
@@ -259,25 +260,37 @@ func planIndexJobs(schema *Schema, pgSchema string) (jobs []indexJob, skipped in
 }
 
 // createIndex executes a single CREATE INDEX statement.
-func createIndex(ctx context.Context, pool *pgxpool.Pool, pgSchema string, t Table, idx Index) error {
-	cols := quotedOrderedColumnList(idx.Columns, idx.ColumnOrders)
-	unique := ""
-	if idx.Unique {
-		unique = "UNIQUE "
-	}
+func createIndex(ctx context.Context, pool *pgxpool.Pool, pgSchema string, t Table, idx Index, typeMap TypeMappingConfig) error {
 	idxName := generatedIndexName(t, idx)
-	q := fmt.Sprintf("CREATE %sINDEX %s ON %s.%s (%s)",
-		unique, pgIdent(idxName), pgIdent(pgSchema), pgIdent(t.PGName), cols)
+
+	var q string
+	var detail string
+	if idx.Type == "SPATIAL" && typeMap.UsePostGIS {
+		col := pgIdent(idx.Columns[0])
+		q = fmt.Sprintf("CREATE INDEX %s ON %s.%s USING GIST (%s)",
+			pgIdent(idxName), pgIdent(pgSchema), pgIdent(t.PGName), col)
+		detail = fmt.Sprintf("USING GIST (%s)", col)
+	} else {
+		cols := quotedOrderedColumnList(idx.Columns, idx.ColumnOrders)
+		unique := ""
+		if idx.Unique {
+			unique = "UNIQUE "
+		}
+		q = fmt.Sprintf("CREATE %sINDEX %s ON %s.%s (%s)",
+			unique, pgIdent(idxName), pgIdent(pgSchema), pgIdent(t.PGName), cols)
+		detail = fmt.Sprintf("(%s)", cols)
+	}
+
 	if err := execSQL(ctx, pool, idxName, q); err != nil {
 		return err
 	}
-	log.Printf("    index %s on %s.%s (%s)", idxName, pgSchema, t.PGName, cols)
+	log.Printf("    index %s on %s.%s %s", idxName, pgSchema, t.PGName, detail)
 	return nil
 }
 
 // addIndexes adds all non-primary indexes with bounded parallelism.
-func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int) error {
-	jobs, skipped := planIndexJobs(schema, pgSchema)
+func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig) error {
+	jobs, skipped := planIndexJobs(schema, pgSchema, typeMap)
 	if len(jobs) == 0 {
 		log.Printf("    no indexes to create (%d skipped)", skipped)
 		return nil
@@ -287,7 +300,7 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 	start := time.Now()
 
 	err := execIndexJobs(ctx, jobs, workers, func(ctx context.Context, j indexJob) error {
-		return createIndex(ctx, pool, pgSchema, j.table, j.index)
+		return createIndex(ctx, pool, pgSchema, j.table, j.index, typeMap)
 	})
 
 	elapsed := time.Since(start).Round(time.Millisecond)

@@ -150,7 +150,8 @@ time_mode = "time"
 zero_date_mode = "null"
 
 # Spatial type handling (MySQL/MSSQL): "off" (default, unsupported);
-#   "wkb_bytea" stores as bytea; "wkt_text" stores as text via ST_AsText()
+#   "wkb_bytea" stores as bytea; "wkt_text" stores as text via ST_AsText().
+#   Use [postgis] below for native MySQL -> PostGIS geometry migration.
 spatial_mode = "off"
 
 # MSSQL-only type mapping options
@@ -177,6 +178,16 @@ ci_as_citext = false
 # [type_mapping.collation_map]
 # utf8mb4_general_ci = "und-x-icu"
 # utf8mb4_unicode_ci = "und-x-icu"
+
+[postgis]
+# Native MySQL spatial -> PostgreSQL/PostGIS migration.
+# Default: disabled. When enabled, MySQL spatial columns map to `geometry`
+# and supported SPATIAL indexes are recreated as GiST indexes.
+enabled = false
+
+# If false, PostGIS must already be installed in the target database.
+# If true, pgferry runs CREATE EXTENSION IF NOT EXISTS postgis before table creation.
+create_extension = false
 
 [hooks]
 before_data = []   # after table creation, before COPY
@@ -236,6 +247,7 @@ The `database` parameter is required &mdash; pgferry extracts the database name 
 | `time_mode` (non-default) | Supported | Config error | Config error |
 | `zero_date_mode` (non-default) | Supported | Config error | Config error |
 | `spatial_mode` (non-default) | Supported | Config error | Supported |
+| `[postgis]` | Supported | Config error | Config error |
 | `widen_unsigned_integers = false` | Supported | Config error | Config error |
 | `collation_mode = "auto"` | Supported | Config error | Config error |
 | `collation_map` | Supported | Config error if non-empty | Config error if non-empty |
@@ -259,6 +271,8 @@ pgferry validates the config at load time and reports errors before connecting t
 | `type_mapping.time_mode` | Must be `"text"`, `"time"`, or `"interval"` |
 | `type_mapping.zero_date_mode` | Must be `"null"` or `"error"` |
 | `type_mapping.spatial_mode` | Must be `"off"`, `"wkb_bytea"`, or `"wkt_text"` |
+| `postgis.create_extension` | Requires `postgis.enabled = true` |
+| `[postgis]` | Currently supported only for MySQL sources; requires `type_mapping.spatial_mode = "off"` |
 | `type_mapping.collation_mode` | Must be `"none"` or `"auto"` |
 | `source.charset` | MySQL-only; config error for SQLite/MSSQL if not `"utf8mb4"` |
 | `source.source_schema` | MSSQL-only; defaults to `"dbo"` |
@@ -307,6 +321,8 @@ Fields omitted from the TOML file use these defaults:
 | `time_mode` | `"time"` |
 | `zero_date_mode` | `"null"` |
 | `spatial_mode` | `"off"` |
+| `postgis.enabled` | `false` |
+| `postgis.create_extension` | `false` |
 | `collation_mode` | `"none"` |
 | `collation_map` | `nil` (empty) |
 | `ci_as_citext` | `false` |

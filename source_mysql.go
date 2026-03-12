@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -591,6 +592,8 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
 		return "bytea", nil
+	case isMySQLSpatialType(col.DataType) && typeMap.UsePostGIS:
+		return "geometry", nil
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
 		return "bytea", nil
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
@@ -778,6 +781,13 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		// bytea. Explicit case to avoid relying on default passthrough.
 		return val, nil
 
+	case isMySQLSpatialType(col.DataType) && typeMap.UsePostGIS:
+		b, ok := val.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("expected []byte for MySQL spatial value, got %T", val)
+		}
+		return mysqlSpatialToEWKB(b)
+
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
 		// ST_AsText() is used in the SELECT query, so the value arrives as a
 		// string (WKT). Just pass it through.
@@ -854,6 +864,9 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 	case pgType == "bytea":
 		return "", fmt.Errorf("bytea defaults are not supported (value %q)", raw)
 
+	case pgType == "geometry":
+		return "", fmt.Errorf("geometry defaults are not supported (value %q)", raw)
+
 	case strings.HasPrefix(pgType, "bit(") || pgType == "varbit":
 		// MySQL BIT defaults are typically binary literals like b'0' or b'101'
 		if strings.HasPrefix(unquoted, "b'") && strings.HasSuffix(unquoted, "'") {
@@ -885,6 +898,41 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 	default:
 		return pgLiteral(unquoted), nil
 	}
+}
+
+func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
+	if len(raw) < 9 {
+		return nil, fmt.Errorf("spatial payload too short: got %d bytes", len(raw))
+	}
+
+	srid := binary.LittleEndian.Uint32(raw[:4])
+	wkb := raw[4:]
+
+	var byteOrder binary.ByteOrder
+	switch wkb[0] {
+	case 0:
+		byteOrder = binary.BigEndian
+	case 1:
+		byteOrder = binary.LittleEndian
+	default:
+		return nil, fmt.Errorf("unsupported WKB byte order %d", wkb[0])
+	}
+
+	if srid == 0 {
+		out := make([]byte, len(wkb))
+		copy(out, wkb)
+		return out, nil
+	}
+
+	ewkb := make([]byte, len(wkb)+4)
+	ewkb[0] = wkb[0]
+
+	typeWord := byteOrder.Uint32(wkb[1:5]) | 0x20000000
+	byteOrder.PutUint32(ewkb[1:5], typeWord)
+	byteOrder.PutUint32(ewkb[5:9], srid)
+	copy(ewkb[9:], wkb[5:])
+
+	return ewkb, nil
 }
 
 func mysqlDefaultUnquote(v string) string {

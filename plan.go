@@ -39,10 +39,18 @@ func init() {
 
 // PlanReport holds all findings from the plan analysis.
 type PlanReport struct {
-	SourceObjects     PlanSourceObjects     `json:"source_objects"`
-	GeneratedColumns  []PlanGeneratedColumn `json:"generated_columns"`
-	SkippedIndexes    []PlanSkippedIndex    `json:"skipped_indexes"`
-	CollationWarnings []string              `json:"collation_warnings"`
+	RequiredExtensions []PlanRequiredExtension `json:"required_extensions"`
+	SourceObjects      PlanSourceObjects       `json:"source_objects"`
+	UnsupportedColumns []PlanUnsupportedColumn `json:"unsupported_columns"`
+	GeneratedColumns   []PlanGeneratedColumn   `json:"generated_columns"`
+	SkippedIndexes     []PlanSkippedIndex      `json:"skipped_indexes"`
+	CollationWarnings  []string                `json:"collation_warnings"`
+}
+
+type PlanRequiredExtension struct {
+	Name    string `json:"name"`
+	Feature string `json:"feature"`
+	Mode    string `json:"mode"`
 }
 
 // PlanSourceObjects holds non-table source objects.
@@ -50,6 +58,13 @@ type PlanSourceObjects struct {
 	Views    []string `json:"views"`
 	Routines []string `json:"routines"`
 	Triggers []string `json:"triggers"`
+}
+
+type PlanUnsupportedColumn struct {
+	Table      string `json:"table"`
+	Column     string `json:"column"`
+	SourceType string `json:"source_type"`
+	Reason     string `json:"reason"`
 }
 
 // PlanGeneratedColumn describes a generated column that needs manual expression migration.
@@ -122,7 +137,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("introspect source objects: %w", err)
 	}
 
-	report := buildPlanReport(schema, sourceObjects, cfg)
+	report := buildPlanReport(schema, sourceObjects, src, cfg)
 
 	if planFormat == "json" {
 		if err := writePlanJSON(cmd.OutOrStdout(), report); err != nil {
@@ -142,11 +157,26 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *MigrationConfig) *PlanReport {
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB, cfg *MigrationConfig) *PlanReport {
+	typeMap := effectiveTypeMapping(cfg)
 	report := &PlanReport{
-		GeneratedColumns:  []PlanGeneratedColumn{},
-		SkippedIndexes:    []PlanSkippedIndex{},
-		CollationWarnings: []string{},
+		RequiredExtensions: []PlanRequiredExtension{},
+		UnsupportedColumns: []PlanUnsupportedColumn{},
+		GeneratedColumns:   []PlanGeneratedColumn{},
+		SkippedIndexes:     []PlanSkippedIndex{},
+		CollationWarnings:  []string{},
+	}
+
+	for _, req := range collectRequiredExtensions(schema, src, cfg) {
+		mode := "require_existing"
+		if req.CreateIfMissing {
+			mode = "create_if_missing"
+		}
+		report.RequiredExtensions = append(report.RequiredExtensions, PlanRequiredExtension{
+			Name:    req.Name,
+			Feature: req.Feature,
+			Mode:    mode,
+		})
 	}
 
 	// Source objects
@@ -158,6 +188,21 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *Migratio
 		report.SourceObjects.Views = []string{}
 		report.SourceObjects.Routines = []string{}
 		report.SourceObjects.Triggers = []string{}
+	}
+
+	if src != nil {
+		for _, t := range schema.Tables {
+			for _, col := range t.Columns {
+				if _, err := src.MapType(col, typeMap); err != nil {
+					report.UnsupportedColumns = append(report.UnsupportedColumns, PlanUnsupportedColumn{
+						Table:      t.PGName,
+						Column:     col.PGName,
+						SourceType: col.ColumnType,
+						Reason:     err.Error(),
+					})
+				}
+			}
+		}
 	}
 
 	// Generated columns
@@ -181,7 +226,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *Migratio
 	// Skipped indexes
 	for _, t := range schema.Tables {
 		for _, idx := range t.Indexes {
-			if reason, unsupported := indexUnsupportedReason(idx); unsupported {
+			if reason, unsupported := indexUnsupportedReason(t, idx, typeMap); unsupported {
 				report.SkippedIndexes = append(report.SkippedIndexes, PlanSkippedIndex{
 					Table:  t.PGName,
 					Index:  idx.Name,
@@ -192,7 +237,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, cfg *Migratio
 	}
 
 	// Collation warnings
-	if warnings := collectCollationWarnings(schema, cfg.TypeMapping); len(warnings) > 0 {
+	if warnings := collectCollationWarnings(schema, typeMap); len(warnings) > 0 {
 		report.CollationWarnings = warnings
 	}
 
@@ -214,6 +259,19 @@ func writePlanJSON(w io.Writer, report *PlanReport) error {
 
 func writePlanText(w io.Writer, report *PlanReport) {
 	hasContent := false
+
+	if len(report.RequiredExtensions) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Required Extensions (%d)\n\n", len(report.RequiredExtensions))
+		for _, req := range report.RequiredExtensions {
+			action := "must already exist on the target"
+			if req.Mode == "create_if_missing" {
+				action = "pgferry will create it if missing"
+			}
+			fmt.Fprintf(w, "  - %s (%s): %s\n", req.Name, req.Feature, action)
+		}
+		fmt.Fprintln(w)
+	}
 
 	// Source objects
 	objs := &report.SourceObjects
@@ -241,6 +299,16 @@ func writePlanText(w io.Writer, report *PlanReport) {
 			}
 			fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
 		}
+	}
+
+	if len(report.UnsupportedColumns) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Unsupported Columns (%d)\n\n", len(report.UnsupportedColumns))
+		fmt.Fprintf(w, "These columns cannot be migrated automatically with the current configuration.\n\n")
+		for _, uc := range report.UnsupportedColumns {
+			fmt.Fprintf(w, "  - %s.%s (%s): %s\n", uc.Table, uc.Column, uc.SourceType, uc.Reason)
+		}
+		fmt.Fprintln(w)
 	}
 
 	// Generated columns
