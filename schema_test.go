@@ -52,6 +52,12 @@ func TestPgIdent(t *testing.T) {
 	}
 }
 
+func TestPgIdent_EmptyString(t *testing.T) {
+	if got := pgIdent(""); got != `""` {
+		t.Fatalf("pgIdent(\"\") = %q, want %q", got, `""`)
+	}
+}
+
 func TestExtractMySQLDBName(t *testing.T) {
 	tests := []struct {
 		dsn  string
