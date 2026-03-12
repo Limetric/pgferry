@@ -7,6 +7,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - No runtime dependencies or extra tooling to install
 - MySQL, SQLite, and MSSQL support that holds up in production
 - Fast parallel `COPY` loads with range-based chunking for large tables
+- Clear stage and row-copy progress logs, so long runs don’t look frozen
 - `schema_only` and `data_only` runs when you need tighter control
 - Preflight `plan` command, resumable checkpoints, and SQL hooks for messy migrations
 - Extension-backed features like `citext` and PostGIS, with validation and optional auto-create
