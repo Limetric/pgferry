@@ -4,12 +4,14 @@ Migrate MySQL, SQLite, or MSSQL databases to PostgreSQL with one config file and
 
 Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy — and real migrations always do — you get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
-- No runtime dependencies or extra tooling to install
-- MySQL, SQLite, and MSSQL support that holds up in production
+- One binary, one config file, no runtime dependencies or extra tooling to install
 - Fast parallel `COPY` loads with range-based chunking for large tables
 - Clear stage and row-copy progress logs, so long runs don’t look frozen
+- Preflight checks that catch unsupported schema issues before PostgreSQL is touched
+- Resumable chunked migrations, so failures don’t send you back to zero
+- Consistent-snapshot mode for migrating live source databases safely
+- Built for messy real-world schemas with hooks, orphan cleanup, generated-column reporting, and unsupported-index warnings
 - `schema_only` and `data_only` runs when you need tighter control
-- Preflight `plan` command, resumable checkpoints, and SQL hooks for messy migrations
 - Extension-backed features like `citext` and PostGIS, with validation and optional auto-create
 
 CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation, MSSQL 2017 through 2025, and SQLite against the latest PostgreSQL release on every commit.
