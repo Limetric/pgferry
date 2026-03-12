@@ -285,6 +285,28 @@ func TestMSSQLSourceTableRef(t *testing.T) {
 	}
 }
 
+func TestMSSQLSourceTableRef_EmptySchema(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: ""}
+	table := Table{SourceName: "orders"}
+
+	got := src.SourceTableRef(table)
+	want := "[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
+func TestMSSQLSourceTableRef_EscapesSchemaName(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "my]schema"}
+	table := Table{SourceName: "orders"}
+
+	got := src.SourceTableRef(table)
+	want := "[my]]schema].[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
 func TestMSSQLExtractDBName(t *testing.T) {
 	src := &mssqlSourceDB{}
 

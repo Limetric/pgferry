@@ -38,6 +38,9 @@ func (m *mssqlSourceDB) QuoteIdentifier(name string) string {
 
 func (m *mssqlSourceDB) SourceTableRef(table Table) string {
 	tableRef := m.QuoteIdentifier(table.SourceName)
+	// Treat empty or whitespace-only schema values as "no schema override" so
+	// source-side reads fall back to bare table names instead of emitting an
+	// invalid-looking qualified reference.
 	if strings.TrimSpace(m.sourceSchema) == "" {
 		return tableRef
 	}
