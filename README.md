@@ -9,7 +9,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - Parallel workers and range-based chunking for large tables
 - Split into `schema_only` and `data_only` phases for tighter control
 - Preflight `plan` reports what needs manual attention
-- Extension-backed features with validation and optional auto-create
+- Extension-backed features like `citext` and PostGIS, with validation and optional auto-create
 - Resume interrupted runs from checkpoints
 - SQL hooks at four pipeline stages
 
@@ -80,32 +80,6 @@ Run the migration:
 pgferry migration.toml
 ```
 
-## Extension Support
-
-pgferry supports PostgreSQL extension-backed migrations instead of forcing every
-edge case into plain text or `bytea`.
-
-- `ci_as_citext = true` maps MySQL `_ci` text columns to PostgreSQL `citext`
-- `[postgis].enabled = true` maps MySQL spatial columns to native PostGIS `geometry`
-- `plan` reports required extensions before migration starts
-- pgferry validates required extensions in `full`, `schema_only`, and `data_only` runs
-- Missing extensions can be preinstalled manually, or auto-created when the feature allows it
-
-Example:
-
-```toml
-[type_mapping]
-ci_as_citext = true
-spatial_mode = "off"
-
-[postgis]
-enabled = true
-create_extension = true
-```
-
-Use `spatial_mode = "wkb_bytea"` or `spatial_mode = "wkt_text"` when you want
-to preserve spatial data without requiring PostGIS.
-
 ## Check First, Migrate Second
 
 Inspect the source before touching PostgreSQL:
@@ -123,17 +97,10 @@ We maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes f
 
 [`pgloader`](https://github.com/dimitri/pgloader) is the established choice, but it has real gaps that `pgferry` fills:
 
-- **MSSQL that actually works**: pgloader's MSSQL support depends on FreeTDS (C library), which breaks `datetimeoffset`, `datetime2`, `varbinary(max)`, Unicode text, Azure SQL, and parallel reads. pgferry uses `go-mssqldb` (pure Go, native TDS) and handles all MSSQL types correctly.
-- **MySQL 8.4+ auth**: pgloader's MySQL driver doesn't support `caching_sha2_password`, the default auth plugin since MySQL 8.0. pgferry works out of the box.
-- **Static binary**: no Common Lisp runtime, no SBCL build issues, no dependency problems. One binary, runs anywhere.
-- **TOML config**: declarative, version-controllable, no DSL to learn.
-- **Resumable checkpoints**: interrupt a migration and pick up where you left off. pgloader restarts from scratch.
-- **Granular type mapping**: fine-grained control over how MySQL and SQLite types map to PostgreSQL — booleans, UUIDs, timestamps, enums, sets, unsigned integers, text widening, and more, each with its own toggle.
-- **Extension-aware migrations**: native `citext` and opt-in PostGIS support, with preflight validation and optional `CREATE EXTENSION` for PostGIS.
-- **Charset and collation awareness**: detects mismatches and warns before data moves.
-- **SQL hooks at four stages**: inject custom SQL before data, after data, before foreign keys, and after everything.
-- **Orphan cleanup**: optionally delete rows that would violate foreign keys before constraints are added.
-- **Preflight planning**: `pgferry plan` tells you exactly what will need manual follow-up, before you touch the target.
+- **Better MSSQL support**: pgloader's MSSQL path depends on FreeTDS, while pgferry uses `go-mssqldb` (pure Go, native TDS) and handles modern MSSQL types, Azure SQL, and parallel reads.
+- **Better MySQL support**: pgferry works with modern MySQL auth, including `caching_sha2_password`, out of the box.
+- **Static binary**: no Common Lisp runtime, no SBCL setup, no dependency chase. One binary, runs anywhere.
+- **Operational control**: resumable checkpoints, declarative TOML config, preflight `plan`, and SQL hooks make production migrations easier to reason about.
 
 ## Examples
 
