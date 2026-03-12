@@ -15,8 +15,9 @@ import (
 var uuidRegexp = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type mysqlSourceDB struct {
-	snakeCaseIDs bool
-	charset      string
+	snakeCaseIDs            bool
+	charset                 string
+	supportsSpatialAxisExpr bool
 }
 
 func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
@@ -63,6 +64,7 @@ func (m *mysqlSourceDB) ExtractDBName(dsn string) (string, error) {
 }
 
 func (m *mysqlSourceDB) IntrospectSchema(db *sql.DB, dbName string) (*Schema, error) {
+	m.supportsSpatialAxisExpr = detectMySQLSpatialAxisExpr(db)
 	return introspectMySQLSchema(db, dbName, m.identName)
 }
 
@@ -319,6 +321,12 @@ func mysqlIndexHasPrefix(indexType string, subPart sql.NullInt64) bool {
 	// MySQL reports SUB_PART metadata for SPATIAL indexes on some versions even
 	// though SPATIAL indexes do not support user-defined prefix lengths.
 	return !strings.EqualFold(indexType, "SPATIAL")
+}
+
+func detectMySQLSpatialAxisExpr(db *sql.DB) bool {
+	var out []byte
+	err := db.QueryRow(`SELECT ST_AsWKB(Point(0, 0), 'axis-order=long-lat')`).Scan(&out)
+	return err == nil
 }
 
 func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]ForeignKey, error) {

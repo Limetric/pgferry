@@ -87,3 +87,23 @@ func TestBuildSourceSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
 		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
 	}
 }
+
+func TestBuildSourceSelectQuery_MySQLPostGISUsesWKBExport(t *testing.T) {
+	src := &mysqlSourceDB{supportsSpatialAxisExpr: true}
+	table := Table{
+		SourceName: "places",
+		Columns: []Column{
+			{SourceName: "id", DataType: "int"},
+			{SourceName: "shape", DataType: "point"},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.UsePostGIS = true
+
+	got := buildSourceSelectQuery(src, table, tm)
+	want := "SELECT `id`, CONCAT(CHAR((ST_SRID(`shape`)) & 255 USING binary), CHAR(((ST_SRID(`shape`)) >> 8) & 255 USING binary), CHAR(((ST_SRID(`shape`)) >> 16) & 255 USING binary), CHAR(((ST_SRID(`shape`)) >> 24) & 255 USING binary), ST_AsWKB(`shape`, 'axis-order=long-lat')) AS `shape` FROM `places`"
+	if got != want {
+		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
+	}
+}
