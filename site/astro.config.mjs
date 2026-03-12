@@ -48,21 +48,11 @@ export default defineConfig({
 				},
 				{
 					label: 'Get Started',
-					items: [
-						{ slug: 'get-started/install' },
-						{ slug: 'get-started/quick-start' },
-						{ slug: 'get-started/plan-and-validate' },
-					],
+					autogenerate: { directory: 'get-started' },
 				},
 				{
 					label: 'Reference',
-					items: [
-						{ slug: 'reference/configuration' },
-						{ slug: 'reference/type-mapping' },
-						{ slug: 'reference/migration-pipeline' },
-						{ slug: 'reference/conventions' },
-						{ slug: 'reference/hooks' },
-					],
+					autogenerate: { directory: 'reference' },
 				},
 				{
 					label: 'Examples',
