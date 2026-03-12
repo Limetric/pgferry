@@ -6,7 +6,7 @@ on:
 
 jobs:
   opencode-review:
-    if: github.event.action != 'labeled' || github.event.label.name == 'review'
+    if: github.event.action != 'labeled' || github.event.label.name == 'trigger:review'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,8 +44,8 @@ jobs:
 
             IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
 
-      - name: Remove review label
+      - name: Remove trigger:review label
         if: github.event.action == 'labeled'
-        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label review || true
+        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label 'trigger:review' || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
