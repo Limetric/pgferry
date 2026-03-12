@@ -76,11 +76,22 @@ func TestValidationWorkers(t *testing.T) {
 	}
 }
 
+func TestBuildSourceCountQuery_MSSQLWithSourceSchema(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "sales"}
+	table := Table{SourceName: "orders"}
+
+	got := buildSourceCountQuery(src, table)
+	want := "SELECT COUNT(*) FROM [sales].[orders]"
+	if got != want {
+		t.Fatalf("buildSourceCountQuery() = %q, want %q", got, want)
+	}
+}
+
 // stubSourceDB is a minimal SourceDB stub for unit tests.
 // Embeds the interface so only the methods under test need implementing;
 // calling any other method panics, signalling unintended use.
 type stubSourceDB struct {
-	SourceDB // interface embedding — panics on unimplemented methods
+	SourceDB   // interface embedding — panics on unimplemented methods
 	maxWorkers int
 }
 

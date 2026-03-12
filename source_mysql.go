@@ -85,8 +85,12 @@ func (m *mysqlSourceDB) QuoteIdentifier(name string) string {
 	return fmt.Sprintf("`%s`", strings.ReplaceAll(name, "`", "``"))
 }
 
+func (m *mysqlSourceDB) SourceTableRef(table Table) string {
+	return m.QuoteIdentifier(table.SourceName)
+}
+
 func (m *mysqlSourceDB) SupportsSnapshotMode() bool { return true }
-func (m *mysqlSourceDB) MaxWorkers() int             { return 0 }
+func (m *mysqlSourceDB) MaxWorkers() int            { return 0 }
 
 func (m *mysqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	var errs []string
@@ -583,9 +587,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 			// Storage:  [time_hi(2)][time_mid(2)][time_low(4)][clock_seq(2)][node(6)]
 			// RFC 4122: [time_low(4)][time_mid(2)][time_hi(2)][clock_seq(2)][node(6)]
 			var unswapped [16]byte
-			copy(unswapped[0:4], b[4:8])  // time_low
-			copy(unswapped[4:6], b[2:4])  // time_mid
-			copy(unswapped[6:8], b[0:2])  // time_hi_and_version
+			copy(unswapped[0:4], b[4:8])   // time_low
+			copy(unswapped[4:6], b[2:4])   // time_mid
+			copy(unswapped[6:8], b[0:2])   // time_hi_and_version
 			copy(unswapped[8:16], b[8:16]) // clock_seq + node
 			b = unswapped[:]
 		}

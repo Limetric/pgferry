@@ -72,6 +72,10 @@ func (s *sqliteSourceDB) ExtractDBName(dsn string) (string, error) {
 	return base, nil
 }
 
+func (s *sqliteSourceDB) SourceTableRef(table Table) string {
+	return s.QuoteIdentifier(table.SourceName)
+}
+
 func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error) {
 	tables, err := introspectSQLiteTables(db, s.identName)
 	if err != nil {
@@ -177,7 +181,7 @@ func (s *sqliteSourceDB) QuoteIdentifier(name string) string {
 }
 
 func (s *sqliteSourceDB) SupportsSnapshotMode() bool { return false }
-func (s *sqliteSourceDB) MaxWorkers() int             { return 1 }
+func (s *sqliteSourceDB) MaxWorkers() int            { return 1 }
 
 func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	var errs []string

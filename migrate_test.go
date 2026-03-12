@@ -70,3 +70,20 @@ func TestBuildSourceSelectQuery_IncludesGeneratedColumns(t *testing.T) {
 		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
 	}
 }
+
+func TestBuildSourceSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "sales"}
+	table := Table{
+		SourceName: "orders",
+		Columns: []Column{
+			{SourceName: "id"},
+			{SourceName: "customer_id"},
+		},
+	}
+
+	got := buildSourceSelectQuery(src, table, defaultTypeMappingConfig())
+	want := "SELECT [id], [customer_id] FROM [sales].[orders]"
+	if got != want {
+		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
+	}
+}

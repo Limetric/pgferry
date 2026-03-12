@@ -39,7 +39,7 @@ type MigrationConfig struct {
 
 // SourceConfig identifies the source database engine and connection string.
 type SourceConfig struct {
-	Type         string `toml:"type"`          // "mysql", "sqlite", or "mssql"
+	Type         string `toml:"type"` // "mysql", "sqlite", or "mssql"
 	DSN          string `toml:"dsn"`
 	Charset      string `toml:"charset"`       // character set for MySQL connection (default: "utf8mb4")
 	SourceSchema string `toml:"source_schema"` // MSSQL schema to read from (default: "dbo")
@@ -68,10 +68,10 @@ type TypeMappingConfig struct {
 	VarcharAsText         bool              `toml:"varchar_as_text"`
 	SanitizeJSONNullBytes bool              `toml:"sanitize_json_null_bytes"`
 	UnknownAsText         bool              `toml:"unknown_as_text"`
-	CollationMode         string            `toml:"collation_mode"` // none|auto
-	CollationMap          map[string]string `toml:"collation_map"`  // MySQL collation → PG collation overrides
-	CIAsCitext            bool              `toml:"ci_as_citext"`         // map _ci text columns to citext (MySQL only)
-	BitMode               string            `toml:"bit_mode"`             // bytea|bit|varbit (MySQL only)
+	CollationMode         string            `toml:"collation_mode"`      // none|auto
+	CollationMap          map[string]string `toml:"collation_map"`       // MySQL collation → PG collation overrides
+	CIAsCitext            bool              `toml:"ci_as_citext"`        // map _ci text columns to citext (MySQL only)
+	BitMode               string            `toml:"bit_mode"`            // bytea|bit|varbit (MySQL only)
 	StringUUIDAsUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
 	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
 	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
@@ -264,8 +264,11 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 
 	// Default source_schema for MSSQL
-	if cfg.Source.Type == "mssql" && cfg.Source.SourceSchema == "" {
-		cfg.Source.SourceSchema = "dbo"
+	if cfg.Source.Type == "mssql" {
+		cfg.Source.SourceSchema = strings.TrimSpace(cfg.Source.SourceSchema)
+		if cfg.Source.SourceSchema == "" {
+			cfg.Source.SourceSchema = "dbo"
+		}
 	}
 
 	// Source-specific type mapping validation

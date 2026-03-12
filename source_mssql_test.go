@@ -274,6 +274,54 @@ func TestMSSQLQuoteIdentifier(t *testing.T) {
 	}
 }
 
+func TestMSSQLSourceTableRef(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "sales"}
+	table := Table{SourceName: "orders"}
+
+	got := src.SourceTableRef(table)
+	want := "[sales].[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
+func TestMSSQLSourceTableRef_EmptySchema(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: ""}
+	table := Table{SourceName: "orders"}
+
+	got := src.SourceTableRef(table)
+	want := "[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
+func TestMSSQLSourceTableRef_EscapesSchemaName(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "my]schema"}
+	table := Table{SourceName: "orders"}
+
+	got := src.SourceTableRef(table)
+	want := "[my]]schema].[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
+func TestMSSQLSetSourceSchema_WhitespaceDefaultsToDBO(t *testing.T) {
+	src := &mssqlSourceDB{}
+	src.SetSourceSchema("  ")
+
+	if src.sourceSchema != "dbo" {
+		t.Fatalf("sourceSchema = %q, want dbo", src.sourceSchema)
+	}
+
+	got := src.SourceTableRef(Table{SourceName: "orders"})
+	want := "[dbo].[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
 func TestMSSQLExtractDBName(t *testing.T) {
 	src := &mssqlSourceDB{}
 
@@ -497,6 +545,35 @@ dsn = "postgres://u:p@h:5432/db"
 
 	if cfg.Source.SourceSchema != "sales" {
 		t.Errorf("Source.SourceSchema = %q, want sales", cfg.Source.SourceSchema)
+	}
+}
+
+func TestLoadConfig_MSSQLWhitespaceSourceSchemaDefaultsToDBO(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "mssql_whitespace_schema.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mssql"
+dsn = "sqlserver://sa:pass@localhost:1433?database=testdb"
+source_schema = "   "
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.Source.SourceSchema != "dbo" {
+		t.Errorf("Source.SourceSchema = %q, want dbo", cfg.Source.SourceSchema)
 	}
 }
 

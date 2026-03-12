@@ -20,9 +20,15 @@ type mssqlSourceDB struct {
 func (m *mssqlSourceDB) Name() string                         { return "MSSQL" }
 func (m *mssqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
 func (m *mssqlSourceDB) SetCharset(_ string)                  {}
-func (m *mssqlSourceDB) SetSourceSchema(schema string)        { m.sourceSchema = schema }
-func (m *mssqlSourceDB) SupportsSnapshotMode() bool           { return true }
-func (m *mssqlSourceDB) MaxWorkers() int                      { return 0 }
+func (m *mssqlSourceDB) SetSourceSchema(schema string) {
+	schema = strings.TrimSpace(schema)
+	if schema == "" {
+		schema = "dbo"
+	}
+	m.sourceSchema = schema
+}
+func (m *mssqlSourceDB) SupportsSnapshotMode() bool { return true }
+func (m *mssqlSourceDB) MaxWorkers() int            { return 0 }
 
 // identName converts a source identifier to its PostgreSQL name.
 func (m *mssqlSourceDB) identName(s string) string {
@@ -34,6 +40,14 @@ func (m *mssqlSourceDB) identName(s string) string {
 
 func (m *mssqlSourceDB) QuoteIdentifier(name string) string {
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
+}
+
+func (m *mssqlSourceDB) SourceTableRef(table Table) string {
+	tableRef := m.QuoteIdentifier(table.SourceName)
+	if m.sourceSchema == "" {
+		return tableRef
+	}
+	return m.QuoteIdentifier(m.sourceSchema) + "." + tableRef
 }
 
 func (m *mssqlSourceDB) OpenDB(dsn string) (*sql.DB, error) {
@@ -327,15 +341,15 @@ func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func
 
 	for rows.Next() {
 		var (
-			idxName         string
-			isUnique        bool
-			isPrimary       bool
-			typeDesc        string
-			hasFilter       bool
-			keyOrdinal      int
-			colName         string
-			isDescending    bool
-			isIncludedCol   bool
+			idxName       string
+			isUnique      bool
+			isPrimary     bool
+			typeDesc      string
+			hasFilter     bool
+			keyOrdinal    int
+			colName       string
+			isDescending  bool
+			isIncludedCol bool
 		)
 		if err := rows.Scan(
 			&idxName, &isUnique, &isPrimary, &typeDesc,
