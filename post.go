@@ -337,6 +337,12 @@ func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(
 			}
 			defer func() { <-sem }()
 
+			// A goroutine can still win the semaphore race after cancellation if
+			// both the send and ctx.Done() are ready. Bail out before running exec.
+			if err := ctx.Err(); err != nil {
+				return
+			}
+
 			if err := exec(ctx, j); err != nil {
 				setErr(err)
 			}
