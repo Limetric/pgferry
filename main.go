@@ -85,13 +85,10 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	}
 
 	// Initialize source database backend
-	src, err := newSourceDB(cfg.Source.Type)
+	src, err := newConfiguredSourceDB(cfg)
 	if err != nil {
 		return err
 	}
-	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
-	src.SetCharset(cfg.Source.Charset)
-	src.SetSourceSchema(cfg.Source.SourceSchema)
 
 	log.Printf("pgferry — %s → PostgreSQL migration", src.Name())
 	mode := "full"
