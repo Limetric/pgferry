@@ -117,20 +117,27 @@ func introspectMySQLSchema(db *sql.DB, dbName string, identName func(string) str
 		return nil, fmt.Errorf("introspect tables: %w", err)
 	}
 
+	// Batch schema-scoped INFORMATION_SCHEMA queries so startup stays at four
+	// round trips total: tables, columns, indexes, and foreign keys.
+	columnsByTable, err := introspectMySQLColumnsByTable(db, dbName, identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect columns: %w", err)
+	}
+
+	indexesByTable, err := introspectMySQLIndexesByTable(db, dbName, identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect indexes: %w", err)
+	}
+
+	foreignKeysByTable, err := introspectMySQLForeignKeysByTable(db, dbName, identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect foreign keys: %w", err)
+	}
+
 	for i := range tables {
 		t := &tables[i]
-
-		cols, err := introspectMySQLColumns(db, dbName, t.SourceName, identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect columns for %s: %w", t.SourceName, err)
-		}
-		t.Columns = cols
-
-		indexes, err := introspectMySQLIndexes(db, dbName, t.SourceName, identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect indexes for %s: %w", t.SourceName, err)
-		}
-		for _, idx := range indexes {
+		t.Columns = columnsByTable[t.SourceName]
+		for _, idx := range indexesByTable[t.SourceName] {
 			if idx.IsPrimary {
 				pk := idx
 				t.PrimaryKey = &pk
@@ -138,12 +145,7 @@ func introspectMySQLSchema(db *sql.DB, dbName string, identName func(string) str
 				t.Indexes = append(t.Indexes, idx)
 			}
 		}
-
-		fks, err := introspectMySQLForeignKeys(db, dbName, t.SourceName, identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect foreign keys for %s: %w", t.SourceName, err)
-		}
-		t.ForeignKeys = fks
+		t.ForeignKeys = foreignKeysByTable[t.SourceName]
 	}
 
 	return &Schema{Tables: tables}, nil
@@ -175,9 +177,9 @@ func introspectMySQLTables(db *sql.DB, dbName string, identName func(string) str
 	return tables, rows.Err()
 }
 
-func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func(string) string) ([]Column, error) {
+func introspectMySQLColumnsByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]Column, error) {
 	rows, err := db.Query(
-		`SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE,
+		`SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, COLUMN_TYPE,
 		        COALESCE(CHARACTER_MAXIMUM_LENGTH, 0),
 		        COALESCE(NUMERIC_PRECISION, 0),
 		        COALESCE(NUMERIC_SCALE, 0),
@@ -186,22 +188,23 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 		        COALESCE(COLLATION_NAME, ''),
 		        COALESCE(GENERATION_EXPRESSION, '')
 		 FROM INFORMATION_SCHEMA.COLUMNS
-		 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-		 ORDER BY ORDINAL_POSITION`,
-		dbName, tableName,
+		 WHERE TABLE_SCHEMA = ?
+		 ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+		dbName,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var cols []Column
+	colsByTable := make(map[string][]Column)
 	for rows.Next() {
+		var tableName string
 		var c Column
 		var nullable string
 		var dflt sql.NullString
 		if err := rows.Scan(
-			&c.SourceName, &c.DataType, &c.ColumnType,
+			&tableName, &c.SourceName, &c.DataType, &c.ColumnType,
 			&c.CharMaxLen, &c.Precision, &c.Scale,
 			&nullable, &dflt, &c.Extra, &c.OrdinalPos,
 			&c.Charset, &c.Collation,
@@ -215,9 +218,9 @@ func introspectMySQLColumns(db *sql.DB, dbName, tableName string, identName func
 			c.Default = &dflt.String
 		}
 		c.DataType = strings.ToLower(c.DataType)
-		cols = append(cols, c)
+		colsByTable[tableName] = append(colsByTable[tableName], c)
 	}
-	return cols, rows.Err()
+	return colsByTable, rows.Err()
 }
 
 func isMySQLGeneratedColumn(col Column) bool {
@@ -225,32 +228,42 @@ func isMySQLGeneratedColumn(col Column) bool {
 	return strings.Contains(extra, "virtual generated") || strings.Contains(extra, "stored generated")
 }
 
-func introspectMySQLIndexes(db *sql.DB, dbName, tableName string, identName func(string) string) ([]Index, error) {
+type mysqlIndexesForTable struct {
+	indexMap map[string]*Index
+	order    []string
+}
+
+func introspectMySQLIndexesByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]Index, error) {
 	rows, err := db.Query(
-		`SELECT INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX, INDEX_TYPE, COLLATION, SUB_PART
+		`SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX, INDEX_TYPE, COLLATION, SUB_PART
 		 FROM INFORMATION_SCHEMA.STATISTICS
-		 WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-		 ORDER BY INDEX_NAME, SEQ_IN_INDEX`,
-		dbName, tableName,
+		 WHERE TABLE_SCHEMA = ?
+		 ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX`,
+		dbName,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	indexMap := make(map[string]*Index)
-	var indexOrder []string
+	groups := make(map[string]*mysqlIndexesForTable)
 
 	for rows.Next() {
-		var idxName, indexType string
+		var tableName, idxName, indexType string
 		var colName, collation sql.NullString
 		var subPart sql.NullInt64
 		var nonUnique, seqInIndex int
-		if err := rows.Scan(&idxName, &colName, &nonUnique, &seqInIndex, &indexType, &collation, &subPart); err != nil {
+		if err := rows.Scan(&tableName, &idxName, &colName, &nonUnique, &seqInIndex, &indexType, &collation, &subPart); err != nil {
 			return nil, err
 		}
 
-		idx, ok := indexMap[idxName]
+		group := groups[tableName]
+		if group == nil {
+			group = &mysqlIndexesForTable{indexMap: make(map[string]*Index)}
+			groups[tableName] = group
+		}
+
+		idx, ok := group.indexMap[idxName]
 		if !ok {
 			idx = &Index{
 				Name:       identName(idxName),
@@ -259,8 +272,8 @@ func introspectMySQLIndexes(db *sql.DB, dbName, tableName string, identName func
 				IsPrimary:  idxName == "PRIMARY",
 				Type:       strings.ToUpper(indexType),
 			}
-			indexMap[idxName] = idx
-			indexOrder = append(indexOrder, idxName)
+			group.indexMap[idxName] = idx
+			group.order = append(group.order, idxName)
 		}
 
 		if subPart.Valid {
@@ -282,42 +295,58 @@ func introspectMySQLIndexes(db *sql.DB, dbName, tableName string, identName func
 		return nil, err
 	}
 
-	var indexes []Index
-	for _, name := range indexOrder {
-		indexes = append(indexes, *indexMap[name])
+	indexesByTable := make(map[string][]Index, len(groups))
+	for tableName, group := range groups {
+		indexes := make([]Index, 0, len(group.order))
+		for _, name := range group.order {
+			indexes = append(indexes, *group.indexMap[name])
+		}
+		indexesByTable[tableName] = indexes
 	}
-	return indexes, nil
+	return indexesByTable, nil
 }
 
-func introspectMySQLForeignKeys(db *sql.DB, dbName, tableName string, identName func(string) string) ([]ForeignKey, error) {
+type mysqlForeignKeysForTable struct {
+	fkMap map[string]*ForeignKey
+	order []string
+}
+
+func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]ForeignKey, error) {
 	rows, err := db.Query(
-		`SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+		`SELECT kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
 		        kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
 		        rc.UPDATE_RULE, rc.DELETE_RULE
 		 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
 		 JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
 		   ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
 		   AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-		 WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+		   AND kcu.TABLE_NAME = rc.TABLE_NAME
+		 WHERE kcu.TABLE_SCHEMA = ?
 		   AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-		 ORDER BY kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`,
-		dbName, tableName,
+		 ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`,
+		dbName,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	fkMap := make(map[string]*ForeignKey)
-	var fkOrder []string
+	groups := make(map[string]*mysqlForeignKeysForTable)
 
 	for rows.Next() {
+		var tableName string
 		var fkName, colName, refTable, refCol, updateRule, deleteRule string
-		if err := rows.Scan(&fkName, &colName, &refTable, &refCol, &updateRule, &deleteRule); err != nil {
+		if err := rows.Scan(&tableName, &fkName, &colName, &refTable, &refCol, &updateRule, &deleteRule); err != nil {
 			return nil, err
 		}
 
-		fk, ok := fkMap[fkName]
+		group := groups[tableName]
+		if group == nil {
+			group = &mysqlForeignKeysForTable{fkMap: make(map[string]*ForeignKey)}
+			groups[tableName] = group
+		}
+
+		fk, ok := group.fkMap[fkName]
 		if !ok {
 			fk = &ForeignKey{
 				Name:       identName(fkName),
@@ -326,8 +355,8 @@ func introspectMySQLForeignKeys(db *sql.DB, dbName, tableName string, identName 
 				UpdateRule: updateRule,
 				DeleteRule: deleteRule,
 			}
-			fkMap[fkName] = fk
-			fkOrder = append(fkOrder, fkName)
+			group.fkMap[fkName] = fk
+			group.order = append(group.order, fkName)
 		}
 		fk.Columns = append(fk.Columns, identName(colName))
 		fk.RefColumns = append(fk.RefColumns, identName(refCol))
@@ -336,11 +365,15 @@ func introspectMySQLForeignKeys(db *sql.DB, dbName, tableName string, identName 
 		return nil, err
 	}
 
-	var fks []ForeignKey
-	for _, name := range fkOrder {
-		fks = append(fks, *fkMap[name])
+	fksByTable := make(map[string][]ForeignKey, len(groups))
+	for tableName, group := range groups {
+		fks := make([]ForeignKey, 0, len(group.order))
+		for _, name := range group.order {
+			fks = append(fks, *group.fkMap[name])
+		}
+		fksByTable[tableName] = fks
 	}
-	return fks, nil
+	return fksByTable, nil
 }
 
 // --- Source objects introspection (moved from source_objects.go) ---

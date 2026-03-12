@@ -144,20 +144,25 @@ func (m *mssqlSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error) 
 		return nil, fmt.Errorf("introspect tables: %w", err)
 	}
 
+	columnsByTable, err := introspectMSSQLColumnsByTable(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect columns: %w", err)
+	}
+
+	indexesByTable, err := introspectMSSQLIndexesByTable(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect indexes: %w", err)
+	}
+
+	foreignKeysByTable, err := introspectMSSQLForeignKeysByTable(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect foreign keys: %w", err)
+	}
+
 	for i := range tables {
 		t := &tables[i]
-
-		cols, err := introspectMSSQLColumns(db, m.sourceSchema, t.SourceName, m.identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect columns for %s: %w", t.SourceName, err)
-		}
-		t.Columns = cols
-
-		indexes, err := introspectMSSQLIndexes(db, m.sourceSchema, t.SourceName, m.identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect indexes for %s: %w", t.SourceName, err)
-		}
-		for _, idx := range indexes {
+		t.Columns = columnsByTable[t.SourceName]
+		for _, idx := range indexesByTable[t.SourceName] {
 			if idx.IsPrimary {
 				pk := idx
 				t.PrimaryKey = &pk
@@ -165,12 +170,7 @@ func (m *mssqlSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error) 
 				t.Indexes = append(t.Indexes, idx)
 			}
 		}
-
-		fks, err := introspectMSSQLForeignKeys(db, m.sourceSchema, t.SourceName, m.identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect foreign keys for %s: %w", t.SourceName, err)
-		}
-		t.ForeignKeys = fks
+		t.ForeignKeys = foreignKeysByTable[t.SourceName]
 	}
 
 	return &Schema{Tables: tables}, nil
@@ -205,9 +205,10 @@ func introspectMSSQLTables(db *sql.DB, schema string, identName func(string) str
 	return tables, rows.Err()
 }
 
-func introspectMSSQLColumns(db *sql.DB, schema, tableName string, identName func(string) string) ([]Column, error) {
+func introspectMSSQLColumnsByTable(db *sql.DB, schema string, identName func(string) string) (map[string][]Column, error) {
 	rows, err := db.Query(`
 		SELECT
+			t.name,
 			c.name,
 			LOWER(COALESCE(st.name, ut.name)) AS base_type,
 			c.max_length,
@@ -228,19 +229,20 @@ func introspectMSSQLColumns(db *sql.DB, schema, tableName string, identName func
 		LEFT JOIN sys.default_constraints dc ON c.default_object_id = dc.object_id
 		LEFT JOIN sys.computed_columns cc ON c.object_id = cc.object_id
 			AND c.column_id = cc.column_id
-		WHERE s.name = @p1 AND t.name = @p2
+		WHERE s.name = @p1
 		  AND c.is_hidden = 0
-		ORDER BY c.column_id`,
-		schema, tableName,
+		ORDER BY t.name, c.column_id`,
+		schema,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var cols []Column
+	colsByTable := make(map[string][]Column)
 	for rows.Next() {
 		var (
+			tableName   string
 			name        string
 			baseType    string
 			maxLength   int
@@ -254,7 +256,7 @@ func introspectMSSQLColumns(db *sql.DB, schema, tableName string, identName func
 			columnID    int
 		)
 		if err := rows.Scan(
-			&name, &baseType, &maxLength, &precision, &scale,
+			&tableName, &name, &baseType, &maxLength, &precision, &scale,
 			&isNullable, &defaultDef, &isIdentity, &isComputed,
 			&computedDef, &columnID,
 		); err != nil {
@@ -303,14 +305,20 @@ func introspectMSSQLColumns(db *sql.DB, schema, tableName string, identName func
 			col.GenerationExpression = computedDef
 		}
 
-		cols = append(cols, col)
+		colsByTable[tableName] = append(colsByTable[tableName], col)
 	}
-	return cols, rows.Err()
+	return colsByTable, rows.Err()
 }
 
-func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func(string) string) ([]Index, error) {
+type mssqlIndexesForTable struct {
+	indexMap map[string]*Index
+	order    []string
+}
+
+func introspectMSSQLIndexesByTable(db *sql.DB, schema string, identName func(string) string) (map[string][]Index, error) {
 	rows, err := db.Query(`
 		SELECT
+			t.name AS table_name,
 			i.name AS index_name,
 			i.is_unique,
 			i.is_primary_key,
@@ -325,22 +333,22 @@ func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func
 		JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id
 		JOIN sys.tables t ON i.object_id = t.object_id
 		JOIN sys.schemas s ON t.schema_id = s.schema_id
-		WHERE s.name = @p1 AND t.name = @p2
+		WHERE s.name = @p1
 		  AND i.type > 0
 		  AND i.name IS NOT NULL
-		ORDER BY i.index_id, ic.is_included_column, ic.key_ordinal`,
-		schema, tableName,
+		ORDER BY t.name, i.index_id, ic.is_included_column, ic.key_ordinal`,
+		schema,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	indexMap := make(map[string]*Index)
-	var indexOrder []string
+	groups := make(map[string]*mssqlIndexesForTable)
 
 	for rows.Next() {
 		var (
+			tableName     string
 			idxName       string
 			isUnique      bool
 			isPrimary     bool
@@ -352,14 +360,20 @@ func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func
 			isIncludedCol bool
 		)
 		if err := rows.Scan(
-			&idxName, &isUnique, &isPrimary, &typeDesc,
+			&tableName, &idxName, &isUnique, &isPrimary, &typeDesc,
 			&hasFilter, &keyOrdinal, &colName, &isDescending,
 			&isIncludedCol,
 		); err != nil {
 			return nil, err
 		}
 
-		idx, ok := indexMap[idxName]
+		group := groups[tableName]
+		if group == nil {
+			group = &mssqlIndexesForTable{indexMap: make(map[string]*Index)}
+			groups[tableName] = group
+		}
+
+		idx, ok := group.indexMap[idxName]
 		if !ok {
 			idx = &Index{
 				Name:       identName(idxName),
@@ -368,8 +382,8 @@ func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func
 				IsPrimary:  isPrimary,
 				Type:       "BTREE",
 			}
-			indexMap[idxName] = idx
-			indexOrder = append(indexOrder, idxName)
+			group.indexMap[idxName] = idx
+			group.order = append(group.order, idxName)
 
 			// XML, SPATIAL, and FULLTEXT indexes → skip
 			switch typeDesc {
@@ -401,16 +415,26 @@ func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func
 		return nil, err
 	}
 
-	var indexes []Index
-	for _, name := range indexOrder {
-		indexes = append(indexes, *indexMap[name])
+	indexesByTable := make(map[string][]Index, len(groups))
+	for tableName, group := range groups {
+		indexes := make([]Index, 0, len(group.order))
+		for _, name := range group.order {
+			indexes = append(indexes, *group.indexMap[name])
+		}
+		indexesByTable[tableName] = indexes
 	}
-	return indexes, nil
+	return indexesByTable, nil
 }
 
-func introspectMSSQLForeignKeys(db *sql.DB, schema, tableName string, identName func(string) string) ([]ForeignKey, error) {
+type mssqlForeignKeysForTable struct {
+	fkMap map[string]*ForeignKey
+	order []string
+}
+
+func introspectMSSQLForeignKeysByTable(db *sql.DB, schema string, identName func(string) string) (map[string][]ForeignKey, error) {
 	rows, err := db.Query(`
 		SELECT
+			t.name AS table_name,
 			fk.name AS fk_name,
 			COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
 			OBJECT_NAME(fkc.referenced_object_id) AS ref_table,
@@ -423,25 +447,30 @@ func introspectMSSQLForeignKeys(db *sql.DB, schema, tableName string, identName 
 		JOIN sys.tables t ON fk.parent_object_id = t.object_id
 		JOIN sys.schemas s ON t.schema_id = s.schema_id
 		JOIN sys.tables ref_t ON fk.referenced_object_id = ref_t.object_id
-		WHERE s.name = @p1 AND t.name = @p2
-		ORDER BY fk.name, fkc.constraint_column_id`,
-		schema, tableName,
+		WHERE s.name = @p1
+		ORDER BY t.name, fk.name, fkc.constraint_column_id`,
+		schema,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	fkMap := make(map[string]*ForeignKey)
-	var fkOrder []string
+	groups := make(map[string]*mssqlForeignKeysForTable)
 
 	for rows.Next() {
-		var fkName, colName, refTable, refCol, updateAction, deleteAction, refSchema string
-		if err := rows.Scan(&fkName, &colName, &refTable, &refCol, &updateAction, &deleteAction, &refSchema); err != nil {
+		var tableName, fkName, colName, refTable, refCol, updateAction, deleteAction, refSchema string
+		if err := rows.Scan(&tableName, &fkName, &colName, &refTable, &refCol, &updateAction, &deleteAction, &refSchema); err != nil {
 			return nil, err
 		}
 
-		fk, ok := fkMap[fkName]
+		group := groups[tableName]
+		if group == nil {
+			group = &mssqlForeignKeysForTable{fkMap: make(map[string]*ForeignKey)}
+			groups[tableName] = group
+		}
+
+		fk, ok := group.fkMap[fkName]
 		if !ok {
 			refPGTable := identName(refTable)
 			// If the referenced table is in a different schema, log a warning.
@@ -457,8 +486,8 @@ func introspectMSSQLForeignKeys(db *sql.DB, schema, tableName string, identName 
 				UpdateRule: strings.ReplaceAll(updateAction, "_", " "),
 				DeleteRule: strings.ReplaceAll(deleteAction, "_", " "),
 			}
-			fkMap[fkName] = fk
-			fkOrder = append(fkOrder, fkName)
+			group.fkMap[fkName] = fk
+			group.order = append(group.order, fkName)
 		}
 		fk.Columns = append(fk.Columns, identName(colName))
 		fk.RefColumns = append(fk.RefColumns, identName(refCol))
@@ -467,11 +496,15 @@ func introspectMSSQLForeignKeys(db *sql.DB, schema, tableName string, identName 
 		return nil, err
 	}
 
-	var fks []ForeignKey
-	for _, name := range fkOrder {
-		fks = append(fks, *fkMap[name])
+	fksByTable := make(map[string][]ForeignKey, len(groups))
+	for tableName, group := range groups {
+		fks := make([]ForeignKey, 0, len(group.order))
+		for _, name := range group.order {
+			fks = append(fks, *group.fkMap[name])
+		}
+		fksByTable[tableName] = fks
 	}
-	return fks, nil
+	return fksByTable, nil
 }
 
 // --- Source objects introspection ---
