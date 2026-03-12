@@ -1,0 +1,175 @@
+@import '@fontsource/fraunces/700.css';
+@import '@fontsource/fraunces/600.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+
+:root {
+	--sl-font: 'IBM Plex Sans', sans-serif;
+	--sl-font-mono: 'IBM Plex Mono', monospace;
+	--sl-color-accent-low: #d2e7df;
+	--sl-color-accent: #0f766e;
+	--sl-color-accent-high: #093d46;
+	--sl-color-text-accent: #0b525b;
+	--sl-color-bg: #f6f0e3;
+	--sl-color-bg-nav: rgba(246, 240, 227, 0.9);
+	--sl-color-bg-sidebar: #efe4d0;
+	--sl-color-bg-inline-code: #e7ddc8;
+	--sl-color-text: #11243c;
+	--sl-color-hairline: #cfbea2;
+	--sl-color-hairline-light: #ddd0bb;
+	--sl-color-hairline-shade: #bfae92;
+	--sl-color-gray-1: #f6f0e3;
+	--sl-color-gray-2: #efe4d0;
+	--sl-color-gray-3: #ddd0bb;
+	--sl-color-gray-4: #bfae92;
+	--sl-color-gray-5: #725c49;
+	--sl-color-gray-6: #3f4a5a;
+	--sl-color-black: #11243c;
+	--sl-color-white: #fffaf2;
+	--sl-text-h1: clamp(3rem, 7vw, 5.8rem);
+	--sl-text-h2: clamp(2rem, 4vw, 3rem);
+	--sl-text-h3: 1.35rem;
+	--sl-line-height-headings: 0.95;
+	--sl-shadow-sm: 0 10px 30px rgba(17, 36, 60, 0.08);
+	--sl-shadow-md: 0 18px 50px rgba(17, 36, 60, 0.12);
+	--sl-shadow-lg: 0 26px 80px rgba(17, 36, 60, 0.18);
+}
+
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #0b2c35;
+	--sl-color-accent: #63b7a7;
+	--sl-color-accent-high: #c9efe7;
+	--sl-color-text-accent: #88d8ca;
+	--sl-color-bg: #08141f;
+	--sl-color-bg-nav: rgba(8, 20, 31, 0.88);
+	--sl-color-bg-sidebar: #0d1c2a;
+	--sl-color-bg-inline-code: #102536;
+	--sl-color-text: #e6ecf1;
+	--sl-color-hairline: #173149;
+	--sl-color-hairline-light: #1c3d58;
+	--sl-color-hairline-shade: #102436;
+	--sl-color-gray-1: #08141f;
+	--sl-color-gray-2: #0d1c2a;
+	--sl-color-gray-3: #102436;
+	--sl-color-gray-4: #1c3d58;
+	--sl-color-gray-5: #8aa2b8;
+	--sl-color-gray-6: #c4d0d8;
+	--sl-color-black: #02070d;
+	--sl-color-white: #f4efe4;
+}
+
+html {
+	background:
+		radial-gradient(circle at top left, rgba(15, 118, 110, 0.18), transparent 24rem),
+		radial-gradient(circle at top right, rgba(194, 108, 43, 0.14), transparent 22rem),
+		var(--sl-color-bg);
+}
+
+body {
+	font-family: var(--sl-font);
+}
+
+:global(.site-title),
+:global(.hero h1) {
+	font-family: 'Fraunces', serif;
+	font-weight: 700;
+	letter-spacing: -0.04em;
+}
+
+:global(.hero) {
+	position: relative;
+	padding-block-end: 1.5rem;
+}
+
+:global(.hero)::after {
+	content: '';
+	position: absolute;
+	inset: auto 0 -0.4rem;
+	height: 0.4rem;
+	background: linear-gradient(90deg, rgba(15, 118, 110, 0.75), rgba(194, 108, 43, 0.78) 48%, rgba(17, 36, 60, 0.85));
+	border-radius: 999px;
+}
+
+:global(.hero .tagline) {
+	font-size: clamp(1.15rem, 1.8vw, 1.4rem);
+	max-width: 52rem;
+}
+
+:global(.hero-band) {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+	gap: 0.8rem;
+	margin: 2rem 0 3rem;
+}
+
+:global(.hero-band span) {
+	border: 1px solid var(--sl-color-hairline);
+	background: linear-gradient(180deg, rgba(255, 250, 242, 0.72), rgba(232, 221, 200, 0.62));
+	border-radius: 999px;
+	padding: 0.8rem 1rem;
+	font-size: 0.88rem;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	text-align: center;
+	box-shadow: var(--sl-shadow-sm);
+}
+
+:root[data-theme='dark'] :global(.hero-band span) {
+	background: linear-gradient(180deg, rgba(16, 37, 54, 0.92), rgba(8, 20, 31, 0.92));
+}
+
+:global(.signal-grid) {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+	gap: 1rem;
+	margin: 1.75rem 0 2.5rem;
+}
+
+:global(.signal-grid article) {
+	padding: 1.2rem;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 1.4rem;
+	background: rgba(255, 250, 242, 0.72);
+	box-shadow: var(--sl-shadow-sm);
+	backdrop-filter: blur(12px);
+}
+
+:root[data-theme='dark'] :global(.signal-grid article) {
+	background: rgba(13, 28, 42, 0.88);
+}
+
+:global(.signal-grid h3) {
+	font-family: 'Fraunces', serif;
+	font-size: 1.1rem;
+	margin-bottom: 0.35rem;
+}
+
+:global(.card) {
+	border-radius: 1.35rem;
+	border: 1px solid var(--sl-color-hairline);
+	box-shadow: var(--sl-shadow-sm);
+}
+
+:global(.sl-markdown-content a) {
+	text-decoration-thickness: 0.08em;
+	text-underline-offset: 0.16em;
+}
+
+:global(.sl-markdown-content code:not(pre code)) {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 0.45rem;
+	padding: 0.15rem 0.35rem;
+}
+
+:global(.pagination-links a) {
+	border-radius: 1rem;
+}
+
+@media (max-width: 50rem) {
+	:global(.hero)::after {
+		inset-inline: 0.2rem;
+	}
+}

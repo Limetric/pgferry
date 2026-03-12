@@ -1,0 +1,99 @@
+---
+title: pgferry
+description: Move MySQL, SQLite, or MSSQL into PostgreSQL without trusting a brittle black box.
+template: splash
+hero:
+  tagline: Deterministic schema conversion, resumable COPY loads, and the operator controls you need when the source database is messy.
+  actions:
+    - text: Install
+      link: /get-started/install/
+      icon: right-arrow
+    - text: Quick Start
+      link: /get-started/quick-start/
+      icon: right-arrow
+    - text: Browse Examples
+      link: /examples/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/Limetric/pgferry
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<div class="hero-band">
+	<span>MySQL 5.7+</span>
+	<span>SQLite</span>
+	<span>MSSQL 2017-2025</span>
+	<span>PostgreSQL target</span>
+	<span>Chunked COPY</span>
+	<span>Plan before migrate</span>
+</div>
+
+## Why pgferry exists
+
+Most migration tools are fine until the schema gets ugly: generated columns, unsupported indexes, collations, extension-backed types, or the first interruption halfway through a bulk copy. `pgferry` was built for that failure mode.
+
+<div class="signal-grid">
+	<article>
+		<h3>One config file</h3>
+		<p>Use one TOML file to define source, target, hooks, validation, type mapping, and cutover behavior.</p>
+	</article>
+	<article>
+		<h3>Preflight first</h3>
+		<p><code>pgferry plan</code> finds unsupported objects and generates hook skeletons before PostgreSQL is touched.</p>
+	</article>
+	<article>
+		<h3>Resume when reality happens</h3>
+		<p>Checkpointed chunking means long migrations can survive network failures and operator mistakes.</p>
+	</article>
+	<article>
+		<h3>Modern edge cases included</h3>
+		<p>PostGIS, <code>citext</code>, generated columns, source-specific type mapping, and bounded post-load parallelism are all first-class.</p>
+	</article>
+</div>
+
+## What you get
+
+<CardGrid>
+	<Card title="Introspection that errs on the side of honesty" icon="list">
+		Source schema analysis reports unsupported types, generated columns, skipped indexes, views, routines, and triggers that need manual handling.
+	</Card>
+	<Card title="COPY performance with control" icon="bolt">
+		Chunked range planning for eligible tables, worker pools for the hot path, and bounded index creation during post-migration cleanup.
+	</Card>
+	<Card title="Operational escape hatches" icon="gear">
+		Hooks at four phases, <code>schema_only</code> and <code>data_only</code> modes, orphan cleanup, snapshot options, and configurable defaults preservation.
+	</Card>
+	<Card title="Validation instead of vibes" icon="check-circle">
+		Optional row-count checks and explicit logging reduce the number of surprises left for cutover day.
+	</Card>
+</CardGrid>
+
+## Default path through a migration
+
+```bash
+pgferry plan migration.toml
+pgferry migration.toml
+```
+
+1. Inspect the source and generate a preflight report.
+2. Fill in hooks for views, routines, or custom data cleanup.
+3. Run the migration with chunking, checkpoints, and optional validation.
+4. Review post-load objects, row counts, and extension-backed features before cutover.
+
+## Source matrix
+
+| Source | Driver | Workers | Snapshot mode |
+| ------ | ------ | ------- | ------------- |
+| MySQL | `go-sql-driver/mysql` | Parallel | `none`, `single_tx` |
+| SQLite | `modernc.org/sqlite` | Sequential | `none` |
+| MSSQL | `go-mssqldb` | Parallel | `none`, `single_tx` |
+
+## Read next
+
+- [Install pgferry](/get-started/install/)
+- [Quick start for MySQL, SQLite, and MSSQL](/get-started/quick-start/)
+- [Plan and validate before cutover](/get-started/plan-and-validate/)
+- [Examples by source database](/examples/)
