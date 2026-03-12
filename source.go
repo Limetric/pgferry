@@ -72,3 +72,16 @@ func newSourceDB(sourceType string) (SourceDB, error) {
 		return nil, fmt.Errorf("unsupported source type %q (must be mysql, sqlite, or mssql)", sourceType)
 	}
 }
+
+// newConfiguredSourceDB initializes a source backend with config-driven settings
+// so all entrypoints use the same source-side behavior.
+func newConfiguredSourceDB(cfg *MigrationConfig) (SourceDB, error) {
+	src, err := newSourceDB(cfg.Source.Type)
+	if err != nil {
+		return nil, err
+	}
+	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
+	src.SetCharset(cfg.Source.Charset)
+	src.SetSourceSchema(cfg.Source.SourceSchema)
+	return src, nil
+}

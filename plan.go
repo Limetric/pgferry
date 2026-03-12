@@ -88,12 +88,10 @@ func runPlan(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	src, err := newSourceDB(cfg.Source.Type)
+	src, err := newConfiguredSourceDB(cfg)
 	if err != nil {
 		return err
 	}
-	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
-	src.SetCharset(cfg.Source.Charset)
 
 	log.Printf("pgferry plan — %s source analysis", src.Name())
 
