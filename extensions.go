@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -52,6 +53,8 @@ func schemaUsesCitext(schema *Schema, src SourceDB, typeMap TypeMappingConfig) b
 		for _, col := range t.Columns {
 			pgType, err := src.MapType(col, typeMap)
 			if err != nil {
+				// Keep extension detection conservative: unsupported columns are
+				// reported elsewhere, and they should not break citext discovery.
 				continue
 			}
 			if pgTypeForCollation(col, pgType, typeMap) == "citext" {
@@ -98,7 +101,7 @@ func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []ex
 			if req.CreateHint != "" {
 				msg += " " + req.CreateHint
 			}
-			return fmt.Errorf("%s", msg)
+			return errors.New(msg)
 		}
 
 		log.Printf("creating PostgreSQL extension %s for %s...", req.Name, req.Feature)

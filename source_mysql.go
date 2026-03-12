@@ -277,7 +277,7 @@ func introspectMySQLIndexesByTable(db *sql.DB, dbName string, identName func(str
 			group.order = append(group.order, idxName)
 		}
 
-		if subPart.Valid {
+		if mysqlIndexHasPrefix(indexType, subPart) {
 			idx.HasPrefix = true
 		}
 		if !colName.Valid {
@@ -310,6 +310,15 @@ func introspectMySQLIndexesByTable(db *sql.DB, dbName string, identName func(str
 type mysqlForeignKeysForTable struct {
 	fkMap map[string]*ForeignKey
 	order []string
+}
+
+func mysqlIndexHasPrefix(indexType string, subPart sql.NullInt64) bool {
+	if !subPart.Valid {
+		return false
+	}
+	// MySQL reports SUB_PART metadata for SPATIAL indexes on some versions even
+	// though SPATIAL indexes do not support user-defined prefix lengths.
+	return !strings.EqualFold(indexType, "SPATIAL")
 }
 
 func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]ForeignKey, error) {
@@ -901,12 +910,14 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 }
 
 func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
+	const maxPostGISSRID = 0x7fffffff
+
 	if len(raw) < 9 {
 		return nil, fmt.Errorf("spatial payload too short: got %d bytes", len(raw))
 	}
 
 	srid := binary.LittleEndian.Uint32(raw[:4])
-	if srid > 0x7fffffff {
+	if srid > maxPostGISSRID {
 		return nil, fmt.Errorf("spatial SRID %d exceeds PostGIS supported range", srid)
 	}
 	wkb := raw[4:]
@@ -924,6 +935,8 @@ func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
 	}
 
 	if srid == 0 {
+		// SRID=0 stays as plain WKB. Copy into a fresh slice so COPY does not
+		// observe a driver-owned buffer alias.
 		out := make([]byte, len(wkb))
 		copy(out, wkb)
 		return out, nil

@@ -47,11 +47,11 @@ func collectIndexCompatibilityWarnings(schema *Schema, typeMap TypeMappingConfig
 func isMySQLSpatialIndex(table Table, idx Index) bool {
 	for _, name := range idx.Columns {
 		col, ok := findColumnByPGName(table, name)
-		if !ok || !isMySQLSpatialType(col.DataType) {
-			return false
+		if ok && isMySQLSpatialType(col.DataType) {
+			return true
 		}
 	}
-	return len(idx.Columns) > 0
+	return false
 }
 
 func findColumnByPGName(table Table, pgName string) (Column, bool) {

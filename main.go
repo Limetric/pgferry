@@ -199,8 +199,9 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	}
 
 	// Validate extension-backed features before any schema or data work. This
-	// intentionally also runs in data_only mode because geometry/citext COPY
-	// still depends on the target extension being present.
+	// intentionally also runs in schema_only and data_only modes because
+	// geometry/citext DDL and COPY both depend on the target extension being
+	// present.
 	if reqs := collectRequiredExtensions(schema, src, cfg, typeMap); len(reqs) > 0 {
 		log.Printf("validating required PostgreSQL extensions...")
 		if err := ensureRequiredExtensions(ctx, pgPool, reqs); err != nil {

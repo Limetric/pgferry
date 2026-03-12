@@ -263,7 +263,7 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 			return fmt.Errorf("postgis is currently only supported for mysql sources")
 		}
 		if cfg.TypeMapping.SpatialMode != "off" {
-			return fmt.Errorf("postgis.enabled requires type_mapping.spatial_mode = \"off\"")
+			return fmt.Errorf("postgis.enabled is incompatible with type_mapping.spatial_mode = %q; set spatial_mode = \"off\" because native PostGIS migration replaces the fallback spatial modes", cfg.TypeMapping.SpatialMode)
 		}
 	}
 	if cfg.Source.Charset == "" {

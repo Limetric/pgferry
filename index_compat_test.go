@@ -24,6 +24,7 @@ func TestIndexUnsupportedReason(t *testing.T) {
 		{"no columns", Index{SourceName: "idx_n", Type: "BTREE"}, defaultTypeMappingConfig(), true},
 		{"spatial without postgis", Index{SourceName: "idx_geom", Type: "SPATIAL", Columns: []string{"geom"}}, defaultTypeMappingConfig(), true},
 		{"spatial with postgis", Index{SourceName: "idx_geom", Type: "SPATIAL", Columns: []string{"geom"}}, TypeMappingConfig{UsePostGIS: true}, false},
+		{"spatial on non-spatial column", Index{SourceName: "idx_name", Type: "SPATIAL", Columns: []string{"name"}}, defaultTypeMappingConfig(), true},
 	}
 
 	for _, tt := range tests {
@@ -33,6 +34,25 @@ func TestIndexUnsupportedReason(t *testing.T) {
 				t.Fatalf("indexUnsupportedReason() unsupported=%t, want %t", unsupported, tt.ok)
 			}
 		})
+	}
+}
+
+func TestIsMySQLSpatialIndex(t *testing.T) {
+	table := Table{
+		Columns: []Column{
+			{PGName: "geom", DataType: "geometry"},
+			{PGName: "name", DataType: "varchar"},
+		},
+	}
+
+	if !isMySQLSpatialIndex(table, Index{Columns: []string{"geom"}}) {
+		t.Fatal("expected geometry column to be detected as spatial")
+	}
+	if isMySQLSpatialIndex(table, Index{Columns: []string{"name"}}) {
+		t.Fatal("did not expect varchar column to be detected as spatial")
+	}
+	if !isMySQLSpatialIndex(table, Index{Columns: []string{"name", "geom"}}) {
+		t.Fatal("expected any spatial column in the index to trigger spatial handling")
 	}
 }
 
