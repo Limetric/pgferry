@@ -956,7 +956,9 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 			name VARCHAR(100) NOT NULL,
 			shape POINT NULL
 		)`,
-		"INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326))",
+		// MySQL 8 uses SRID-defined axis order for geographic SRSes such as 4326.
+		// Seed long/lat explicitly so the fixture matches the expected PostGIS result.
+		"INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326, 'axis-order=long-lat'))",
 		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
 		"INSERT INTO places (name, shape) VALUES ('utm', ST_GeomFromText('POINT(2 3)', 3857))",
 		"INSERT INTO places_optional (name, shape) VALUES ('unknown', NULL)",
