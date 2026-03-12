@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -956,9 +957,6 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 			name VARCHAR(100) NOT NULL,
 			shape POINT NULL
 		)`,
-		// MySQL 8 uses SRID-defined axis order for geographic SRSes such as 4326.
-		// Seed long/lat explicitly so the fixture matches the expected PostGIS result.
-		"INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326, 'axis-order=long-lat'))",
 		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
 		"INSERT INTO places (name, shape) VALUES ('utm', ST_GeomFromText('POINT(2 3)', 3857))",
 		"INSERT INTO places_optional (name, shape) VALUES ('unknown', NULL)",
@@ -969,6 +967,25 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 			t.Fatalf("seed mysql spatial %q: %v", stmt[:min(len(stmt), 60)], err)
 		}
 	}
+	if err := insertMySQLSpatialAmsterdam(db); err != nil {
+		t.Fatalf("seed mysql spatial amsterdam: %v", err)
+	}
+}
+
+func insertMySQLSpatialAmsterdam(db *sql.DB) error {
+	stmt := "INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326, 'axis-order=long-lat'))"
+	if _, err := db.Exec(stmt); err == nil {
+		return nil
+	} else {
+		var mysqlErr *mysql.MySQLError
+		if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1582 {
+			return err
+		}
+	}
+
+	legacyStmt := "INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326))"
+	_, err := db.Exec(legacyStmt)
+	return err
 }
 
 func seedSakila(t *testing.T, db *sql.DB) {
