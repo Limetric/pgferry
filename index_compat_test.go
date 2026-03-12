@@ -50,7 +50,7 @@ func TestCollectIndexCompatibilityWarnings(t *testing.T) {
 
 func TestQuotedOrderedColumnList(t *testing.T) {
 	got := quotedOrderedColumnList([]string{"a", "b", "c"}, []string{"ASC", "DESC", "ASC"})
-	want := "a, b DESC, c"
+	want := `"a", "b" DESC, "c"`
 	if got != want {
 		t.Fatalf("quotedOrderedColumnList()=%q, want %q", got, want)
 	}
