@@ -145,6 +145,37 @@ func TestBuildChunkedSelectQuery_SQLite(t *testing.T) {
 	}
 }
 
+func TestBuildChunkedSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "sales"}
+	table := Table{
+		SourceName: "orders",
+		Columns: []Column{
+			{SourceName: "id"},
+			{SourceName: "customer_id"},
+		},
+	}
+	key := ChunkKey{SourceColumn: "id", PGColumn: "id"}
+	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 100, IsLast: false}
+
+	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	want := "SELECT [id], [customer_id] FROM [sales].[orders] WHERE [id] >= 1 AND [id] < 100 ORDER BY [id]"
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+func TestBuildMinMaxQuery_MSSQLWithSourceSchema(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "sales"}
+	table := Table{SourceName: "orders"}
+	key := ChunkKey{SourceColumn: "id", PGColumn: "id"}
+
+	got := buildMinMaxQuery(src, table, key)
+	want := "SELECT MIN([id]), MAX([id]) FROM [sales].[orders]"
+	if got != want {
+		t.Fatalf("buildMinMaxQuery() = %q, want %q", got, want)
+	}
+}
+
 func TestChunkKeyForTable_SingleNumericPK(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{

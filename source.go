@@ -35,6 +35,11 @@ type SourceDB interface {
 	// QuoteIdentifier quotes a source identifier for use in queries.
 	QuoteIdentifier(name string) string
 
+	// SourceTableRef renders a source-side table reference for SELECT queries.
+	// Backends with schema-qualified reads (for example MSSQL) can centralize
+	// that behavior here so call sites do not need backend-specific logic.
+	SourceTableRef(table Table) string
+
 	// SupportsSnapshotMode reports whether single_tx snapshot mode is supported.
 	SupportsSnapshotMode() bool
 

@@ -374,9 +374,9 @@ func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *S
 		if !hasRows {
 			// Empty table — single empty plan
 			plans = append(plans, ChunkPlan{
-				Table:    t,
-				ChunkKey: key,
-				Chunks:   []Chunk{{Index: 0, IsLast: true}},
+				Table:     t,
+				ChunkKey:  key,
+				Chunks:    []Chunk{{Index: 0, IsLast: true}},
 				ChunkSize: chunkSize,
 			})
 			chunkable++
@@ -386,9 +386,9 @@ func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *S
 
 		chunks := planChunks(min, max, chunkSize)
 		plans = append(plans, ChunkPlan{
-			Table:    t,
-			ChunkKey: key,
-			Chunks:   chunks,
+			Table:     t,
+			ChunkKey:  key,
+			Chunks:    chunks,
 			ChunkSize: chunkSize,
 		})
 		chunkable++
@@ -483,7 +483,7 @@ func buildSourceSelectQuery(src SourceDB, table Table, typeMap TypeMappingConfig
 	for i, col := range table.Columns {
 		cols[i] = columnSelectExpr(src, col, typeMap)
 	}
-	return fmt.Sprintf("SELECT %s FROM %s", strings.Join(cols, ", "), src.QuoteIdentifier(table.SourceName))
+	return fmt.Sprintf("SELECT %s FROM %s", strings.Join(cols, ", "), src.SourceTableRef(table))
 }
 
 // columnSelectExpr returns the SQL expression for selecting a column.

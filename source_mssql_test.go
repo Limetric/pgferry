@@ -274,6 +274,17 @@ func TestMSSQLQuoteIdentifier(t *testing.T) {
 	}
 }
 
+func TestMSSQLSourceTableRef(t *testing.T) {
+	src := &mssqlSourceDB{sourceSchema: "sales"}
+	table := Table{SourceName: "orders"}
+
+	got := src.SourceTableRef(table)
+	want := "[sales].[orders]"
+	if got != want {
+		t.Fatalf("SourceTableRef() = %q, want %q", got, want)
+	}
+}
+
 func TestMSSQLExtractDBName(t *testing.T) {
 	src := &mssqlSourceDB{}
 

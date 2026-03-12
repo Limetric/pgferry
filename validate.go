@@ -31,6 +31,10 @@ func validationWorkers(workers int, src SourceDB) int {
 	return workers
 }
 
+func buildSourceCountQuery(src SourceDB, table Table) string {
+	return fmt.Sprintf("SELECT COUNT(*) FROM %s", src.SourceTableRef(table))
+}
+
 // validateMigration runs post-load validation comparing source and target row counts.
 // Tables are validated in parallel with bounded concurrency. The workers parameter
 // controls maximum parallelism and is capped by source backend limits (e.g., SQLite
@@ -80,7 +84,7 @@ func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *p
 			result := ValidationResult{Table: tbl.SourceName}
 
 			// Count source rows
-			srcQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s", src.QuoteIdentifier(tbl.SourceName))
+			srcQuery := buildSourceCountQuery(src, tbl)
 			if err := srcDB.QueryRowContext(ctx, srcQuery).Scan(&result.SourceCount); err != nil {
 				setErr(fmt.Errorf("count source rows for %s: %w", tbl.SourceName, err))
 				return

@@ -77,7 +77,7 @@ func buildChunkedSelectQuery(src SourceDB, table Table, key ChunkKey, chunk Chun
 	}
 
 	quotedKey := src.QuoteIdentifier(key.SourceColumn)
-	tableName := src.QuoteIdentifier(table.SourceName)
+	tableName := src.SourceTableRef(table)
 
 	if chunk.IsLast {
 		return fmt.Sprintf("SELECT %s FROM %s WHERE %s >= %d AND %s <= %d ORDER BY %s",
@@ -149,14 +149,17 @@ func isNumericChunkableType(col Column, src SourceDB) bool {
 	return false
 }
 
+func buildMinMaxQuery(src SourceDB, table Table, key ChunkKey) string {
+	return fmt.Sprintf("SELECT MIN(%s), MAX(%s) FROM %s",
+		src.QuoteIdentifier(key.SourceColumn),
+		src.QuoteIdentifier(key.SourceColumn),
+		src.SourceTableRef(table))
+}
+
 // queryMinMax queries the MIN and MAX values of the chunk key column.
 // Returns (min, max, hasRows, error). If the table is empty, hasRows is false.
 func queryMinMax(ctx context.Context, source dbQuerier, src SourceDB, table Table, key ChunkKey) (int64, int64, bool, error) {
-	query := fmt.Sprintf("SELECT MIN(%s), MAX(%s) FROM %s",
-		src.QuoteIdentifier(key.SourceColumn),
-		src.QuoteIdentifier(key.SourceColumn),
-		src.QuoteIdentifier(table.SourceName))
-
+	query := buildMinMaxQuery(src, table, key)
 	rows, err := source.QueryContext(ctx, query)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("query min/max for %s: %w", table.SourceName, err)

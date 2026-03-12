@@ -36,6 +36,14 @@ func (m *mssqlSourceDB) QuoteIdentifier(name string) string {
 	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 }
 
+func (m *mssqlSourceDB) SourceTableRef(table Table) string {
+	tableRef := m.QuoteIdentifier(table.SourceName)
+	if strings.TrimSpace(m.sourceSchema) == "" {
+		return tableRef
+	}
+	return m.QuoteIdentifier(m.sourceSchema) + "." + tableRef
+}
+
 func (m *mssqlSourceDB) OpenDB(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("sqlserver", dsn)
 	if err != nil {
@@ -327,15 +335,15 @@ func introspectMSSQLIndexes(db *sql.DB, schema, tableName string, identName func
 
 	for rows.Next() {
 		var (
-			idxName         string
-			isUnique        bool
-			isPrimary       bool
-			typeDesc        string
-			hasFilter       bool
-			keyOrdinal      int
-			colName         string
-			isDescending    bool
-			isIncludedCol   bool
+			idxName       string
+			isUnique      bool
+			isPrimary     bool
+			typeDesc      string
+			hasFilter     bool
+			keyOrdinal    int
+			colName       string
+			isDescending  bool
+			isIncludedCol bool
 		)
 		if err := rows.Scan(
 			&idxName, &isUnique, &isPrimary, &typeDesc,
