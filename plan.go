@@ -356,7 +356,7 @@ func buildAfterDataSkeleton(report *PlanReport, schema string) string {
 		cols := byTable[table]
 		fmt.Fprintf(&b, "-- Table: %s\n", table)
 		for _, gc := range cols {
-			fmt.Fprintf(&b, "-- TODO: ALTER TABLE {{schema}}.%s\n", pgIdent(gc.Table))
+			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s\n", pgIdent("{{schema}}"), pgIdent(gc.Table))
 			fmt.Fprintf(&b, "--        ALTER COLUMN %s SET EXPRESSION AS (...);\n", pgIdent(gc.Column))
 			fmt.Fprintf(&b, "-- Source expression: %s\n", gc.Expression)
 		}
@@ -383,7 +383,7 @@ func buildAfterAllSkeleton(report *PlanReport, schema string) string {
 		b.WriteString("-- Views\n")
 		b.WriteString("-- Recreate these views in PostgreSQL syntax.\n")
 		for _, v := range objs.Views {
-			fmt.Fprintf(&b, "-- TODO: CREATE VIEW {{schema}}.%s AS ...;\n", pgIdent(v))
+			fmt.Fprintf(&b, "-- TODO: CREATE VIEW %s.%s AS ...;\n", pgIdent("{{schema}}"), pgIdent(v))
 		}
 		b.WriteByte('\n')
 	}
@@ -410,7 +410,7 @@ func buildAfterAllSkeleton(report *PlanReport, schema string) string {
 		b.WriteString("-- Skipped Indexes\n")
 		b.WriteString("-- These indexes could not be migrated automatically.\n")
 		for _, si := range report.SkippedIndexes {
-			fmt.Fprintf(&b, "-- TODO: CREATE INDEX ON {{schema}}.%s ...;\n", pgIdent(si.Table))
+			fmt.Fprintf(&b, "-- TODO: CREATE INDEX ON %s.%s ...;\n", pgIdent("{{schema}}"), pgIdent(si.Table))
 			fmt.Fprintf(&b, "--   Source: %s.%s — %s\n", si.Table, si.Index, si.Reason)
 		}
 		b.WriteByte('\n')

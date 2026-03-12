@@ -12,6 +12,10 @@ PostgreSQL identifiers are always emitted as double-quoted identifiers in genera
 For example, a source column named `user` becomes `"user"` and a plain identifier like
 `users` becomes `"users"` in PostgreSQL.
 
+This changes the exact SQL text compared with older pgferry releases that only quoted
+some identifiers. If you compare emitted SQL strings in external tooling or scripts,
+expect more quoted output such as `"app"."users"` instead of `app.users`.
+
 ## Auto-increment &rarr; sequences
 
 MySQL `auto_increment` and SQLite `AUTOINCREMENT` / `INTEGER PRIMARY KEY` columns are

@@ -220,6 +220,9 @@ func TestWriteHookSkeletons_GeneratedColumns(t *testing.T) {
 	if !strings.Contains(content, "{{schema}}") {
 		t.Error("after_data.sql should contain {{schema}} placeholder")
 	}
+	if !strings.Contains(content, `"{{schema}}"."users"`) {
+		t.Error(`after_data.sql should quote the schema placeholder and table identifier`)
+	}
 	if !strings.Contains(content, "display_name") {
 		t.Error("after_data.sql should mention the generated column")
 	}
@@ -257,6 +260,8 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 		"trg_audit",
 		"idx_ft",
 		"{{schema}}",
+		`"{{schema}}"."v_summary"`,
+		`"{{schema}}"."orders"`,
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("after_all.sql missing %q", want)
