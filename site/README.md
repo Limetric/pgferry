@@ -27,8 +27,6 @@ Recommended Pages settings:
 - Build output directory: `dist`
 - Production branch: `main`
 
-`wrangler.toml` is included for local consistency and future direct-upload workflows.
-
 ## Plausible
 
 The site only injects the Plausible script when the relevant environment variables are present:
