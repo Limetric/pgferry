@@ -28,13 +28,20 @@ func collectRequiredExtensions(schema *Schema, src SourceDB, cfg *MigrationConfi
 		})
 	}
 
-	if cfg.PostGIS.Enabled && schemaUsesMySQLSpatial(schema) {
-		reqs = append(reqs, extensionRequirement{
-			Name:            "postgis",
-			Feature:         "postgis",
-			CreateIfMissing: cfg.PostGIS.CreateExtension,
-			CreateHint:      "or set [postgis].create_extension = true",
-		})
+	if cfg.PostGIS.Enabled {
+		// Config validation already limits PostGIS to MySQL sources; keep the
+		// source-type guard here so the requirement collector stays explicit even
+		// in unit tests that construct MigrationConfig directly.
+		if sourceIsMySQL(cfg, src) && schemaUsesMySQLSpatial(schema) {
+			reqs = append(reqs, extensionRequirement{
+				Name:            "postgis",
+				Feature:         "postgis",
+				CreateIfMissing: cfg.PostGIS.CreateExtension,
+				CreateHint:      "or set [postgis].create_extension = true",
+			})
+		} else {
+			log.Printf("postgis.enabled = true but no MySQL spatial columns were detected; PostGIS will not be used")
+		}
 	}
 
 	sort.Slice(reqs, func(i, j int) bool {
@@ -80,6 +87,13 @@ func schemaUsesMySQLSpatial(schema *Schema) bool {
 	}
 
 	return false
+}
+
+func sourceIsMySQL(cfg *MigrationConfig, src SourceDB) bool {
+	if cfg != nil && cfg.Source.Type != "" {
+		return cfg.Source.Type == "mysql"
+	}
+	return src != nil && src.Name() == "MySQL"
 }
 
 func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []extensionRequirement) error {

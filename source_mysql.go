@@ -912,6 +912,9 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
 	const maxPostGISSRID = 0x7fffffff
 
+	// MySQL spatial values arrive as a 4-byte LE SRID prefix plus WKB. The
+	// minimum useful guard here is "can we read byte order + type word?"; deeper
+	// geometry-shape validation is left to PostGIS during COPY.
 	if len(raw) < 9 {
 		return nil, fmt.Errorf("spatial payload too short: got %d bytes", len(raw))
 	}
@@ -935,7 +938,8 @@ func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
 	}
 
 	if srid == 0 {
-		// SRID=0 stays as plain WKB. Copy into a fresh slice so COPY does not
+		// SRID=0 stays as plain WKB because PostGIS interprets missing EWKB SRID
+		// metadata as unknown/zero SRID. Copy into a fresh slice so COPY does not
 		// observe a driver-owned buffer alias.
 		out := make([]byte, len(wkb))
 		copy(out, wkb)

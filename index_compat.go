@@ -45,6 +45,8 @@ func collectIndexCompatibilityWarnings(schema *Schema, typeMap TypeMappingConfig
 }
 
 func isMySQLSpatialIndex(table Table, idx Index) bool {
+	// idx.Columns are PG-normalized names from MySQL introspection, so spatial
+	// detection must resolve against Table.Columns.PGName rather than source names.
 	for _, name := range idx.Columns {
 		col, ok := findColumnByPGName(table, name)
 		if ok && isMySQLSpatialType(col.DataType) {
