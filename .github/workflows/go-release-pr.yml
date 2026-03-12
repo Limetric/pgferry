@@ -1,0 +1,103 @@
+name: Go Release PR
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: go-release-pr
+  cancel-in-progress: false
+
+jobs:
+  update-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Find latest stable Go release
+        id: latest
+        env:
+          GO_RELEASES_URL: https://go.dev/dl/?mode=json
+        run: |
+          latest_version="$(
+            curl -fsSL "$GO_RELEASES_URL" | python3 -c '
+import json
+import sys
+
+releases = json.load(sys.stdin)
+stable = next(release for release in releases if release.get("stable"))
+print(stable["version"].removeprefix("go"))
+'
+          )"
+
+          if [ -z "$latest_version" ]; then
+            echo "failed to resolve latest Go release" >&2
+            exit 1
+          fi
+
+          echo "version=$latest_version" >> "$GITHUB_OUTPUT"
+
+      - name: Read current Go version
+        id: current
+        run: |
+          current_version="$(sed -nE 's/^go ([0-9]+\.[0-9]+(\.[0-9]+)?)/\1/p' go.mod | head -n1)"
+
+          if [ -z "$current_version" ]; then
+            echo "failed to read current Go version from go.mod" >&2
+            exit 1
+          fi
+
+          echo "version=$current_version" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether an update is needed
+        id: needs-update
+        run: |
+          if [ "${{ steps.current.outputs.version }}" = "${{ steps.latest.outputs.version }}" ]; then
+            echo "update=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "update=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        if: steps.needs-update.outputs.update == 'true'
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.latest.outputs.version }}
+          check-latest: true
+
+      - name: Update go.mod
+        if: steps.needs-update.outputs.update == 'true'
+        run: |
+          go mod edit -go=${{ steps.latest.outputs.version }}
+          go mod tidy
+
+      - name: Verify with current CI checks
+        if: steps.needs-update.outputs.update == 'true'
+        run: |
+          go vet ./...
+          go test ./... -count=1
+
+      - name: Create pull request
+        if: steps.needs-update.outputs.update == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.REPO_AUTOMATION_TOKEN || github.token }}
+          branch: automation/go-${{ steps.latest.outputs.version }}
+          delete-branch: true
+          commit-message: chore: bump Go to ${{ steps.latest.outputs.version }}
+          title: chore: bump Go to ${{ steps.latest.outputs.version }}
+          body: |
+            Updates the Go version in `go.mod` to the latest stable upstream release published at `go.dev/dl`.
+
+            This PR was created automatically by the scheduled Go release workflow.
+
+            If `REPO_AUTOMATION_TOKEN` is configured, the PR will also trigger the normal `pull_request` workflows.
+          add-paths: |
+            go.mod
+            go.sum
