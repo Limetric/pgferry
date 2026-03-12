@@ -85,7 +85,7 @@ The following index features are reported and skipped (migration continues):
 | Feature | Example | Reason |
 |---|---|---|
 | FULLTEXT indexes | `FULLTEXT INDEX (col)` | No PostgreSQL equivalent without extensions |
-| SPATIAL indexes | `SPATIAL INDEX (col)` | Requires PostGIS |
+| SPATIAL indexes | `SPATIAL INDEX (col)` | Skipped by default; recreated as `USING GIST` when `[postgis].enabled = true` |
 | Prefix indexes | `INDEX (col(10))` | PostgreSQL does not support `SUB_PART` |
 | Expression indexes | `INDEX ((col + 1))` | Expression key-parts not currently translated |
 
@@ -148,7 +148,8 @@ The checkpoint records which chunks and tables have been completed.
 - `bit_mode` controls BIT(n) mapping (`bytea`, `bit`, or `varbit`)
 - `time_mode` controls TIME mapping (`time`, `text`, or `interval`)
 - `zero_date_mode` controls zero-date handling (`null` or `error`)
-- `spatial_mode` controls spatial type mapping (`off`, `wkb_bytea`, or `wkt_text`)
+- `spatial_mode` controls raw/text spatial fallback mapping (`off`, `wkb_bytea`, or `wkt_text`)
+- `[postgis]` enables native MySQL spatial migration to PostGIS `geometry`
 - `source_snapshot_mode = "single_tx"` enables consistent snapshots
 - Unsigned integers are widened by default (`widen_unsigned_integers = true`) to preserve the full range; set `false` to keep the original type size
 - Unsigned integer ranges can be enforced via `add_unsigned_checks`
@@ -168,8 +169,8 @@ When `ci_as_citext = true` (MySQL only), text-like columns with `_ci` collations
 are mapped to PostgreSQL's `citext` type. This preserves case-insensitive
 semantics for comparisons, `UNIQUE` constraints, `GROUP BY`, and `ORDER BY`.
 
-The `citext` extension is created automatically (`CREATE EXTENSION IF NOT EXISTS citext`)
-before table creation.
+The required `citext` extension is validated through pgferry's shared extension
+setup path and created automatically when needed.
 
 If a `_ci` collation has an explicit `collation_map` entry, the map takes precedence
 and the column retains its original type with a `COLLATE` clause.
@@ -214,13 +215,24 @@ TIME column behavior is controlled by `type_mapping.time_mode` (MySQL only):
 
 ## Spatial types
 
-Spatial type behavior is controlled by `type_mapping.spatial_mode` (MySQL only):
+pgferry supports two MySQL spatial paths:
+
+- **Native PostGIS mode** via `[postgis].enabled = true`
+- **Fallback storage modes** via `type_mapping.spatial_mode`
+
+With `[postgis].enabled = true`, MySQL spatial columns are created as PostgreSQL
+`geometry` columns, MySQL's internal spatial payloads are converted to
+PostGIS-compatible EWKB during COPY, and supported MySQL `SPATIAL` indexes are
+recreated as `USING GIST` indexes. PostgreSQL must already have the `postgis`
+extension installed unless `[postgis].create_extension = true`.
+
+With `type_mapping.spatial_mode`, spatial values are preserved without requiring
+PostGIS:
 
 - **`off`** (default) &mdash; spatial columns are unsupported (error or `text` with `unknown_as_text`).
 - **`wkb_bytea`** &mdash; stores as `bytea` using MySQL's internal binary representation
-  (4-byte SRID prefix + WKB). **Note:** this is not standard WKB and is not
-  directly compatible with PostGIS. Prefer `wkt_text` if you plan to load data
-  into PostGIS geometry columns.
+  (4-byte SRID prefix + WKB). This is not standard WKB and is not directly
+  compatible with PostGIS geometry columns.
 - **`wkt_text`** &mdash; stores as `text` using Well-Known Text via `ST_AsText()`.
 
 ## String UUID mapping

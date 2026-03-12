@@ -493,6 +493,9 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 	quoted := src.QuoteIdentifier(col.SourceName)
 	switch src.Name() {
 	case "MySQL":
+		if isMySQLSpatialType(col.DataType) && typeMap.UsePostGIS {
+			return mysqlPostGISSelectExpr(src, quoted)
+		}
 		if isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text" {
 			return fmt.Sprintf("ST_AsText(%s) AS %s", quoted, quoted)
 		}
@@ -509,4 +512,17 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 		}
 	}
 	return quoted
+}
+
+func mysqlPostGISSelectExpr(src SourceDB, quoted string) string {
+	mysqlSrc := src.(*mysqlSourceDB)
+	wkbExpr := fmt.Sprintf("ST_AsWKB(%s)", quoted)
+	if mysqlSrc.supportsAxisOrderOption() {
+		wkbExpr = fmt.Sprintf("ST_AsWKB(%s, 'axis-order=long-lat')", quoted)
+	}
+	sridExpr := fmt.Sprintf("ST_SRID(%s)", quoted)
+	return fmt.Sprintf(
+		"CONCAT(CHAR((%[1]s) & 255 USING binary), CHAR(((%[1]s) >> 8) & 255 USING binary), CHAR(((%[1]s) >> 16) & 255 USING binary), CHAR(((%[1]s) >> 24) & 255 USING binary), %[2]s) AS %[3]s",
+		sridExpr, wkbExpr, quoted,
+	)
 }

@@ -188,6 +188,12 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.TypeMapping.CIAsCitext {
 		t.Errorf("default TypeMapping.CIAsCitext = %t, want false", cfg.TypeMapping.CIAsCitext)
 	}
+	if cfg.PostGIS.Enabled {
+		t.Errorf("default PostGIS.Enabled = %t, want false", cfg.PostGIS.Enabled)
+	}
+	if cfg.PostGIS.CreateExtension {
+		t.Errorf("default PostGIS.CreateExtension = %t, want false", cfg.PostGIS.CreateExtension)
+	}
 	if cfg.Source.Charset != "utf8mb4" {
 		t.Errorf("default Source.Charset = %q, want %q", cfg.Source.Charset, "utf8mb4")
 	}
@@ -689,6 +695,124 @@ spatial_mode = "postgis"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for invalid spatial_mode")
+	}
+}
+
+func TestLoadConfig_PostGIS(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "postgis.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[postgis]
+enabled = true
+create_extension = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if !cfg.PostGIS.Enabled {
+		t.Fatal("PostGIS.Enabled = false, want true")
+	}
+	if !cfg.PostGIS.CreateExtension {
+		t.Fatal("PostGIS.CreateExtension = false, want true")
+	}
+}
+
+func TestLoadConfig_PostGISCreateExtensionRequiresEnabled(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "postgis_bad.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[postgis]
+create_extension = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for postgis.create_extension without enabled")
+	}
+}
+
+func TestLoadConfig_PostGISOnlySupportsMySQL(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "postgis_sqlite.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "sqlite"
+dsn = "/tmp/test.db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[postgis]
+enabled = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for postgis on sqlite")
+	}
+}
+
+func TestLoadConfig_PostGISConflictsWithSpatialMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "postgis_conflict.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[postgis]
+enabled = true
+
+[type_mapping]
+spatial_mode = "wkt_text"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for postgis + spatial_mode")
 	}
 }
 

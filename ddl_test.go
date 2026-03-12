@@ -136,6 +136,25 @@ func TestGenerateCreateTable_UnknownTypeErrors(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_PostGISGeometry(t *testing.T) {
+	table := Table{
+		PGName: "places",
+		Columns: []Column{
+			{PGName: "shape", DataType: "point", ColumnType: "point", Nullable: true},
+		},
+	}
+	tm := defaultTypeMappingConfig()
+	tm.UsePostGIS = true
+
+	ddl, err := generateCreateTable(table, "app", false, false, tm, mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+	if !strings.Contains(ddl, `"shape" geometry`) {
+		t.Fatalf("expected geometry column in DDL, got:\n%s", ddl)
+	}
+}
+
 func TestGenerateCreateTable_PreserveDefaults(t *testing.T) {
 	table := Table{
 		PGName: "defaults_demo",

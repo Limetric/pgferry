@@ -9,6 +9,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - Parallel workers and range-based chunking for large tables
 - Split into `schema_only` and `data_only` phases for tighter control
 - Preflight `plan` reports what needs manual attention
+- Extension-backed features with validation and optional auto-create
 - Resume interrupted runs from checkpoints
 - SQL hooks at four pipeline stages
 
@@ -79,6 +80,32 @@ Run the migration:
 pgferry migration.toml
 ```
 
+## Extension Support
+
+pgferry supports PostgreSQL extension-backed migrations instead of forcing every
+edge case into plain text or `bytea`.
+
+- `ci_as_citext = true` maps MySQL `_ci` text columns to PostgreSQL `citext`
+- `[postgis].enabled = true` maps MySQL spatial columns to native PostGIS `geometry`
+- `plan` reports required extensions before migration starts
+- pgferry validates required extensions in `full`, `schema_only`, and `data_only` runs
+- Missing extensions can be preinstalled manually, or auto-created when the feature allows it
+
+Example:
+
+```toml
+[type_mapping]
+ci_as_citext = true
+spatial_mode = "off"
+
+[postgis]
+enabled = true
+create_extension = true
+```
+
+Use `spatial_mode = "wkb_bytea"` or `spatial_mode = "wkt_text"` when you want
+to preserve spatial data without requiring PostGIS.
+
 ## Check First, Migrate Second
 
 Inspect the source before touching PostgreSQL:
@@ -88,7 +115,7 @@ pgferry plan migration.toml
 pgferry plan migration.toml --output-dir hooks --format json
 ```
 
-`plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
+`plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, required extensions, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
 
 ## Why pgferry over pgloader
 
@@ -102,6 +129,7 @@ We maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes f
 - **TOML config**: declarative, version-controllable, no DSL to learn.
 - **Resumable checkpoints**: interrupt a migration and pick up where you left off. pgloader restarts from scratch.
 - **Granular type mapping**: fine-grained control over how MySQL and SQLite types map to PostgreSQL — booleans, UUIDs, timestamps, enums, sets, unsigned integers, text widening, and more, each with its own toggle.
+- **Extension-aware migrations**: native `citext` and opt-in PostGIS support, with preflight validation and optional `CREATE EXTENSION` for PostGIS.
 - **Charset and collation awareness**: detects mismatches and warns before data moves.
 - **SQL hooks at four stages**: inject custom SQL before data, after data, before foreign keys, and after everything.
 - **Orphan cleanup**: optionally delete rows that would violate foreign keys before constraints are added.
@@ -122,8 +150,8 @@ The [`examples/`](examples/) directory is split by source type.
 - [Configuration](docs/configuration.md): all TOML settings, defaults, and validation
 - [Type mapping](docs/type-mapping.md): source-to-PostgreSQL type mapping and coercion options
 - [Migration pipeline](docs/migration-pipeline.md): pipeline stages, snapshot modes, chunking, resume, and validation
+- [Conventions and limitations](docs/conventions.md): includes extension-backed features such as `citext` and PostGIS
 - [Hooks](docs/hooks.md): the four hook phases and template substitution
-- [Conventions and limitations](docs/conventions.md): naming rules, cleanup behavior, and unsupported features
 
 ## How it's built
 

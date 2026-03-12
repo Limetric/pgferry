@@ -152,7 +152,8 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			log.Printf("  WARN: %s", w)
 		}
 	}
-	if warnings := collectIndexCompatibilityWarnings(schema); len(warnings) > 0 {
+	typeMap := effectiveTypeMapping(cfg)
+	if warnings := collectIndexCompatibilityWarnings(schema, typeMap); len(warnings) > 0 {
 		log.Printf("index compatibility report: %d index(es) may require manual handling", len(warnings))
 		for _, w := range warnings {
 			log.Printf("  WARN: %s", w)
@@ -164,13 +165,13 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			log.Printf("  WARN: %s", w)
 		}
 	}
-	if warnings := collectCollationWarnings(schema, cfg.TypeMapping); len(warnings) > 0 {
+	if warnings := collectCollationWarnings(schema, typeMap); len(warnings) > 0 {
 		log.Printf("charset/collation report:")
 		for _, w := range warnings {
 			log.Printf("  WARN: %s", w)
 		}
 	}
-	if typeErrs := collectUnsupportedTypeErrors(schema, cfg.TypeMapping, src.MapType); len(typeErrs) > 0 {
+	if typeErrs := collectUnsupportedTypeErrors(schema, typeMap, src.MapType); len(typeErrs) > 0 {
 		var b strings.Builder
 		b.WriteString("unsupported source column types detected:\n")
 		for _, e := range typeErrs {
@@ -197,6 +198,17 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
+	// Validate extension-backed features before any schema or data work. This
+	// intentionally also runs in schema_only and data_only modes because
+	// geometry/citext DDL and COPY both depend on the target extension being
+	// present.
+	if reqs := collectRequiredExtensions(schema, src, cfg, typeMap); len(reqs) > 0 {
+		log.Printf("validating required PostgreSQL extensions...")
+		if err := ensureRequiredExtensions(ctx, pgPool, reqs); err != nil {
+			return err
+		}
+	}
+
 	// 4. Create schema based on configured conflict behavior
 	if !cfg.DataOnly {
 		log.Printf("preparing schema '%s'...", cfg.Schema)
@@ -204,25 +216,17 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			return err
 		}
 
-		// 5a. Create citext extension if needed
-		if cfg.TypeMapping.CIAsCitext {
-			log.Printf("ensuring citext extension...")
-			if err := ensureCitextExtension(ctx, pgPool); err != nil {
-				return err
-			}
-		}
-
-		// 5b. Create native enum types if configured (must precede table creation)
-		if cfg.TypeMapping.EnumMode == "native" {
+		// 5a. Create native enum types if configured (must precede table creation)
+		if typeMap.EnumMode == "native" {
 			log.Printf("creating enum types...")
-			if err := createEnumTypes(ctx, pgPool, schema, cfg.Schema, cfg.TypeMapping); err != nil {
+			if err := createEnumTypes(ctx, pgPool, schema, cfg.Schema, typeMap); err != nil {
 				return fmt.Errorf("create enum types: %w", err)
 			}
 		}
 
-		// 5c. Create bare tables (no PKs, FKs, indexes)
+		// 5b. Create bare tables (no PKs, FKs, indexes)
 		log.Printf("creating tables...")
-		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, cfg.TypeMapping, src); err != nil {
+		if err := createTables(ctx, pgPool, schema, cfg.Schema, cfg.UnloggedTables, cfg.PreserveDefaults, typeMap, src); err != nil {
 			return fmt.Errorf("create tables: %w", err)
 		}
 	}
@@ -250,7 +254,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 					Schema:             schema,
 					PGSchema:           cfg.Schema,
 					Workers:            cfg.Workers,
-					TypeMap:            cfg.TypeMapping,
+					TypeMap:            typeMap,
 					SourceSnapshotMode: cfg.SourceSnapshotMode,
 					ChunkSize:          cfg.ChunkSize,
 					Resume:             cfg.Resume,

@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -661,6 +662,91 @@ dsn = %q
 	}
 }
 
+func TestIntegration_MySQL_PostGIS(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLSpatial(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+	if !extensionAvailable(t, pgPool, "postgis") {
+		t.Skip("postgis extension is not available on the target server")
+	}
+
+	pgSchema := integrationSchemaName("inttest_postgis")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+
+[postgis]
+enabled = true
+create_extension = true
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "places", 3)
+	assertRowCount(t, pgPool, pgSchema, "places_optional", 1)
+	assertFormattedColumnType(t, pgPool, pgSchema, "places", "shape", "geometry")
+	assertFormattedColumnType(t, pgPool, pgSchema, "places_optional", "shape", "geometry")
+	assertIndexMethod(t, pgPool, pgSchema, "places", "gist")
+
+	var (
+		name  string
+		wkt   string
+		srid  int
+		valid bool
+	)
+	err = pgPool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT name, ST_AsText(shape), ST_SRID(shape), ST_IsValid(shape)
+		FROM %s.places
+		WHERE id = 1
+	`, pgIdent(pgSchema))).Scan(&name, &wkt, &srid, &valid)
+	if err != nil {
+		t.Fatalf("query migrated geometry: %v", err)
+	}
+	if name != "amsterdam" {
+		t.Fatalf("name = %q, want amsterdam", name)
+	}
+	if wkt != "POINT(4.9 52.37)" {
+		t.Fatalf("wkt = %q, want POINT(4.9 52.37)", wkt)
+	}
+	if srid != 4326 {
+		t.Fatalf("srid = %d, want 4326", srid)
+	}
+	if !valid {
+		t.Fatal("expected migrated geometry to be valid")
+	}
+
+	var nullCount int
+	err = pgPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.places_optional WHERE shape IS NULL", pgIdent(pgSchema))).Scan(&nullCount)
+	if err != nil {
+		t.Fatalf("count NULL geometries: %v", err)
+	}
+	if nullCount != 1 {
+		t.Fatalf("NULL geometry rows = %d, want 1", nullCount)
+	}
+}
+
 func seedSQLite(t *testing.T, dbPath string) {
 	t.Helper()
 
@@ -729,6 +815,8 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	stmts := []string{
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -794,6 +882,8 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	stmts := []string{
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -850,6 +940,63 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	}
 }
 
+func seedMySQLSpatial(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
+		`CREATE TABLE places (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			shape POINT NOT NULL,
+			SPATIAL INDEX idx_places_shape (shape)
+		)`,
+		`CREATE TABLE places_optional (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			shape POINT NULL
+		)`,
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql spatial %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+	if err := insertMySQLSpatialAmsterdam(db); err != nil {
+		t.Fatalf("seed mysql spatial amsterdam: %v", err)
+	}
+
+	dataStmts := []string{
+		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
+		"INSERT INTO places (name, shape) VALUES ('utm', ST_GeomFromText('POINT(2 3)', 3857))",
+		"INSERT INTO places_optional (name, shape) VALUES ('unknown', NULL)",
+	}
+	for _, stmt := range dataStmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql spatial %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
+func insertMySQLSpatialAmsterdam(db *sql.DB) error {
+	stmt := "INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326, 'axis-order=long-lat'))"
+	_, err := db.Exec(stmt)
+	if err == nil {
+		return nil
+	}
+
+	var mysqlErr *mysql.MySQLError
+	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1582 {
+		return err
+	}
+
+	legacyStmt := "INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326))"
+	_, err = db.Exec(legacyStmt)
+	return err
+}
+
 func seedSakila(t *testing.T, db *sql.DB) {
 	t.Helper()
 
@@ -857,6 +1004,8 @@ func seedSakila(t *testing.T, db *sql.DB) {
 		"SET FOREIGN_KEY_CHECKS=0",
 
 		// Drop tables from other tests sharing the same database
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -1599,4 +1748,57 @@ func assertTablePersistence(t *testing.T, pool *pgxpool.Pool, schema, table, wan
 	if got != want {
 		t.Errorf("%s.%s relpersistence: got %q, want %q", schema, table, got, want)
 	}
+}
+
+func assertFormattedColumnType(t *testing.T, pool *pgxpool.Pool, schema, table, column, want string) {
+	t.Helper()
+
+	var got string
+	err := pool.QueryRow(context.Background(), `
+		SELECT format_type(a.atttypid, a.atttypmod)
+		FROM pg_attribute a
+		JOIN pg_class c ON c.oid = a.attrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = $1 AND c.relname = $2 AND a.attname = $3 AND a.attnum > 0
+	`, schema, table, column).Scan(&got)
+	if err != nil {
+		t.Fatalf("check formatted type for %s.%s.%s: %v", schema, table, column, err)
+	}
+	if got != want {
+		t.Fatalf("%s.%s.%s formatted type: got %q, want %q", schema, table, column, got, want)
+	}
+}
+
+func assertIndexMethod(t *testing.T, pool *pgxpool.Pool, schema, table, method string) {
+	t.Helper()
+
+	var count int
+	err := pool.QueryRow(context.Background(), `
+		SELECT COUNT(*)
+		FROM pg_index i
+		JOIN pg_class c ON c.oid = i.indrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_class ic ON ic.oid = i.indexrelid
+		JOIN pg_am am ON am.oid = ic.relam
+		WHERE n.nspname = $1 AND c.relname = $2 AND am.amname = $3
+	`, schema, table, method).Scan(&count)
+	if err != nil {
+		t.Fatalf("check index method on %s.%s: %v", schema, table, err)
+	}
+	if count == 0 {
+		t.Fatalf("no %s index found on %s.%s", method, schema, table)
+	}
+}
+
+func extensionAvailable(t *testing.T, pool *pgxpool.Pool, name string) bool {
+	t.Helper()
+
+	var available bool
+	err := pool.QueryRow(context.Background(), `
+		SELECT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = $1)
+	`, name).Scan(&available)
+	if err != nil {
+		t.Fatalf("check extension availability for %s: %v", name, err)
+	}
+	return available
 }

@@ -27,7 +27,7 @@ func TestPlanIndexJobs_SkipsUnsupported(t *testing.T) {
 		},
 	}}
 
-	jobs, skipped := planIndexJobs(schema, "public")
+	jobs, skipped := planIndexJobs(schema, "public", defaultTypeMappingConfig())
 	if len(jobs) != 2 {
 		t.Fatalf("planIndexJobs() returned %d jobs, want 2", len(jobs))
 	}
@@ -46,7 +46,7 @@ func TestPlanIndexJobs_SkipsUnsupported(t *testing.T) {
 
 func TestPlanIndexJobs_EmptySchema(t *testing.T) {
 	schema := &Schema{Tables: []Table{}}
-	jobs, skipped := planIndexJobs(schema, "public")
+	jobs, skipped := planIndexJobs(schema, "public", defaultTypeMappingConfig())
 	if len(jobs) != 0 {
 		t.Fatalf("planIndexJobs() returned %d jobs, want 0", len(jobs))
 	}
@@ -67,7 +67,7 @@ func TestPlanIndexJobs_AllUnsupported(t *testing.T) {
 		},
 	}}
 
-	jobs, skipped := planIndexJobs(schema, "public")
+	jobs, skipped := planIndexJobs(schema, "public", defaultTypeMappingConfig())
 	if len(jobs) != 0 {
 		t.Fatalf("planIndexJobs() returned %d jobs, want 0", len(jobs))
 	}
@@ -94,7 +94,7 @@ func TestPlanIndexJobs_PreservesTableAndIndexMetadata(t *testing.T) {
 		},
 	}}
 
-	jobs, _ := planIndexJobs(schema, "public")
+	jobs, _ := planIndexJobs(schema, "public", defaultTypeMappingConfig())
 	if len(jobs) != 1 {
 		t.Fatalf("planIndexJobs() returned %d jobs, want 1", len(jobs))
 	}
@@ -108,6 +108,35 @@ func TestPlanIndexJobs_PreservesTableAndIndexMetadata(t *testing.T) {
 	}
 	if job.index.ColumnOrders[0] != "ASC" {
 		t.Errorf("job.index.ColumnOrders[0] = %q, want %q", job.index.ColumnOrders[0], "ASC")
+	}
+}
+
+func TestPlanIndexJobs_PostGISSpatialIndex(t *testing.T) {
+	tm := defaultTypeMappingConfig()
+	tm.UsePostGIS = true
+
+	schema := &Schema{Tables: []Table{
+		{
+			SourceName: "places",
+			PGName:     "places",
+			Columns: []Column{
+				{SourceName: "shape", PGName: "shape", DataType: "point", ColumnType: "point"},
+			},
+			Indexes: []Index{
+				{Name: "idx_shape", SourceName: "idx_shape", Type: "SPATIAL", Columns: []string{"shape"}},
+			},
+		},
+	}}
+
+	jobs, skipped := planIndexJobs(schema, "public", tm)
+	if len(jobs) != 1 {
+		t.Fatalf("planIndexJobs() returned %d jobs, want 1", len(jobs))
+	}
+	if skipped != 0 {
+		t.Fatalf("planIndexJobs() skipped=%d, want 0", skipped)
+	}
+	if jobs[0].index.Type != "SPATIAL" {
+		t.Fatalf("job index type = %q, want SPATIAL", jobs[0].index.Type)
 	}
 }
 

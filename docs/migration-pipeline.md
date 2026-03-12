@@ -8,21 +8,22 @@ migration mode (`schema_only` or `data_only`).
 | # | Step | `full` | `schema_only` | `data_only` |
 |---|---|---|---|---|
 | 1 | **Introspect** &mdash; query source database for tables, columns, indexes, FKs. Report views, routines, triggers that need manual migration. Detect unsupported index types and generated columns. Abort if unsupported column types are found. | Yes | Yes | Yes |
-| 2 | **Create tables** &mdash; columns only, no constraints. Optionally `UNLOGGED` for faster writes. Column defaults included by default; set `preserve_defaults = false` to omit. | Yes | Yes | &mdash; |
-| 3 | **`before_data` hooks** | Yes | &mdash; | Yes |
-| 4 | **Stream data** &mdash; tables with a single-column numeric PK are split into range-based chunks; other tables use full-table COPY. Chunks/tables run in parallel (or sequentially with `source_snapshot_mode = "single_tx"`). SQLite always uses 1 worker. Checkpoint state is saved after each chunk for resumability. In `data_only` mode, triggers are disabled before COPY and re-enabled after. | Yes | &mdash; | Yes |
-| 5 | **`after_data` hooks** | Yes | &mdash; | Yes |
-| 5b | **Validation** &mdash; compare source and target row counts per table (when `validation = "row_count"`). Fails the migration if any mismatch is found. | Yes | &mdash; | Yes |
-| 6 | **SET LOGGED** &mdash; convert `UNLOGGED` tables back to `LOGGED` | Yes | &mdash; | &mdash; |
-| 7 | **Primary keys** | Yes | Yes | &mdash; |
-| 8 | **Indexes** &mdash; unsupported index types (MySQL FULLTEXT, SPATIAL, prefix, expression; SQLite partial, expression) are reported and skipped | Yes | Yes | &mdash; |
-| 9 | **`before_fk` hooks** | Yes | Yes | &mdash; |
-| 10 | **Orphan cleanup** &mdash; auto-detect and remove/nullify rows that would violate FK constraints (when `clean_orphans = true`) | Yes | &mdash; | &mdash; |
-| 11 | **Foreign keys** | Yes | Yes | &mdash; |
-| 12 | **Sequences** &mdash; create auto-increment sequences and set to `max(col) + 1` | Yes | Yes | Yes |
-| 13 | **Unsigned checks** &mdash; add CHECK constraints for unsigned ranges (when `add_unsigned_checks = true`) | Yes | Yes | &mdash; |
-| 14 | **Triggers** &mdash; `ON UPDATE CURRENT_TIMESTAMP` emulation (when `replicate_on_update_current_timestamp = true`) | Yes | Yes | &mdash; |
-| 15 | **`after_all` hooks** | Yes | Yes | Yes |
+| 2 | **Extension validation** &mdash; verify extension-backed features (for example `citext` or opt-in PostGIS) before table creation. Create missing extensions only when the feature policy allows it. | Yes | Yes | Yes |
+| 3 | **Create tables** &mdash; columns only, no constraints. Optionally `UNLOGGED` for faster writes. Column defaults included by default; set `preserve_defaults = false` to omit. | Yes | Yes | &mdash; |
+| 4 | **`before_data` hooks** | Yes | &mdash; | Yes |
+| 5 | **Stream data** &mdash; tables with a single-column numeric PK are split into range-based chunks; other tables use full-table COPY. Chunks/tables run in parallel (or sequentially with `source_snapshot_mode = "single_tx"`). SQLite always uses 1 worker. Checkpoint state is saved after each chunk for resumability. In `data_only` mode, triggers are disabled before COPY and re-enabled after. Opt-in PostGIS spatial columns stay on the COPY path and are converted to EWKB during streaming. | Yes | &mdash; | Yes |
+| 6 | **`after_data` hooks** | Yes | &mdash; | Yes |
+| 6b | **Validation** &mdash; compare source and target row counts per table (when `validation = "row_count"`). Fails the migration if any mismatch is found. | Yes | &mdash; | Yes |
+| 7 | **SET LOGGED** &mdash; convert `UNLOGGED` tables back to `LOGGED` | Yes | &mdash; | &mdash; |
+| 8 | **Primary keys** | Yes | Yes | &mdash; |
+| 9 | **Indexes** &mdash; unsupported index types (MySQL FULLTEXT, prefix, expression; SQLite partial, expression) are reported and skipped. MySQL `SPATIAL` indexes are recreated as `USING GIST` when `[postgis].enabled = true`; otherwise they remain skipped. | Yes | Yes | &mdash; |
+| 10 | **`before_fk` hooks** | Yes | Yes | &mdash; |
+| 11 | **Orphan cleanup** &mdash; auto-detect and remove/nullify rows that would violate FK constraints (when `clean_orphans = true`) | Yes | &mdash; | &mdash; |
+| 12 | **Foreign keys** | Yes | Yes | &mdash; |
+| 13 | **Sequences** &mdash; create auto-increment sequences and set to `max(col) + 1` | Yes | Yes | Yes |
+| 14 | **Unsigned checks** &mdash; add CHECK constraints for unsigned ranges (when `add_unsigned_checks = true`) | Yes | Yes | &mdash; |
+| 15 | **Triggers** &mdash; `ON UPDATE CURRENT_TIMESTAMP` emulation (when `replicate_on_update_current_timestamp = true`) | Yes | Yes | &mdash; |
+| 16 | **`after_all` hooks** | Yes | Yes | Yes |
 
 ## Modes
 

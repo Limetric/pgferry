@@ -13,7 +13,7 @@ func TestBuildPlanReport_Empty(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views = %d, want 0", len(report.SourceObjects.Views))
@@ -50,7 +50,7 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, objs, cfg)
+	report := buildPlanReport(schema, objs, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 1 || report.SourceObjects.Views[0] != "v_active_users" {
 		t.Errorf("views = %v, want [v_active_users]", report.SourceObjects.Views)
@@ -92,8 +92,14 @@ func TestWritePlanText_Empty(t *testing.T) {
 
 func TestWritePlanText_WithContent(t *testing.T) {
 	report := &PlanReport{
+		RequiredExtensions: []PlanRequiredExtension{
+			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+		},
 		SourceObjects: PlanSourceObjects{
 			Views: []string{"v_users"},
+		},
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{Table: "mystery", Column: "payload", SourceType: "geometry", Reason: "unsupported MySQL type \"geometry\""},
 		},
 		GeneratedColumns: []PlanGeneratedColumn{
 			{Table: "orders", Column: "total", Expression: "VIRTUAL GENERATED"},
@@ -108,9 +114,14 @@ func TestWritePlanText_WithContent(t *testing.T) {
 	got := buf.String()
 
 	for _, want := range []string{
+		"## Required Extensions (1)",
+		"citext",
+		"create it if missing",
 		"## Source Objects",
 		"v_users",
 		"after_all",
+		"## Unsupported Columns (1)",
+		"mystery.payload",
 		"## Generated Columns (1)",
 		"orders.total",
 		"after_data",
@@ -125,6 +136,9 @@ func TestWritePlanText_WithContent(t *testing.T) {
 
 func TestWritePlanJSON(t *testing.T) {
 	report := &PlanReport{
+		RequiredExtensions: []PlanRequiredExtension{
+			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+		},
 		SourceObjects: PlanSourceObjects{
 			Views:    []string{"v_users"},
 			Routines: []string{"FUNCTION foo"},
@@ -150,6 +164,9 @@ func TestWritePlanJSON(t *testing.T) {
 
 	if len(decoded.SourceObjects.Views) != 1 || decoded.SourceObjects.Views[0] != "v_users" {
 		t.Errorf("views = %v", decoded.SourceObjects.Views)
+	}
+	if len(decoded.RequiredExtensions) != 1 {
+		t.Errorf("required extensions = %d", len(decoded.RequiredExtensions))
 	}
 	if len(decoded.GeneratedColumns) != 1 {
 		t.Errorf("generated columns = %d", len(decoded.GeneratedColumns))
@@ -290,7 +307,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views should be empty, got %v", report.SourceObjects.Views)
@@ -306,7 +323,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
-	report := buildPlanReport(schema, nil, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	var buf bytes.Buffer
 	if err := writePlanJSON(&buf, report); err != nil {
@@ -327,5 +344,61 @@ func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	}
 	if _, ok := decoded["source_objects"]; !ok {
 		t.Error("missing source_objects key")
+	}
+}
+
+func TestBuildPlanReport_RequiredExtensionsAndUnsupportedColumns(t *testing.T) {
+	cfg := &MigrationConfig{
+		TypeMapping: defaultTypeMappingConfig(),
+		PostGIS:     PostGISConfig{Enabled: true},
+	}
+	cfg.TypeMapping.CIAsCitext = true
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "places",
+				Columns: []Column{
+					{SourceName: "name", PGName: "name", DataType: "varchar", ColumnType: "varchar(100)", CharMaxLen: 100, Collation: "utf8mb4_general_ci"},
+					{SourceName: "shape", PGName: "shape", DataType: "point", ColumnType: "point"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	if len(report.RequiredExtensions) != 2 {
+		t.Fatalf("required extensions = %d, want 2", len(report.RequiredExtensions))
+	}
+	if len(report.UnsupportedColumns) != 0 {
+		t.Fatalf("unsupported columns = %d, want 0", len(report.UnsupportedColumns))
+	}
+}
+
+func TestBuildPlanReport_PostGISDisabledMarksSpatialUnsupported(t *testing.T) {
+	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "places",
+				Columns: []Column{
+					{SourceName: "shape", PGName: "shape", DataType: "geometry", ColumnType: "geometry"},
+				},
+				Indexes: []Index{
+					{Name: "idx_shape", SourceName: "idx_shape", Type: "SPATIAL", Columns: []string{"shape"}},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	if len(report.UnsupportedColumns) != 1 {
+		t.Fatalf("unsupported columns = %d, want 1", len(report.UnsupportedColumns))
+	}
+	if len(report.SkippedIndexes) != 1 {
+		t.Fatalf("skipped indexes = %d, want 1", len(report.SkippedIndexes))
+	}
+	if !strings.Contains(report.SkippedIndexes[0].Reason, "[postgis].enabled") {
+		t.Fatalf("skipped index reason = %q, want postgis hint", report.SkippedIndexes[0].Reason)
 	}
 }

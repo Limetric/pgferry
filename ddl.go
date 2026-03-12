@@ -96,15 +96,6 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 	return b.String(), nil
 }
 
-// ensureCitextExtension creates the citext extension if it does not exist.
-func ensureCitextExtension(ctx context.Context, pool *pgxpool.Pool) error {
-	_, err := pool.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS citext")
-	if err != nil {
-		return fmt.Errorf("create citext extension: %w", err)
-	}
-	return nil
-}
-
 func pgLiteral(v string) string {
 	return "'" + strings.ReplaceAll(v, "'", "''") + "'"
 }

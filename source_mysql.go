@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -14,8 +15,10 @@ import (
 var uuidRegexp = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type mysqlSourceDB struct {
-	snakeCaseIDs bool
-	charset      string
+	snakeCaseIDs          bool
+	charset               string
+	axisOrderOptionKnown  bool
+	supportsAxisOrderExpr bool
 }
 
 func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
@@ -54,7 +57,24 @@ func (m *mysqlSourceDB) OpenDB(dsn string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open mysql: %w", err)
 	}
+	m.detectServerCapabilities(db)
 	return db, nil
+}
+
+func (m *mysqlSourceDB) detectServerCapabilities(db *sql.DB) {
+	m.axisOrderOptionKnown = true
+	m.supportsAxisOrderExpr = false
+
+	var probe []byte
+	err := db.QueryRow("SELECT ST_AsWKB(ST_GeomFromText('POINT(0 0)'), 'axis-order=long-lat')").Scan(&probe)
+	m.supportsAxisOrderExpr = err == nil
+}
+
+func (m *mysqlSourceDB) supportsAxisOrderOption() bool {
+	if !m.axisOrderOptionKnown {
+		return true
+	}
+	return m.supportsAxisOrderExpr
 }
 
 func (m *mysqlSourceDB) ExtractDBName(dsn string) (string, error) {
@@ -276,7 +296,7 @@ func introspectMySQLIndexesByTable(db *sql.DB, dbName string, identName func(str
 			group.order = append(group.order, idxName)
 		}
 
-		if subPart.Valid {
+		if mysqlIndexHasPrefix(indexType, subPart) {
 			idx.HasPrefix = true
 		}
 		if !colName.Valid {
@@ -309,6 +329,15 @@ func introspectMySQLIndexesByTable(db *sql.DB, dbName string, identName func(str
 type mysqlForeignKeysForTable struct {
 	fkMap map[string]*ForeignKey
 	order []string
+}
+
+func mysqlIndexHasPrefix(indexType string, subPart sql.NullInt64) bool {
+	if !subPart.Valid {
+		return false
+	}
+	// MySQL reports SUB_PART metadata for SPATIAL indexes on some versions even
+	// though SPATIAL indexes do not support user-defined prefix lengths.
+	return !strings.EqualFold(indexType, "SPATIAL")
 }
 
 func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]ForeignKey, error) {
@@ -591,6 +620,8 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case col.DataType == "binary", col.DataType == "varbinary", col.DataType == "blob",
 		col.DataType == "mediumblob", col.DataType == "longblob", col.DataType == "tinyblob":
 		return "bytea", nil
+	case isMySQLSpatialType(col.DataType) && typeMap.UsePostGIS:
+		return "geometry", nil
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
 		return "bytea", nil
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
@@ -778,6 +809,13 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		// bytea. Explicit case to avoid relying on default passthrough.
 		return val, nil
 
+	case isMySQLSpatialType(col.DataType) && typeMap.UsePostGIS:
+		b, ok := val.([]byte)
+		if !ok {
+			return nil, fmt.Errorf("expected []byte for MySQL spatial value, got %T", val)
+		}
+		return mysqlSpatialToEWKB(b)
+
 	case isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text":
 		// ST_AsText() is used in the SELECT query, so the value arrives as a
 		// string (WKT). Just pass it through.
@@ -854,6 +892,9 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 	case pgType == "bytea":
 		return "", fmt.Errorf("bytea defaults are not supported (value %q)", raw)
 
+	case pgType == "geometry":
+		return "", fmt.Errorf("geometry defaults are not supported (value %q)", raw)
+
 	case strings.HasPrefix(pgType, "bit(") || pgType == "varbit":
 		// MySQL BIT defaults are typically binary literals like b'0' or b'101'
 		if strings.HasPrefix(unquoted, "b'") && strings.HasSuffix(unquoted, "'") {
@@ -885,6 +926,54 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 	default:
 		return pgLiteral(unquoted), nil
 	}
+}
+
+func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
+	const maxPostGISSRID = 0x7fffffff
+
+	// MySQL spatial values arrive as a 4-byte LE SRID prefix plus WKB. The
+	// minimum useful guard here is "can we read byte order + type word?"; deeper
+	// geometry-shape validation is left to PostGIS during COPY.
+	if len(raw) < 9 {
+		return nil, fmt.Errorf("spatial payload too short: got %d bytes", len(raw))
+	}
+
+	srid := binary.LittleEndian.Uint32(raw[:4])
+	if srid > maxPostGISSRID {
+		return nil, fmt.Errorf("spatial SRID %d exceeds PostGIS supported range", srid)
+	}
+	wkb := raw[4:]
+
+	var byteOrder binary.ByteOrder
+	switch wkb[0] {
+	case 0:
+		// Standard OGC WKB big-endian marker (XDR).
+		byteOrder = binary.BigEndian
+	case 1:
+		// Standard OGC WKB little-endian marker (NDR).
+		byteOrder = binary.LittleEndian
+	default:
+		return nil, fmt.Errorf("unsupported WKB byte order %d", wkb[0])
+	}
+
+	if srid == 0 {
+		// SRID=0 stays as plain WKB because PostGIS interprets missing EWKB SRID
+		// metadata as unknown/zero SRID. Copy into a fresh slice so COPY does not
+		// observe a driver-owned buffer alias.
+		out := make([]byte, len(wkb))
+		copy(out, wkb)
+		return out, nil
+	}
+
+	ewkb := make([]byte, len(wkb)+4)
+	ewkb[0] = wkb[0]
+
+	typeWord := byteOrder.Uint32(wkb[1:5]) | 0x20000000
+	byteOrder.PutUint32(ewkb[1:5], typeWord)
+	byteOrder.PutUint32(ewkb[5:9], srid)
+	copy(ewkb[9:], wkb[5:])
+
+	return ewkb, nil
 }
 
 func mysqlDefaultUnquote(v string) string {

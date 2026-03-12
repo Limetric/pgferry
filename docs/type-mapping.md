@@ -34,14 +34,14 @@ pgferry defaults to conservative, lossless type conversions. Semantic mappings
 | `binary(16)` | `bytea` | `uuid` | `binary16_as_uuid` |
 | `char(36)` | `varchar(36)` | `uuid` | `string_uuid_as_uuid` |
 | `varchar(36)` | `varchar(36)` | `uuid` | `string_uuid_as_uuid` |
-| `geometry` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `point` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `linestring` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `polygon` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `multipoint` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `multilinestring` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `multipolygon` | unsupported | `bytea`, `text` | `spatial_mode` |
-| `geometrycollection` | unsupported | `bytea`, `text` | `spatial_mode` |
+| `geometry` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `point` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `linestring` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `polygon` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `multipoint` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `multilinestring` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `multipolygon` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
+| `geometrycollection` | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
 | `binary(n)` | `bytea` | | |
 | `varbinary(n)` | `bytea` | | |
 | `tinyblob` | `bytea` | | |
@@ -262,6 +262,22 @@ MSSQL spatial types: `geography`, `geometry`.
 - **`wkt_text`** &mdash; stores spatial data as `text` using Well-Known Text (WKT)
   representation via MySQL's `ST_AsText()` function.
 
+### PostGIS
+
+For MySQL sources, `[postgis].enabled = true` switches spatial columns from the
+fallback `spatial_mode` behavior to native PostgreSQL/PostGIS `geometry`
+columns.
+
+- Spatial payloads stay on the COPY path and are converted from MySQL's
+  internal format (4-byte SRID prefix + WKB) into PostGIS-compatible EWKB.
+- pgferry currently maps spatial columns to generic `geometry` rather than
+  subtype-constrained declarations.
+- Supported MySQL `SPATIAL` indexes are recreated as PostgreSQL `USING GIST`
+  indexes.
+- `[postgis].create_extension = false` requires the `postgis` extension to
+  already exist; set it to `true` to let pgferry run
+  `CREATE EXTENSION IF NOT EXISTS postgis`.
+
 ## Edge cases
 
 ### Zero dates
@@ -310,8 +326,8 @@ extension (included in PostgreSQL contrib) provides true case-insensitive
 comparisons, `UNIQUE`, `GROUP BY`, and `ORDER BY` &mdash; a closer semantic
 match to MySQL's `_ci` collation behavior.
 
-pgferry runs `CREATE EXTENSION IF NOT EXISTS citext` before table creation
-when this option is enabled.
+pgferry validates the required `citext` extension before table creation and
+creates it automatically when needed.
 
 If a `_ci` collation also has an entry in `collation_map`, the map entry takes
 precedence (the column keeps its original type with a `COLLATE` clause instead

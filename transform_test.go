@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"testing"
 	"time"
 )
@@ -72,6 +73,7 @@ func TestMapType(t *testing.T) {
 		{"binary→bytea", Column{DataType: "binary", ColumnType: "binary(32)", Precision: 32}, defaultTypeMappingConfig(), "bytea", false},
 		{"varbinary→bytea", Column{DataType: "varbinary", ColumnType: "varbinary(32)"}, defaultTypeMappingConfig(), "bytea", false},
 		{"geometry→error when off", Column{DataType: "geometry", ColumnType: "geometry"}, defaultTypeMappingConfig(), "", true},
+		{"geometry→geometry postgis", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "geometry", false},
 		{"geometry→bytea wkb", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "bytea", false},
 		{"point→bytea wkb", Column{DataType: "point", ColumnType: "point"}, TypeMappingConfig{SpatialMode: "wkb_bytea", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "bytea", false},
 		{"geometry→text wkt", Column{DataType: "geometry", ColumnType: "geometry"}, TypeMappingConfig{SpatialMode: "wkt_text", EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}, "text", false},
@@ -637,6 +639,118 @@ func TestTransformValue_SpatialNil(t *testing.T) {
 	got, err := mysqlTransformValue(nil, col, tm)
 	if err != nil || got != nil {
 		t.Errorf("nil spatial: got %v, want nil", got)
+	}
+}
+
+func TestTransformValue_SpatialPostGIS(t *testing.T) {
+	col := Column{DataType: "geometry", ColumnType: "geometry"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{
+		0xe6, 0x10, 0x00, 0x00,
+		0x01, 0x01, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+	}
+	want := []byte{
+		0x01, 0x01, 0x00, 0x00, 0x20,
+		0xe6, 0x10, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+	}
+
+	got, err := mysqlTransformValue(in, col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(postgis) error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(postgis) type = %T, want []byte", got)
+	}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("mysqlTransformValue(postgis) = %#v, want %#v", out, want)
+	}
+}
+
+func TestTransformValue_SpatialPostGISZeroSRID(t *testing.T) {
+	col := Column{DataType: "point", ColumnType: "point"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{
+		0x00, 0x00, 0x00, 0x00,
+		0x01, 0x01, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+	}
+	want := in[4:]
+
+	got, err := mysqlTransformValue(in, col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(postgis zero srid) error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(postgis zero srid) type = %T, want []byte", got)
+	}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("mysqlTransformValue(postgis zero srid) = %#v, want %#v", out, want)
+	}
+}
+
+func TestTransformValue_SpatialPostGISBigEndian(t *testing.T) {
+	col := Column{DataType: "point", ColumnType: "point"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{
+		0xe6, 0x10, 0x00, 0x00,
+		0x00,
+		0x00, 0x00, 0x00, 0x01,
+		0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	want := []byte{
+		0x00,
+		0x20, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x10, 0xe6,
+		0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+
+	got, err := mysqlTransformValue(in, col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(postgis big endian) error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(postgis big endian) type = %T, want []byte", got)
+	}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("mysqlTransformValue(postgis big endian) = %#v, want %#v", out, want)
+	}
+}
+
+func TestTransformValue_SpatialPostGISErrorsOnShortPayload(t *testing.T) {
+	col := Column{DataType: "geometry", ColumnType: "geometry"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	if _, err := mysqlTransformValue([]byte{0x01, 0x02}, col, tm); err == nil {
+		t.Fatal("expected error for short spatial payload")
+	}
+}
+
+func TestTransformValue_SpatialPostGISErrorsOnOversizeSRID(t *testing.T) {
+	col := Column{DataType: "geometry", ColumnType: "geometry"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{
+		0xff, 0xff, 0xff, 0xff,
+		0x01, 0x01, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+	}
+
+	if _, err := mysqlTransformValue(in, col, tm); err == nil {
+		t.Fatal("expected error for oversized SRID")
 	}
 }
 
