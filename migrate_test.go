@@ -89,7 +89,7 @@ func TestBuildSourceSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
 }
 
 func TestBuildSourceSelectQuery_MySQLPostGISUsesWKBExport(t *testing.T) {
-	src := &mysqlSourceDB{supportsSpatialAxisExpr: true}
+	src := &mysqlSourceDB{}
 	table := Table{
 		SourceName: "places",
 		Columns: []Column{

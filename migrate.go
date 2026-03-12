@@ -515,11 +515,7 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 }
 
 func mysqlPostGISSelectExpr(src SourceDB, quoted string) string {
-	wkbExpr := fmt.Sprintf("ST_AsWKB(%s)", quoted)
-	if mysqlSrc, ok := src.(*mysqlSourceDB); ok && mysqlSrc.supportsSpatialAxisExpr {
-		wkbExpr = fmt.Sprintf("ST_AsWKB(%s, 'axis-order=long-lat')", quoted)
-	}
-
+	wkbExpr := fmt.Sprintf("ST_AsWKB(%s, 'axis-order=long-lat')", quoted)
 	sridExpr := fmt.Sprintf("ST_SRID(%s)", quoted)
 	return fmt.Sprintf(
 		"CONCAT(CHAR((%[1]s) & 255 USING binary), CHAR(((%[1]s) >> 8) & 255 USING binary), CHAR(((%[1]s) >> 16) & 255 USING binary), CHAR(((%[1]s) >> 24) & 255 USING binary), %[2]s) AS %[3]s",
