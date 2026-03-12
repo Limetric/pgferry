@@ -10,6 +10,8 @@ func TestToSnakeCase(t *testing.T) {
 		{"geoRegionId", "geo_region_id"},
 		{"chatMessages", "chat_messages"},
 		{"updatedAt", "updated_at"},
+		{"ds_3pm_project_existing", "ds_3pm_project_existing"},
+		{"ds_3Pm_project_existing", "ds_3_pm_project_existing"},
 		{"identifier", "identifier"},
 		{"IP", "ip"},                     // acronym stays together
 		{"ABCDef", "abc_def"},            // acronym + word
