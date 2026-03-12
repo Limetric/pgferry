@@ -4,7 +4,7 @@ import "testing"
 
 func TestCollectRequiredExtensions_None(t *testing.T) {
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
-	reqs := collectRequiredExtensions(&Schema{}, mysqlSrc, cfg)
+	reqs := collectRequiredExtensions(&Schema{}, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(reqs) != 0 {
 		t.Fatalf("required extensions = %d, want 0", len(reqs))
 	}
@@ -23,7 +23,7 @@ func TestCollectRequiredExtensions_Citext(t *testing.T) {
 		},
 	}
 
-	reqs := collectRequiredExtensions(schema, mysqlSrc, cfg)
+	reqs := collectRequiredExtensions(schema, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(reqs) != 1 {
 		t.Fatalf("required extensions = %d, want 1", len(reqs))
 	}
@@ -50,7 +50,7 @@ func TestCollectRequiredExtensions_PostGIS(t *testing.T) {
 		},
 	}
 
-	reqs := collectRequiredExtensions(schema, mysqlSrc, cfg)
+	reqs := collectRequiredExtensions(schema, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(reqs) != 1 {
 		t.Fatalf("required extensions = %d, want 1", len(reqs))
 	}
@@ -59,5 +59,25 @@ func TestCollectRequiredExtensions_PostGIS(t *testing.T) {
 	}
 	if !reqs[0].CreateIfMissing {
 		t.Fatal("postgis should allow creation when configured")
+	}
+}
+
+func TestSchemaUsesMySQLSpatial(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				Columns: []Column{
+					{DataType: "varchar"},
+					{DataType: "geometry"},
+				},
+			},
+		},
+	}
+
+	if !schemaUsesMySQLSpatial(schema) {
+		t.Fatal("schemaUsesMySQLSpatial() = false, want true")
+	}
+	if schemaUsesMySQLSpatial(&Schema{Tables: []Table{{Columns: []Column{{DataType: "varchar"}}}}}) {
+		t.Fatal("schemaUsesMySQLSpatial() = true for non-spatial schema")
 	}
 }

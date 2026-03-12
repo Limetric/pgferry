@@ -137,7 +137,8 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("introspect source objects: %w", err)
 	}
 
-	report := buildPlanReport(schema, sourceObjects, src, cfg)
+	typeMap := effectiveTypeMapping(cfg)
+	report := buildPlanReport(schema, sourceObjects, src, cfg, typeMap)
 
 	if planFormat == "json" {
 		if err := writePlanJSON(cmd.OutOrStdout(), report); err != nil {
@@ -157,8 +158,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB, cfg *MigrationConfig) *PlanReport {
-	typeMap := effectiveTypeMapping(cfg)
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
 		RequiredExtensions: []PlanRequiredExtension{},
 		UnsupportedColumns: []PlanUnsupportedColumn{},
@@ -167,7 +167,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 		CollationWarnings:  []string{},
 	}
 
-	for _, req := range collectRequiredExtensions(schema, src, cfg) {
+	for _, req := range collectRequiredExtensions(schema, src, cfg, typeMap) {
 		mode := "require_existing"
 		if req.CreateIfMissing {
 			mode = "create_if_missing"

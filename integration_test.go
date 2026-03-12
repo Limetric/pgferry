@@ -676,9 +676,8 @@ func TestIntegration_MySQL_PostGIS(t *testing.T) {
 	t.Cleanup(func() {
 		pgPool.Close()
 	})
-
-	if _, err := pgPool.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS postgis"); err != nil {
-		t.Skipf("skipping postgis integration test: %v", err)
+	if !extensionAvailable(t, pgPool, "postgis") {
+		t.Skip("postgis extension is not available on the target server")
 	}
 
 	pgSchema := integrationSchemaName("inttest_postgis")
@@ -699,24 +698,28 @@ dsn = %q
 
 [postgis]
 enabled = true
+create_extension = true
 `, pgSchema, mysqlDSN, pgDSN))
 
 	runMigrationFromConfig(t, cfgPath)
 
 	assertRowCount(t, pgPool, pgSchema, "places", 3)
+	assertRowCount(t, pgPool, pgSchema, "places_optional", 1)
 	assertFormattedColumnType(t, pgPool, pgSchema, "places", "shape", "geometry")
+	assertFormattedColumnType(t, pgPool, pgSchema, "places_optional", "shape", "geometry")
 	assertIndexMethod(t, pgPool, pgSchema, "places", "gist")
 
 	var (
-		name string
-		wkt  string
-		srid int
+		name  string
+		wkt   string
+		srid  int
+		valid bool
 	)
 	err = pgPool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT name, ST_AsText(shape), ST_SRID(shape)
+		SELECT name, ST_AsText(shape), ST_SRID(shape), ST_IsValid(shape)
 		FROM %s.places
 		WHERE id = 1
-	`, pgIdent(pgSchema))).Scan(&name, &wkt, &srid)
+	`, pgIdent(pgSchema))).Scan(&name, &wkt, &srid, &valid)
 	if err != nil {
 		t.Fatalf("query migrated geometry: %v", err)
 	}
@@ -729,9 +732,12 @@ enabled = true
 	if srid != 4326 {
 		t.Fatalf("srid = %d, want 4326", srid)
 	}
+	if !valid {
+		t.Fatal("expected migrated geometry to be valid")
+	}
 
 	var nullCount int
-	err = pgPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.places WHERE shape IS NULL", pgIdent(pgSchema))).Scan(&nullCount)
+	err = pgPool.QueryRow(ctx, fmt.Sprintf("SELECT COUNT(*) FROM %s.places_optional WHERE shape IS NULL", pgIdent(pgSchema))).Scan(&nullCount)
 	if err != nil {
 		t.Fatalf("count NULL geometries: %v", err)
 	}
@@ -933,16 +939,23 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	stmts := []string{
+		"DROP TABLE IF EXISTS places_optional",
 		"DROP TABLE IF EXISTS places",
 		`CREATE TABLE places (
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			name VARCHAR(100) NOT NULL,
-			shape POINT NULL,
+			shape POINT NOT NULL,
 			SPATIAL INDEX idx_places_shape (shape)
+		)`,
+		`CREATE TABLE places_optional (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			shape POINT NULL
 		)`,
 		"INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326))",
 		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
-		"INSERT INTO places (name, shape) VALUES ('unknown', NULL)",
+		"INSERT INTO places (name, shape) VALUES ('utm', ST_GeomFromText('POINT(2 3)', 3857))",
+		"INSERT INTO places_optional (name, shape) VALUES ('unknown', NULL)",
 	}
 
 	for _, stmt := range stmts {
@@ -1728,8 +1741,12 @@ func assertIndexMethod(t *testing.T, pool *pgxpool.Pool, schema, table, method s
 	var count int
 	err := pool.QueryRow(context.Background(), `
 		SELECT COUNT(*)
-		FROM pg_indexes
-		WHERE schemaname = $1 AND tablename = $2 AND indexdef ILIKE '%' || $3 || '%'
+		FROM pg_index i
+		JOIN pg_class c ON c.oid = i.indrelid
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_class ic ON ic.oid = i.indexrelid
+		JOIN pg_am am ON am.oid = ic.relam
+		WHERE n.nspname = $1 AND c.relname = $2 AND am.amname = $3
 	`, schema, table, method).Scan(&count)
 	if err != nil {
 		t.Fatalf("check index method on %s.%s: %v", schema, table, err)
@@ -1737,4 +1754,17 @@ func assertIndexMethod(t *testing.T, pool *pgxpool.Pool, schema, table, method s
 	if count == 0 {
 		t.Fatalf("no %s index found on %s.%s", method, schema, table)
 	}
+}
+
+func extensionAvailable(t *testing.T, pool *pgxpool.Pool, name string) bool {
+	t.Helper()
+
+	var available bool
+	err := pool.QueryRow(context.Background(), `
+		SELECT EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = $1)
+	`, name).Scan(&available)
+	if err != nil {
+		t.Fatalf("check extension availability for %s: %v", name, err)
+	}
+	return available
 }

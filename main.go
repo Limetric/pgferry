@@ -198,7 +198,10 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		return fmt.Errorf("ping postgres: %w", err)
 	}
 
-	if reqs := collectRequiredExtensions(schema, src, cfg); len(reqs) > 0 {
+	// Validate extension-backed features before any schema or data work. This
+	// intentionally also runs in data_only mode because geometry/citext COPY
+	// still depends on the target extension being present.
+	if reqs := collectRequiredExtensions(schema, src, cfg, typeMap); len(reqs) > 0 {
 		log.Printf("validating required PostgreSQL extensions...")
 		if err := ensureRequiredExtensions(ctx, pgPool, reqs); err != nil {
 			return err

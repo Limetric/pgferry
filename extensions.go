@@ -13,10 +13,10 @@ type extensionRequirement struct {
 	Name            string
 	Feature         string
 	CreateIfMissing bool
+	CreateHint      string
 }
 
-func collectRequiredExtensions(schema *Schema, src SourceDB, cfg *MigrationConfig) []extensionRequirement {
-	typeMap := effectiveTypeMapping(cfg)
+func collectRequiredExtensions(schema *Schema, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) []extensionRequirement {
 	var reqs []extensionRequirement
 
 	if schemaUsesCitext(schema, src, typeMap) {
@@ -32,6 +32,7 @@ func collectRequiredExtensions(schema *Schema, src SourceDB, cfg *MigrationConfi
 			Name:            "postgis",
 			Feature:         "postgis",
 			CreateIfMissing: cfg.PostGIS.CreateExtension,
+			CreateHint:      "or set [postgis].create_extension = true",
 		})
 	}
 
@@ -93,7 +94,11 @@ func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []ex
 			return fmt.Errorf("%s feature requires PostgreSQL extension %q, but it is not available on the target server", req.Feature, req.Name)
 		}
 		if !req.CreateIfMissing {
-			return fmt.Errorf("%s feature requires PostgreSQL extension %q to be installed before running pgferry; install it first or set [postgis].create_extension = true", req.Feature, req.Name)
+			msg := fmt.Sprintf("%s feature requires PostgreSQL extension %q to be installed before running pgferry; install it first", req.Feature, req.Name)
+			if req.CreateHint != "" {
+				msg += " " + req.CreateHint
+			}
+			return fmt.Errorf("%s", msg)
 		}
 
 		log.Printf("creating PostgreSQL extension %s for %s...", req.Name, req.Feature)

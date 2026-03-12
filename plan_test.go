@@ -13,7 +13,7 @@ func TestBuildPlanReport_Empty(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views = %d, want 0", len(report.SourceObjects.Views))
@@ -50,7 +50,7 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, objs, mysqlSrc, cfg)
+	report := buildPlanReport(schema, objs, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 1 || report.SourceObjects.Views[0] != "v_active_users" {
 		t.Errorf("views = %v, want [v_active_users]", report.SourceObjects.Views)
@@ -307,7 +307,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views should be empty, got %v", report.SourceObjects.Views)
@@ -323,7 +323,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	var buf bytes.Buffer
 	if err := writePlanJSON(&buf, report); err != nil {
@@ -366,7 +366,7 @@ func TestBuildPlanReport_RequiredExtensionsAndUnsupportedColumns(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(report.RequiredExtensions) != 2 {
 		t.Fatalf("required extensions = %d, want 2", len(report.RequiredExtensions))
 	}
@@ -391,7 +391,7 @@ func TestBuildPlanReport_PostGISDisabledMarksSpatialUnsupported(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg)
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(report.UnsupportedColumns) != 1 {
 		t.Fatalf("unsupported columns = %d, want 1", len(report.UnsupportedColumns))
 	}

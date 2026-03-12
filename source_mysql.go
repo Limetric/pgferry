@@ -906,13 +906,18 @@ func mysqlSpatialToEWKB(raw []byte) ([]byte, error) {
 	}
 
 	srid := binary.LittleEndian.Uint32(raw[:4])
+	if srid > 0x7fffffff {
+		return nil, fmt.Errorf("spatial SRID %d exceeds PostGIS supported range", srid)
+	}
 	wkb := raw[4:]
 
 	var byteOrder binary.ByteOrder
 	switch wkb[0] {
 	case 0:
+		// Standard OGC WKB big-endian marker (XDR).
 		byteOrder = binary.BigEndian
 	case 1:
+		// Standard OGC WKB little-endian marker (NDR).
 		byteOrder = binary.LittleEndian
 	default:
 		return nil, fmt.Errorf("unsupported WKB byte order %d", wkb[0])

@@ -697,12 +697,60 @@ func TestTransformValue_SpatialPostGISZeroSRID(t *testing.T) {
 	}
 }
 
+func TestTransformValue_SpatialPostGISBigEndian(t *testing.T) {
+	col := Column{DataType: "point", ColumnType: "point"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{
+		0xe6, 0x10, 0x00, 0x00,
+		0x00,
+		0x00, 0x00, 0x00, 0x01,
+		0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+	want := []byte{
+		0x00,
+		0x20, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x10, 0xe6,
+		0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+
+	got, err := mysqlTransformValue(in, col, tm)
+	if err != nil {
+		t.Fatalf("mysqlTransformValue(postgis big endian) error: %v", err)
+	}
+	out, ok := got.([]byte)
+	if !ok {
+		t.Fatalf("mysqlTransformValue(postgis big endian) type = %T, want []byte", got)
+	}
+	if !bytes.Equal(out, want) {
+		t.Fatalf("mysqlTransformValue(postgis big endian) = %#v, want %#v", out, want)
+	}
+}
+
 func TestTransformValue_SpatialPostGISErrorsOnShortPayload(t *testing.T) {
 	col := Column{DataType: "geometry", ColumnType: "geometry"}
 	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
 
 	if _, err := mysqlTransformValue([]byte{0x01, 0x02}, col, tm); err == nil {
 		t.Fatal("expected error for short spatial payload")
+	}
+}
+
+func TestTransformValue_SpatialPostGISErrorsOnOversizeSRID(t *testing.T) {
+	col := Column{DataType: "geometry", ColumnType: "geometry"}
+	tm := TypeMappingConfig{UsePostGIS: true, EnumMode: "text", SetMode: "text", SanitizeJSONNullBytes: true, BitMode: "bytea", Binary16UUIDMode: "rfc4122", TimeMode: "time", ZeroDateMode: "null"}
+
+	in := []byte{
+		0xff, 0xff, 0xff, 0xff,
+		0x01, 0x01, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+	}
+
+	if _, err := mysqlTransformValue(in, col, tm); err == nil {
+		t.Fatal("expected error for oversized SRID")
 	}
 }
 
