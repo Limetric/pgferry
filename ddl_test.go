@@ -104,6 +104,24 @@ func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_QuotesCollationIdentifier(t *testing.T) {
+	table := Table{
+		PGName: "articles",
+		Columns: []Column{
+			{PGName: "collation", DataType: "varchar", CharMaxLen: 64, Nullable: false},
+		},
+	}
+
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	if !strings.Contains(ddl, `"collation" varchar(64) NOT NULL`) {
+		t.Fatalf("DDL should quote reserved word 'collation', got:\n%s", ddl)
+	}
+}
+
 func TestGenerateCreateTable_UnknownTypeErrors(t *testing.T) {
 	table := Table{
 		PGName: "mystery",

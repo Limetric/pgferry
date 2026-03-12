@@ -34,6 +34,7 @@ func TestPgIdent(t *testing.T) {
 	}{
 		{"user", `"user"`},
 		{"order", `"order"`},
+		{"collation", `"collation"`},
 		{"table", `"table"`},
 		{"users", "users"},
 		{"match_id", "match_id"},
