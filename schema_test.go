@@ -36,8 +36,8 @@ func TestPgIdent(t *testing.T) {
 		{"order", `"order"`},
 		{"collation", `"collation"`},
 		{"table", `"table"`},
-		{"users", "users"},
-		{"match_id", "match_id"},
+		{"users", `"users"`},
+		{"match_id", `"match_id"`},
 		{"chat_id-ended_at", `"chat_id-ended_at"`},
 		{"has space", `"has space"`},
 		{"Upper", `"Upper"`},
@@ -49,6 +49,12 @@ func TestPgIdent(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("pgIdent(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestPgIdent_EmptyString(t *testing.T) {
+	if got := pgIdent(""); got != `""` {
+		t.Fatalf("pgIdent(\"\") = %q, want %q", got, `""`)
 	}
 }
 

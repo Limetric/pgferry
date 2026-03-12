@@ -56,6 +56,11 @@ ANALYZE {{schema}};
 
 If `schema = "app"`, this executes as `ANALYZE app;`.
 
+Replacement is a simple string substitution, not SQL-aware templating. In
+practice this means hook templates assume schema names that do not themselves
+contain embedded double quotes. If you use unusual schema names and write hooks
+that quote `{{schema}}`, verify the rendered SQL carefully.
+
 ## Statement splitting
 
 Each SQL file is split into individual statements on `;` semicolons and

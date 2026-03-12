@@ -17,14 +17,14 @@ func TestUnsignedCheckExpr(t *testing.T) {
 			name: "int unsigned bounded",
 			col:  Column{PGName: "id", DataType: "int", ColumnType: "int unsigned"},
 			tm:   defaultTypeMappingConfig(),
-			want: "id >= 0 AND id <= 4294967295",
+			want: `"id" >= 0 AND "id" <= 4294967295`,
 			ok:   true,
 		},
 		{
 			name: "decimal unsigned lower-bound only",
 			col:  Column{PGName: "amount", DataType: "decimal", ColumnType: "decimal(10,2) unsigned"},
 			tm:   defaultTypeMappingConfig(),
-			want: "amount >= 0",
+			want: `"amount" >= 0`,
 			ok:   true,
 		},
 		{

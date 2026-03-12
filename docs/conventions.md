@@ -8,10 +8,13 @@ For example, `parentUserId` becomes `parent_user_id`. This may require applicati
 When `snake_case_identifiers = false`, identifiers are lowercased instead (matching PostgreSQL's default case folding).
 For example, `UserName` becomes `username`.
 
-PostgreSQL reserved words are automatically double-quoted in all generated DDL.
-For example, a source column named `user` becomes `"user"` in PostgreSQL.
+PostgreSQL identifiers are always emitted as double-quoted identifiers in generated SQL.
+For example, a source column named `user` becomes `"user"` and a plain identifier like
+`users` becomes `"users"` in PostgreSQL.
 
-Identifiers containing special characters (dots, spaces, etc.) are also quoted.
+This changes the exact SQL text compared with older pgferry releases that only quoted
+some identifiers. If you compare emitted SQL strings in external tooling or scripts,
+expect more quoted output such as `"app"."users"` instead of `app.users`.
 
 ## Auto-increment &rarr; sequences
 

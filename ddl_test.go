@@ -29,22 +29,22 @@ func TestGenerateCreateTable(t *testing.T) {
 	}
 
 	// Should have schema prefix
-	if !strings.Contains(ddl, "app.users") {
-		t.Error("DDL should reference app.users")
+	if !strings.Contains(ddl, `"app"."users"`) {
+		t.Error(`DDL should reference "app"."users"`)
 	}
 
 	// uuid type for binary(16)
-	if !strings.Contains(ddl, "identifier bytea NOT NULL") {
+	if !strings.Contains(ddl, `"identifier" bytea NOT NULL`) {
 		t.Errorf("DDL should map binary(16) to bytea by default, got:\n%s", ddl)
 	}
 
 	// boolean for tinyint(1)
-	if !strings.Contains(ddl, "enabled smallint NOT NULL") {
+	if !strings.Contains(ddl, `"enabled" smallint NOT NULL`) {
 		t.Errorf("DDL should map tinyint(1) to smallint by default, got:\n%s", ddl)
 	}
 
 	// nullable column should not have NOT NULL
-	if strings.Contains(ddl, "email_address varchar(150) NOT NULL") {
+	if strings.Contains(ddl, `"email_address" varchar(150) NOT NULL`) {
 		t.Error("nullable column should not have NOT NULL")
 	}
 }
@@ -61,7 +61,7 @@ func TestGenerateCreateTable_Unlogged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
-	if !strings.Contains(ddl, "CREATE UNLOGGED TABLE app.users") {
+	if !strings.Contains(ddl, `CREATE UNLOGGED TABLE "app"."users"`) {
 		t.Errorf("DDL should be unlogged when enabled, got:\n%s", ddl)
 	}
 }
@@ -78,12 +78,12 @@ func TestGenerateCreateTable_DefaultLoggedPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
-	if !strings.HasPrefix(ddl, "CREATE TABLE app.accounts (") {
+	if !strings.HasPrefix(ddl, `CREATE TABLE "app"."accounts" (`) {
 		t.Fatalf("expected logged CREATE TABLE prefix, got:\n%s", ddl)
 	}
 }
 
-func TestGenerateCreateTable_ReservedWords(t *testing.T) {
+func TestGenerateCreateTable_AlwaysQuotesIdentifiers(t *testing.T) {
 	table := Table{
 		PGName: "user",
 		Columns: []Column{
@@ -97,10 +97,10 @@ func TestGenerateCreateTable_ReservedWords(t *testing.T) {
 	}
 
 	if !strings.Contains(ddl, `"user"`) {
-		t.Errorf("DDL should quote reserved word 'user', got:\n%s", ddl)
+		t.Errorf("DDL should quote table identifier 'user', got:\n%s", ddl)
 	}
 	if !strings.Contains(ddl, `"order"`) {
-		t.Errorf("DDL should quote reserved word 'order', got:\n%s", ddl)
+		t.Errorf("DDL should quote column identifier 'order', got:\n%s", ddl)
 	}
 }
 
@@ -118,7 +118,7 @@ func TestGenerateCreateTable_QuotesCollationIdentifier(t *testing.T) {
 	}
 
 	if !strings.Contains(ddl, `"collation" varchar(64) NOT NULL`) {
-		t.Fatalf("DDL should quote reserved word 'collation', got:\n%s", ddl)
+		t.Fatalf("DDL should quote identifier 'collation', got:\n%s", ddl)
 	}
 }
 
@@ -154,16 +154,16 @@ func TestGenerateCreateTable_PreserveDefaults(t *testing.T) {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
 
-	if !strings.Contains(ddl, "count integer DEFAULT 0 NOT NULL") {
+	if !strings.Contains(ddl, `"count" integer DEFAULT 0 NOT NULL`) {
 		t.Fatalf("expected numeric default in DDL, got:\n%s", ddl)
 	}
-	if !strings.Contains(ddl, "status varchar(20) DEFAULT 'new' NOT NULL") {
+	if !strings.Contains(ddl, `"status" varchar(20) DEFAULT 'new' NOT NULL`) {
 		t.Fatalf("expected text default in DDL, got:\n%s", ddl)
 	}
-	if !strings.Contains(ddl, "created_at timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL") {
+	if !strings.Contains(ddl, `"created_at" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL`) {
 		t.Fatalf("expected timestamp default in DDL, got:\n%s", ddl)
 	}
-	if !strings.Contains(ddl, "metadata jsonb DEFAULT '{}'::jsonb") {
+	if !strings.Contains(ddl, `"metadata" jsonb DEFAULT '{}'::jsonb`) {
 		t.Fatalf("expected jsonb default in DDL, got:\n%s", ddl)
 	}
 }
@@ -214,7 +214,7 @@ func TestGenerateCreateTable_EnumCheckMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
-	if !strings.Contains(ddl, "CHECK (status IN ('new', 'used'))") {
+	if !strings.Contains(ddl, `CHECK ("status" IN ('new', 'used'))`) {
 		t.Fatalf("expected enum CHECK clause, got:\n%s", ddl)
 	}
 }
@@ -233,7 +233,7 @@ func TestGenerateCreateTable_SetArrayDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateCreateTable() error: %v", err)
 	}
-	if !strings.Contains(ddl, "flags text[] DEFAULT ARRAY['a', 'c']::text[] NOT NULL") {
+	if !strings.Contains(ddl, `"flags" text[] DEFAULT ARRAY['a', 'c']::text[] NOT NULL`) {
 		t.Fatalf("expected set text[] default, got:\n%s", ddl)
 	}
 }
@@ -335,17 +335,17 @@ func TestGenerateCreateTable_CIAsCitext(t *testing.T) {
 	}
 
 	// _ci text column → citext
-	if !strings.Contains(ddl, "name citext NOT NULL") {
+	if !strings.Contains(ddl, `"name" citext NOT NULL`) {
 		t.Errorf("expected citext for _ci varchar column, got:\n%s", ddl)
 	}
 
 	// _bin text column → unchanged (varchar)
-	if strings.Contains(ddl, "code citext") {
+	if strings.Contains(ddl, `"code" citext`) {
 		t.Errorf("_bin column should not become citext, got:\n%s", ddl)
 	}
 
 	// non-text column → unchanged even with _ci collation
-	if strings.Contains(ddl, "count citext") {
+	if strings.Contains(ddl, `"count" citext`) {
 		t.Errorf("non-text column should not become citext, got:\n%s", ddl)
 	}
 }
@@ -411,7 +411,7 @@ func TestGenerateCreateTable_SetArrayCheckMode(t *testing.T) {
 	if !strings.Contains(ddl, "text[]") {
 		t.Errorf("expected text[] type, got:\n%s", ddl)
 	}
-	if !strings.Contains(ddl, "CHECK (flags <@ ARRAY['a', 'b', 'c']::text[])") {
+	if !strings.Contains(ddl, `CHECK ("flags" <@ ARRAY['a', 'b', 'c']::text[])`) {
 		t.Errorf("expected set CHECK constraint, got:\n%s", ddl)
 	}
 }
@@ -451,7 +451,7 @@ func TestGenerateCreateTable_EnumNativeMode(t *testing.T) {
 	}
 
 	typeName := pgEnumTypeName([]string{"new", "used"})
-	expected := "app." + typeName
+	expected := `"app"."` + typeName + `"`
 	if !strings.Contains(ddl, expected) {
 		t.Errorf("expected schema-qualified enum type %q in DDL, got:\n%s", expected, ddl)
 	}

@@ -72,7 +72,7 @@ func TestPrepareTargetSchema_ErrorModeSchemaMissingCreates(t *testing.T) {
 	if len(exec.execCalls) != 1 {
 		t.Fatalf("expected one Exec call, got %d", len(exec.execCalls))
 	}
-	if exec.execCalls[0] != "CREATE SCHEMA app" {
+	if exec.execCalls[0] != `CREATE SCHEMA "app"` {
 		t.Fatalf("unexpected SQL: %s", exec.execCalls[0])
 	}
 }
@@ -86,10 +86,10 @@ func TestPrepareTargetSchema_RecreateDropsThenCreates(t *testing.T) {
 	if len(exec.execCalls) != 2 {
 		t.Fatalf("expected two Exec calls, got %d", len(exec.execCalls))
 	}
-	if exec.execCalls[0] != "DROP SCHEMA IF EXISTS app CASCADE" {
+	if exec.execCalls[0] != `DROP SCHEMA IF EXISTS "app" CASCADE` {
 		t.Fatalf("unexpected first SQL: %s", exec.execCalls[0])
 	}
-	if exec.execCalls[1] != "CREATE SCHEMA app" {
+	if exec.execCalls[1] != `CREATE SCHEMA "app"` {
 		t.Fatalf("unexpected second SQL: %s", exec.execCalls[1])
 	}
 }
