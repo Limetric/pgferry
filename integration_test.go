@@ -957,9 +957,6 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 			name VARCHAR(100) NOT NULL,
 			shape POINT NULL
 		)`,
-		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
-		"INSERT INTO places (name, shape) VALUES ('utm', ST_GeomFromText('POINT(2 3)', 3857))",
-		"INSERT INTO places_optional (name, shape) VALUES ('unknown', NULL)",
 	}
 
 	for _, stmt := range stmts {
@@ -969,6 +966,17 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 	}
 	if err := insertMySQLSpatialAmsterdam(db); err != nil {
 		t.Fatalf("seed mysql spatial amsterdam: %v", err)
+	}
+
+	dataStmts := []string{
+		"INSERT INTO places (name, shape) VALUES ('origin', ST_GeomFromText('POINT(1 2)', 0))",
+		"INSERT INTO places (name, shape) VALUES ('utm', ST_GeomFromText('POINT(2 3)', 3857))",
+		"INSERT INTO places_optional (name, shape) VALUES ('unknown', NULL)",
+	}
+	for _, stmt := range dataStmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql spatial %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
 	}
 }
 
