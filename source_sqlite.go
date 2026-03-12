@@ -12,6 +12,9 @@ import (
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
 
+// SQLite's default SQLITE_LIMIT_COMPOUND_SELECT is 500; stay well below it.
+const sqliteMaxCompoundSelectTerms = 400
+
 type sqliteSourceDB struct {
 	snakeCaseIDs bool
 }
@@ -82,42 +85,28 @@ func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error)
 		return nil, fmt.Errorf("introspect tables: %w", err)
 	}
 
+	tableNames := sqliteTableNames(tables)
+	columnsByTable, primaryKeysByTable, err := introspectSQLiteColumnsByTable(db, tableNames, s.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect columns across %d tables: %w", len(tableNames), err)
+	}
+
+	indexesByTable, err := introspectSQLiteIndexesByTable(db, tableNames, s.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect indexes across %d tables: %w", len(tableNames), err)
+	}
+
+	foreignKeysByTable, err := introspectSQLiteForeignKeysByTable(db, tableNames, s.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect foreign keys across %d tables: %w", len(tableNames), err)
+	}
+
 	for i := range tables {
 		t := &tables[i]
-
-		cols, autoIncrCols, err := introspectSQLiteColumns(db, t.SourceName, s.identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect columns for %s: %w", t.SourceName, err)
-		}
-		t.Columns = cols
-
-		indexes, err := introspectSQLiteIndexes(db, t.SourceName, s.identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect indexes for %s: %w", t.SourceName, err)
-		}
-		for _, idx := range indexes {
-			if idx.IsPrimary {
-				pk := idx
-				t.PrimaryKey = &pk
-			} else {
-				t.Indexes = append(t.Indexes, idx)
-			}
-		}
-
-		// If no PK from indexes, buildPKFromTableInfo already handles it
-
-		// Mark autoincrement columns
-		for i := range t.Columns {
-			if autoIncrCols[t.Columns[i].SourceName] {
-				t.Columns[i].Extra = "auto_increment"
-			}
-		}
-
-		fks, err := introspectSQLiteForeignKeys(db, t.SourceName, s.identName)
-		if err != nil {
-			return nil, fmt.Errorf("introspect foreign keys for %s: %w", t.SourceName, err)
-		}
-		t.ForeignKeys = fks
+		t.Columns = columnsByTable[t.SourceName]
+		t.PrimaryKey = primaryKeysByTable[t.SourceName]
+		t.Indexes = indexesByTable[t.SourceName]
+		t.ForeignKeys = foreignKeysByTable[t.SourceName]
 	}
 
 	return &Schema{Tables: tables}, nil
@@ -296,82 +285,439 @@ func introspectSQLiteTables(db *sql.DB, identName func(string) string) ([]Table,
 	return tables, rows.Err()
 }
 
-func introspectSQLiteColumns(db *sql.DB, tableName string, identName func(string) string) ([]Column, map[string]bool, error) {
-	quotedTable := strings.ReplaceAll(tableName, "\"", "\"\"")
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_xinfo(\"%s\")", quotedTable))
-	if err != nil {
-		return nil, nil, err
+func sqliteTableNames(tables []Table) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.SourceName)
 	}
-	defer rows.Close()
+	return names
+}
 
-	type colInfo struct {
-		col    Column
-		pk     int
-		hidden int // 0=normal, 1=hidden, 2=generated stored, 3=generated virtual
+func sqliteUnionQuery(parts []string, orderBy string) string {
+	if len(parts) == 0 {
+		return ""
 	}
-	var infos []colInfo
+	var b strings.Builder
+	for i, part := range parts {
+		if i > 0 {
+			b.WriteString(" UNION ALL ")
+		}
+		b.WriteString(part)
+	}
+	if orderBy != "" {
+		b.WriteString(" ORDER BY ")
+		b.WriteString(orderBy)
+	}
+	return b.String()
+}
 
-	for rows.Next() {
-		var cid, pk, notnull, hidden int
-		var name, colType string
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk, &hidden); err != nil {
+// sqliteLiteral reuses standard SQL single-quoted string escaping, which is
+// valid for SQLite table-valued PRAGMA arguments.
+func sqliteLiteral(v string) string {
+	return pgLiteral(v)
+}
+
+func chunkSlice[T any](items []T, size int) [][]T {
+	if len(items) == 0 {
+		return nil
+	}
+	if size <= 0 {
+		size = len(items)
+	}
+	chunks := make([][]T, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
+}
+
+type sqlitePKCol struct {
+	name  string
+	pkPos int
+}
+
+func buildSQLitePKIndex(pkCols []sqlitePKCol, identName func(string) string) *Index {
+	if len(pkCols) == 0 {
+		return nil
+	}
+
+	slices.SortFunc(pkCols, func(a, b sqlitePKCol) int { return a.pkPos - b.pkPos })
+
+	idx := &Index{
+		Name:       "PRIMARY",
+		SourceName: "PRIMARY",
+		Unique:     true,
+		IsPrimary:  true,
+		Type:       "BTREE",
+	}
+	for _, pkCol := range pkCols {
+		idx.Columns = append(idx.Columns, identName(pkCol.name))
+		idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
+	}
+	return idx
+}
+
+func introspectSQLiteColumnsByTable(db *sql.DB, tableNames []string, identName func(string) string) (map[string][]Column, map[string]*Index, error) {
+	colsByTable := make(map[string][]Column)
+	pksByTable := make(map[string]*Index)
+	if len(tableNames) == 0 {
+		return colsByTable, pksByTable, nil
+	}
+
+	pkColsByTable := make(map[string][]sqlitePKCol)
+	for _, batch := range chunkSlice(tableNames, sqliteMaxCompoundSelectTerms) {
+		var parts []string
+		for _, tableName := range batch {
+			parts = append(parts,
+				fmt.Sprintf(
+					`SELECT %s AS table_name, cid, name, type, "notnull", dflt_value, pk, hidden FROM pragma_table_xinfo(%s)`,
+					sqliteLiteral(tableName),
+					sqliteLiteral(tableName),
+				),
+			)
+		}
+
+		rows, err := db.Query(sqliteUnionQuery(parts, "table_name, cid"))
+		if err != nil {
 			return nil, nil, err
 		}
 
-		col := Column{
-			SourceName: name,
-			PGName:     identName(name),
-			DataType:   strings.ToLower(normalizeAffinity(colType)),
-			ColumnType: strings.ToLower(colType),
-			Nullable:   notnull == 0,
-			OrdinalPos: cid + 1,
-		}
-		if dflt.Valid {
-			col.Default = &dflt.String
-		}
+		for rows.Next() {
+			var (
+				tableName string
+				cid       int
+				pk        int
+				notnull   int
+				hidden    int
+				name      string
+				colType   string
+				dflt      sql.NullString
+			)
+			if err := rows.Scan(&tableName, &cid, &name, &colType, &notnull, &dflt, &pk, &hidden); err != nil {
+				rows.Close()
+				return nil, nil, err
+			}
 
-		// Mark generated columns so they get materialized during migration
-		switch hidden {
-		case 2:
-			col.Extra = "STORED GENERATED"
-		case 3:
-			col.Extra = "VIRTUAL GENERATED"
+			col := Column{
+				SourceName: name,
+				PGName:     identName(name),
+				DataType:   strings.ToLower(normalizeAffinity(colType)),
+				ColumnType: strings.ToLower(colType),
+				Nullable:   notnull == 0,
+				OrdinalPos: cid + 1,
+			}
+			if dflt.Valid {
+				col.Default = &dflt.String
+			}
+			switch hidden {
+			case 2:
+				col.Extra = "STORED GENERATED"
+			case 3:
+				col.Extra = "VIRTUAL GENERATED"
+			}
+
+			parseSQLiteTypeParams(&col, colType)
+			colsByTable[tableName] = append(colsByTable[tableName], col)
+			if pk > 0 {
+				pkColsByTable[tableName] = append(pkColsByTable[tableName], sqlitePKCol{name: name, pkPos: pk})
+			}
 		}
-
-		parseSQLiteTypeParams(&col, colType)
-
-		infos = append(infos, colInfo{col: col, pk: pk, hidden: hidden})
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		rows.Close()
 	}
-	if err := rows.Err(); err != nil {
+
+	autoIncrColsByTable := make(map[string]map[string]bool)
+	createSQLRows, err := db.Query("SELECT name, COALESCE(sql, '') FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+	if err != nil {
+		return nil, nil, err
+	}
+	defer createSQLRows.Close()
+	for createSQLRows.Next() {
+		var tableName, createSQL string
+		if err := createSQLRows.Scan(&tableName, &createSQL); err != nil {
+			return nil, nil, err
+		}
+		if _, ok := colsByTable[tableName]; !ok {
+			continue
+		}
+		if colName := detectSQLiteAutoIncrementColumnFromSQL(createSQL); colName != "" {
+			autoIncrColsByTable[tableName] = map[string]bool{colName: true}
+		}
+	}
+	if err := createSQLRows.Err(); err != nil {
 		return nil, nil, err
 	}
 
-	var cols []Column
-	for _, ci := range infos {
-		cols = append(cols, ci.col)
-	}
-
-	// Detect autoincrement columns from CREATE TABLE SQL
-	autoIncrCols := detectSQLiteAutoIncrement(db, tableName)
-
-	// Also mark INTEGER PRIMARY KEY as auto_increment (it's a rowid alias)
-	// Use pk info already collected — no need to re-query
-	pkCount := 0
-	for _, ci := range infos {
-		if ci.pk > 0 {
-			pkCount++
+	for tableName, pkCols := range pkColsByTable {
+		pksByTable[tableName] = buildSQLitePKIndex(pkCols, identName)
+		if len(pkCols) != 1 {
+			continue
 		}
-	}
-	if pkCount == 1 {
-		for _, ci := range infos {
-			if ci.pk > 0 && strings.EqualFold(ci.col.ColumnType, "integer") {
-				autoIncrCols[ci.col.SourceName] = true
+		pkColName := pkCols[0].name
+		for _, col := range colsByTable[tableName] {
+			if col.SourceName == pkColName && strings.EqualFold(col.ColumnType, "integer") {
+				if autoIncrColsByTable[tableName] == nil {
+					autoIncrColsByTable[tableName] = make(map[string]bool)
+				}
+				autoIncrColsByTable[tableName][pkColName] = true
+				break
 			}
 		}
 	}
 
-	return cols, autoIncrCols, nil
+	for tableName, cols := range colsByTable {
+		autoIncrCols := autoIncrColsByTable[tableName]
+		if len(autoIncrCols) == 0 {
+			continue
+		}
+		for i := range cols {
+			if autoIncrCols[cols[i].SourceName] {
+				cols[i].Extra = "auto_increment"
+			}
+		}
+		colsByTable[tableName] = cols
+	}
+
+	return colsByTable, pksByTable, nil
+}
+
+type sqliteIndexesForTable struct {
+	indexMap map[string]*Index
+	order    []string
+}
+
+func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName func(string) string) (map[string][]Index, error) {
+	indexesByTable := make(map[string][]Index)
+	if len(tableNames) == 0 {
+		return indexesByTable, nil
+	}
+
+	groups := make(map[string]*sqliteIndexesForTable)
+	type sqliteIndexSpec struct {
+		tableName string
+		indexName string
+	}
+	var indexSpecs []sqliteIndexSpec
+
+	for _, batch := range chunkSlice(tableNames, sqliteMaxCompoundSelectTerms) {
+		var listParts []string
+		for _, tableName := range batch {
+			listParts = append(listParts,
+				fmt.Sprintf(
+					`SELECT %s AS table_name, seq, name, "unique", origin, partial FROM pragma_index_list(%s)`,
+					sqliteLiteral(tableName),
+					sqliteLiteral(tableName),
+				),
+			)
+		}
+
+		rows, err := db.Query(sqliteUnionQuery(listParts, "table_name, seq"))
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var (
+				tableName string
+				seq       int
+				name      string
+				origin    string
+				unique    int
+				partial   int
+			)
+			if err := rows.Scan(&tableName, &seq, &name, &unique, &origin, &partial); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			_ = seq
+			if origin == "pk" {
+				continue
+			}
+
+			group := groups[tableName]
+			if group == nil {
+				group = &sqliteIndexesForTable{indexMap: make(map[string]*Index)}
+				groups[tableName] = group
+			}
+
+			idx := &Index{
+				Name:       identName(name),
+				SourceName: name,
+				Unique:     unique == 1,
+				IsPrimary:  false,
+				Type:       "BTREE",
+			}
+			if partial == 1 {
+				idx.HasExpression = true
+				log.Printf("    WARN: partial index %q on %s will be skipped (WHERE clause not migrated)", name, tableName)
+			}
+
+			group.indexMap[name] = idx
+			group.order = append(group.order, name)
+			indexSpecs = append(indexSpecs, sqliteIndexSpec{tableName: tableName, indexName: name})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	for _, batch := range chunkSlice(indexSpecs, sqliteMaxCompoundSelectTerms) {
+		var infoParts []string
+		for _, spec := range batch {
+			infoParts = append(infoParts,
+				fmt.Sprintf(
+					"SELECT %s AS table_name, %s AS index_name, seqno, cid, name FROM pragma_index_info(%s)",
+					sqliteLiteral(spec.tableName),
+					sqliteLiteral(spec.indexName),
+					sqliteLiteral(spec.indexName),
+				),
+			)
+		}
+
+		infoRows, err := db.Query(sqliteUnionQuery(infoParts, "table_name, index_name, seqno"))
+		if err != nil {
+			return nil, err
+		}
+
+		for infoRows.Next() {
+			var (
+				tableName string
+				indexName string
+				seqno     int
+				cid       int
+				colName   sql.NullString
+			)
+			if err := infoRows.Scan(&tableName, &indexName, &seqno, &cid, &colName); err != nil {
+				infoRows.Close()
+				return nil, err
+			}
+			_ = seqno
+			_ = cid
+			idx := groups[tableName].indexMap[indexName]
+			if !colName.Valid {
+				idx.HasExpression = true
+				continue
+			}
+			idx.Columns = append(idx.Columns, identName(colName.String))
+			idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
+		}
+		if err := infoRows.Err(); err != nil {
+			infoRows.Close()
+			return nil, err
+		}
+		infoRows.Close()
+	}
+
+	for tableName, group := range groups {
+		indexes := make([]Index, 0, len(group.order))
+		for _, name := range group.order {
+			indexes = append(indexes, *group.indexMap[name])
+		}
+		indexesByTable[tableName] = indexes
+	}
+	return indexesByTable, nil
+}
+
+type sqliteForeignKeysForTable struct {
+	fkMap map[int]*ForeignKey
+	order []int
+}
+
+func introspectSQLiteForeignKeysByTable(db *sql.DB, tableNames []string, identName func(string) string) (map[string][]ForeignKey, error) {
+	fksByTable := make(map[string][]ForeignKey)
+	if len(tableNames) == 0 {
+		return fksByTable, nil
+	}
+
+	groups := make(map[string]*sqliteForeignKeysForTable)
+	for _, batch := range chunkSlice(tableNames, sqliteMaxCompoundSelectTerms) {
+		var parts []string
+		for _, tableName := range batch {
+			parts = append(parts,
+				fmt.Sprintf(
+					`SELECT %s AS table_name, id, seq, "table" AS ref_table, "from", "to", on_update, on_delete, match FROM pragma_foreign_key_list(%s)`,
+					sqliteLiteral(tableName),
+					sqliteLiteral(tableName),
+				),
+			)
+		}
+
+		rows, err := db.Query(sqliteUnionQuery(parts, "table_name, id, seq"))
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var (
+				tableName string
+				id        int
+				seq       int
+				refTable  string
+				from      string
+				to        string
+				onUpdate  string
+				onDelete  string
+				match     string
+			)
+			if err := rows.Scan(&tableName, &id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			_ = seq
+			_ = match
+
+			group := groups[tableName]
+			if group == nil {
+				group = &sqliteForeignKeysForTable{fkMap: make(map[int]*ForeignKey)}
+				groups[tableName] = group
+			}
+
+			fk := group.fkMap[id]
+			if fk == nil {
+				fk = &ForeignKey{
+					Name:       fmt.Sprintf("fk_%s_%d", identName(tableName), id),
+					RefTable:   refTable,
+					RefPGTable: identName(refTable),
+					UpdateRule: strings.ToUpper(onUpdate),
+					DeleteRule: strings.ToUpper(onDelete),
+				}
+				group.fkMap[id] = fk
+				group.order = append(group.order, id)
+			}
+			fk.Columns = append(fk.Columns, identName(from))
+			fk.RefColumns = append(fk.RefColumns, identName(to))
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	for tableName, group := range groups {
+		fks := make([]ForeignKey, 0, len(group.order))
+		for _, id := range group.order {
+			fk := *group.fkMap[id]
+			if fk.UpdateRule == "NO ACTION" || fk.UpdateRule == "" {
+				fk.UpdateRule = "NO ACTION"
+			}
+			if fk.DeleteRule == "NO ACTION" || fk.DeleteRule == "" {
+				fk.DeleteRule = "NO ACTION"
+			}
+			fks = append(fks, fk)
+		}
+		fksByTable[tableName] = fks
+	}
+	return fksByTable, nil
 }
 
 // normalizeAffinity extracts the base type name for SQLite's flexible type system.
@@ -407,218 +753,27 @@ func parseSQLiteTypeParams(col *Column, declaredType string) {
 	}
 }
 
-func detectSQLiteAutoIncrement(db *sql.DB, tableName string) map[string]bool {
-	result := make(map[string]bool)
-	var createSQL sql.NullString
-	err := db.QueryRow(
-		"SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
-		tableName,
-	).Scan(&createSQL)
-	if err != nil || !createSQL.Valid {
-		return result
+func detectSQLiteAutoIncrementColumnFromSQL(createSQL string) string {
+	if !strings.Contains(strings.ToUpper(createSQL), "AUTOINCREMENT") {
+		return ""
 	}
-	if strings.Contains(strings.ToUpper(createSQL.String), "AUTOINCREMENT") {
-		// Find the column name before AUTOINCREMENT
-		// Simple heuristic: look for INTEGER PRIMARY KEY AUTOINCREMENT
-		upper := strings.ToUpper(createSQL.String)
-		idx := strings.Index(upper, "AUTOINCREMENT")
-		if idx > 0 {
-			// Walk backwards to find column name
-			prefix := createSQL.String[:idx]
-			// Remove "INTEGER PRIMARY KEY" before AUTOINCREMENT
-			prefix = strings.TrimRight(prefix, " \t\n\r")
-			tokens := strings.Fields(prefix)
-			// Find the column name: it precedes "INTEGER PRIMARY KEY"
-			for i := len(tokens) - 1; i >= 0; i-- {
-				tok := strings.ToUpper(tokens[i])
-				if tok == "INTEGER" || tok == "PRIMARY" || tok == "KEY" {
-					continue
-				}
-				// This is the column name (possibly with trailing comma or paren)
-				colName := strings.Trim(tokens[i], ",(\n\r\t ")
-				if colName != "" {
-					result[colName] = true
-				}
-				break
-			}
-		}
+
+	upper := strings.ToUpper(createSQL)
+	idx := strings.Index(upper, "AUTOINCREMENT")
+	if idx <= 0 {
+		return ""
 	}
-	return result
-}
 
-func introspectSQLiteIndexes(db *sql.DB, tableName string, identName func(string) string) ([]Index, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA index_list(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var indexes []Index
-	for rows.Next() {
-		var seq int
-		var name, origin string
-		var unique, partial int
-		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
-			return nil, err
-		}
-
-		// Skip auto-generated PK indexes — we handle PKs from table_info
-		if origin == "pk" {
+	prefix := strings.TrimRight(createSQL[:idx], " \t\n\r")
+	tokens := strings.Fields(prefix)
+	for i := len(tokens) - 1; i >= 0; i-- {
+		tok := strings.ToUpper(tokens[i])
+		if tok == "INTEGER" || tok == "PRIMARY" || tok == "KEY" {
 			continue
 		}
-
-		idx := Index{
-			Name:       identName(name),
-			SourceName: name,
-			Unique:     unique == 1,
-			IsPrimary:  false,
-			Type:       "BTREE",
-		}
-
-		if partial == 1 {
-			idx.HasExpression = true
-			log.Printf("    WARN: partial index %q on %s will be skipped (WHERE clause not migrated)", name, tableName)
-		}
-
-		// Get columns for this index
-		colRows, err := db.Query(fmt.Sprintf("PRAGMA index_info(\"%s\")", strings.ReplaceAll(name, "\"", "\"\"")))
-		if err != nil {
-			return nil, err
-		}
-
-		for colRows.Next() {
-			var seqno, cid int
-			var colName sql.NullString
-			if err := colRows.Scan(&seqno, &cid, &colName); err != nil {
-				colRows.Close()
-				return nil, err
-			}
-			if !colName.Valid {
-				// Expression index
-				idx.HasExpression = true
-				continue
-			}
-			idx.Columns = append(idx.Columns, identName(colName.String))
-			idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
-		}
-		colRows.Close()
-
-		indexes = append(indexes, idx)
+		return strings.Trim(tokens[i], ",(\n\r\t ")
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Build PK from PRAGMA table_info pk column
-	pk, err := buildPKFromTableInfo(db, tableName, identName)
-	if err != nil {
-		return nil, err
-	}
-	if pk != nil {
-		indexes = append(indexes, *pk)
-	}
-
-	return indexes, nil
-}
-
-func buildPKFromTableInfo(db *sql.DB, tableName string, identName func(string) string) (*Index, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type pkCol struct {
-		name  string
-		pkPos int
-	}
-	var pkCols []pkCol
-
-	for rows.Next() {
-		var cid, pk int
-		var name, colType string
-		var notnull int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk); err != nil {
-			return nil, err
-		}
-		if pk > 0 {
-			pkCols = append(pkCols, pkCol{name: name, pkPos: pk})
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if len(pkCols) == 0 {
-		return nil, nil
-	}
-
-	slices.SortFunc(pkCols, func(a, b pkCol) int { return a.pkPos - b.pkPos })
-
-	idx := &Index{
-		Name:       "PRIMARY",
-		SourceName: "PRIMARY",
-		Unique:     true,
-		IsPrimary:  true,
-		Type:       "BTREE",
-	}
-	for _, pc := range pkCols {
-		idx.Columns = append(idx.Columns, identName(pc.name))
-		idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
-	}
-	return idx, nil
-}
-
-func introspectSQLiteForeignKeys(db *sql.DB, tableName string, identName func(string) string) ([]ForeignKey, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA foreign_key_list(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	fkMap := make(map[int]*ForeignKey)
-	var fkOrder []int
-
-	for rows.Next() {
-		var id, seq int
-		var refTable, from, to, onUpdate, onDelete, match string
-		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
-			return nil, err
-		}
-
-		fk, ok := fkMap[id]
-		if !ok {
-			fk = &ForeignKey{
-				Name:       fmt.Sprintf("fk_%s_%d", identName(tableName), id),
-				RefTable:   refTable,
-				RefPGTable: identName(refTable),
-				UpdateRule: strings.ToUpper(onUpdate),
-				DeleteRule: strings.ToUpper(onDelete),
-			}
-			fkMap[id] = fk
-			fkOrder = append(fkOrder, id)
-		}
-		fk.Columns = append(fk.Columns, identName(from))
-		fk.RefColumns = append(fk.RefColumns, identName(to))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	var fks []ForeignKey
-	for _, id := range fkOrder {
-		fk := *fkMap[id]
-		// Normalize rules
-		if fk.UpdateRule == "NO ACTION" || fk.UpdateRule == "" {
-			fk.UpdateRule = "NO ACTION"
-		}
-		if fk.DeleteRule == "NO ACTION" || fk.DeleteRule == "" {
-			fk.DeleteRule = "NO ACTION"
-		}
-		fks = append(fks, fk)
-	}
-	return fks, nil
+	return ""
 }
 
 // --- Type mapping ---

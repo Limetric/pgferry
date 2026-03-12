@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,6 +291,129 @@ func TestSQLiteIntrospectCompositePK(t *testing.T) {
 	}
 	if len(tbl.PrimaryKey.Columns) != 2 {
 		t.Fatalf("PK columns = %v, want 2 columns", tbl.PrimaryKey.Columns)
+	}
+}
+
+func TestSQLiteIntrospectSchema_BatchedEdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "batched.db")
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE accounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			email TEXT NOT NULL
+		)`,
+		`CREATE TABLE order_versions (
+			order_id INTEGER NOT NULL,
+			version_no INTEGER NOT NULL,
+			account_id INTEGER NOT NULL,
+			display_label TEXT GENERATED ALWAYS AS (printf('%d-%d', order_id, version_no)) VIRTUAL,
+			PRIMARY KEY (order_id, version_no),
+			FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX idx_order_versions_account_partial ON order_versions(account_id) WHERE account_id > 0`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+
+	src := &sqliteSourceDB{}
+	schema, err := src.IntrospectSchema(db, "")
+	if err != nil {
+		t.Fatalf("IntrospectSchema: %v", err)
+	}
+
+	if len(schema.Tables) != 2 {
+		t.Fatalf("expected 2 tables, got %d", len(schema.Tables))
+	}
+
+	var accounts, orderVersions *Table
+	for i := range schema.Tables {
+		switch schema.Tables[i].SourceName {
+		case "accounts":
+			accounts = &schema.Tables[i]
+		case "order_versions":
+			orderVersions = &schema.Tables[i]
+		}
+	}
+	if accounts == nil || orderVersions == nil {
+		t.Fatalf("missing tables: accounts=%v order_versions=%v", accounts != nil, orderVersions != nil)
+	}
+
+	if got := accounts.Columns[0].Extra; !strings.Contains(got, "auto_increment") {
+		t.Fatalf("accounts.id Extra = %q, want auto_increment", got)
+	}
+
+	if orderVersions.PrimaryKey == nil {
+		t.Fatal("order_versions primary key = nil")
+	}
+	if got := strings.Join(orderVersions.PrimaryKey.Columns, ","); got != "order_id,version_no" {
+		t.Fatalf("order_versions PK = %v, want [order_id version_no]", orderVersions.PrimaryKey.Columns)
+	}
+	if len(orderVersions.ForeignKeys) != 1 {
+		t.Fatalf("order_versions foreign keys = %d, want 1", len(orderVersions.ForeignKeys))
+	}
+	if orderVersions.ForeignKeys[0].RefPGTable != "accounts" {
+		t.Fatalf("order_versions FK ref table = %q, want accounts", orderVersions.ForeignKeys[0].RefPGTable)
+	}
+	if orderVersions.ForeignKeys[0].DeleteRule != "CASCADE" {
+		t.Fatalf("order_versions FK delete rule = %q, want CASCADE", orderVersions.ForeignKeys[0].DeleteRule)
+	}
+	if len(orderVersions.Indexes) != 1 {
+		t.Fatalf("order_versions indexes = %d, want 1", len(orderVersions.Indexes))
+	}
+	if !orderVersions.Indexes[0].HasExpression {
+		t.Fatal("partial SQLite index should be marked unsupported")
+	}
+
+	var generated *Column
+	for i := range orderVersions.Columns {
+		if orderVersions.Columns[i].SourceName == "display_label" {
+			generated = &orderVersions.Columns[i]
+			break
+		}
+	}
+	if generated == nil {
+		t.Fatal("generated column display_label not found")
+	}
+	if !isGeneratedColumn(*generated) {
+		t.Fatalf("display_label Extra = %q, want generated column marker", generated.Extra)
+	}
+}
+
+func TestSQLiteIntrospectSchema_ChunksLargeSchema(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "large.db")
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	for i := 0; i < sqliteMaxCompoundSelectTerms+25; i++ {
+		stmt := fmt.Sprintf(`CREATE TABLE t_%03d (id INTEGER PRIMARY KEY, name TEXT)`, i)
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("create table %d: %v", i, err)
+		}
+	}
+
+	src := &sqliteSourceDB{}
+	schema, err := src.IntrospectSchema(db, "")
+	if err != nil {
+		t.Fatalf("IntrospectSchema: %v", err)
+	}
+
+	if got, want := len(schema.Tables), sqliteMaxCompoundSelectTerms+25; got != want {
+		t.Fatalf("table count = %d, want %d", got, want)
 	}
 }
 
