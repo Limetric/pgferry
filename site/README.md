@@ -20,12 +20,38 @@ npm run preview
 
 ## Cloudflare Pages
 
-Recommended Pages settings:
+If you use the minimal GitHub Actions deployment flow, keep Cloudflare pointed at the Pages project but do not rely on dashboard builds.
 
-- Root directory: `site`
-- Build command: `npm run build`
-- Build output directory: `dist`
-- Production branch: `main`
+## GitHub Actions deployment
+
+The repository includes [site-deploy.yml](/home/atlas/Documents/Projects/pgferry/.github/workflows/site-deploy.yml), which:
+
+- installs dependencies from `site/package-lock.json`
+- builds the Astro site from `site/`
+- runs `wrangler pages deploy site/dist --project-name=pgferry`
+
+Required GitHub repository secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `PUBLIC_PLAUSIBLE_SRC`
+- `PUBLIC_PLAUSIBLE_API` (optional)
+
+The workflow currently assumes:
+
+- Cloudflare Pages project name: `pgferry`
+- production site URL: `https://pgferry.com`
+- Plausible domain: `pgferry.com`
+
+If those change, update the workflow env values.
+
+## Cloudflare dashboard
+
+For the Pages project itself:
+
+- connect the custom domain to the `pgferry` Pages project
+- disable automatic production builds if the project is Git-integrated
+- do not use `npx wrangler deploy` as a dashboard deploy command for this setup
 
 ## Plausible
 
