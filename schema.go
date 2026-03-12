@@ -6,13 +6,17 @@ import (
 	"unicode"
 )
 
-// pgReservedWords are PostgreSQL reserved words that must be quoted as identifiers.
+// pgReservedWords are PostgreSQL keywords that pgferry quotes conservatively
+// when generating identifiers. Keep this list aligned with PostgreSQL Appendix C.
 var pgReservedWords = map[string]bool{
 	"all": true, "analyse": true, "analyze": true, "and": true, "any": true,
-	"array": true, "as": true, "asc": true, "authorization": true, "between": true,
+	"array": true, "as": true, "asc": true, "asymmetric": true, "authorization": true,
 	"binary": true, "both": true, "case": true, "cast": true, "check": true,
 	"collate": true, "collation": true, "column": true, "constraint": true, "create": true, "cross": true,
+	"concurrently": true,
+	"current_catalog": true,
 	"current_date": true, "current_role": true, "current_time": true,
+	"current_schema": true,
 	"current_timestamp": true, "current_user": true, "default": true, "deferrable": true,
 	"desc": true, "distinct": true, "do": true, "else": true, "end": true, "except": true,
 	"false": true, "fetch": true, "for": true, "foreign": true, "freeze": true,
@@ -24,7 +28,7 @@ var pgReservedWords = map[string]bool{
 	"offset": true, "on": true, "only": true, "or": true, "order": true, "outer": true,
 	"overlaps": true, "placing": true, "primary": true, "references": true,
 	"returning": true, "right": true, "select": true, "session_user": true,
-	"similar": true, "some": true, "symmetric": true, "table": true, "then": true,
+	"similar": true, "some": true, "symmetric": true, "system_user": true, "table": true, "tablesample": true, "then": true,
 	"to": true, "trailing": true, "true": true, "union": true, "unique": true,
 	"user": true, "using": true, "variadic": true, "verbose": true, "when": true,
 	"where": true, "window": true, "with": true,

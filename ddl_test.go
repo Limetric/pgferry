@@ -122,6 +122,31 @@ func TestGenerateCreateTable_QuotesCollationIdentifier(t *testing.T) {
 	}
 }
 
+func TestGenerateCreateTable_KeywordRefreshCoverage(t *testing.T) {
+	table := Table{
+		PGName: "articles",
+		Columns: []Column{
+			{PGName: "current_schema", DataType: "varchar", CharMaxLen: 64, Nullable: false},
+			{PGName: "between", DataType: "varchar", CharMaxLen: 64, Nullable: false},
+		},
+	}
+
+	ddl, err := generateCreateTable(table, "app", false, false, defaultTypeMappingConfig(), mysqlSrc)
+	if err != nil {
+		t.Fatalf("generateCreateTable() error: %v", err)
+	}
+
+	if !strings.Contains(ddl, `"current_schema" varchar(64) NOT NULL`) {
+		t.Fatalf("DDL should quote reserved word 'current_schema', got:\n%s", ddl)
+	}
+	if !strings.Contains(ddl, "between varchar(64) NOT NULL") {
+		t.Fatalf("DDL should leave non-reserved keyword 'between' unquoted, got:\n%s", ddl)
+	}
+	if strings.Contains(ddl, `"between"`) {
+		t.Fatalf("DDL should not quote non-reserved keyword 'between', got:\n%s", ddl)
+	}
+}
+
 func TestGenerateCreateTable_UnknownTypeErrors(t *testing.T) {
 	table := Table{
 		PGName: "mystery",
