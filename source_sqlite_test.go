@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -385,6 +386,34 @@ func TestSQLiteIntrospectSchema_BatchedEdgeCases(t *testing.T) {
 	}
 	if !isGeneratedColumn(*generated) {
 		t.Fatalf("display_label Extra = %q, want generated column marker", generated.Extra)
+	}
+}
+
+func TestSQLiteIntrospectSchema_ChunksLargeSchema(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "large.db")
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	for i := 0; i < sqliteMaxCompoundSelectTerms+25; i++ {
+		stmt := fmt.Sprintf(`CREATE TABLE t_%03d (id INTEGER PRIMARY KEY, name TEXT)`, i)
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("create table %d: %v", i, err)
+		}
+	}
+
+	src := &sqliteSourceDB{}
+	schema, err := src.IntrospectSchema(db, "")
+	if err != nil {
+		t.Fatalf("IntrospectSchema: %v", err)
+	}
+
+	if got, want := len(schema.Tables), sqliteMaxCompoundSelectTerms+25; got != want {
+		t.Fatalf("table count = %d, want %d", got, want)
 	}
 }
 

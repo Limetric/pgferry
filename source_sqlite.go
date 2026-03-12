@@ -12,6 +12,8 @@ import (
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
 
+const sqliteMaxCompoundSelectTerms = 400
+
 type sqliteSourceDB struct {
 	snakeCaseIDs bool
 }
@@ -308,6 +310,24 @@ func sqliteUnionQuery(parts []string, orderBy string) string {
 	return b.String()
 }
 
+func chunkSlice[T any](items []T, size int) [][]T {
+	if len(items) == 0 {
+		return nil
+	}
+	if size <= 0 {
+		size = len(items)
+	}
+	chunks := make([][]T, 0, (len(items)+size-1)/size)
+	for start := 0; start < len(items); start += size {
+		end := start + size
+		if end > len(items) {
+			end = len(items)
+		}
+		chunks = append(chunks, items[start:end])
+	}
+	return chunks
+}
+
 type sqlitePKCol struct {
 	name  string
 	pkPos int
@@ -341,65 +361,69 @@ func introspectSQLiteColumnsByTable(db *sql.DB, tableNames []string, identName f
 		return colsByTable, pksByTable, nil
 	}
 
-	var parts []string
-	for _, tableName := range tableNames {
-		parts = append(parts,
-			fmt.Sprintf(
-				`SELECT %s AS table_name, cid, name, type, "notnull", dflt_value, pk, hidden FROM pragma_table_xinfo(%s)`,
-				pgLiteral(tableName),
-				pgLiteral(tableName),
-			),
-		)
-	}
-
-	rows, err := db.Query(sqliteUnionQuery(parts, "table_name, cid"))
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-
 	pkColsByTable := make(map[string][]sqlitePKCol)
-	for rows.Next() {
-		var (
-			tableName string
-			cid       int
-			pk        int
-			notnull   int
-			hidden    int
-			name      string
-			colType   string
-			dflt      sql.NullString
-		)
-		if err := rows.Scan(&tableName, &cid, &name, &colType, &notnull, &dflt, &pk, &hidden); err != nil {
+	for _, batch := range chunkSlice(tableNames, sqliteMaxCompoundSelectTerms) {
+		var parts []string
+		for _, tableName := range batch {
+			parts = append(parts,
+				fmt.Sprintf(
+					`SELECT %s AS table_name, cid, name, type, "notnull", dflt_value, pk, hidden FROM pragma_table_xinfo(%s)`,
+					pgLiteral(tableName),
+					pgLiteral(tableName),
+				),
+			)
+		}
+
+		rows, err := db.Query(sqliteUnionQuery(parts, "table_name, cid"))
+		if err != nil {
 			return nil, nil, err
 		}
 
-		col := Column{
-			SourceName: name,
-			PGName:     identName(name),
-			DataType:   strings.ToLower(normalizeAffinity(colType)),
-			ColumnType: strings.ToLower(colType),
-			Nullable:   notnull == 0,
-			OrdinalPos: cid + 1,
-		}
-		if dflt.Valid {
-			col.Default = &dflt.String
-		}
-		switch hidden {
-		case 2:
-			col.Extra = "STORED GENERATED"
-		case 3:
-			col.Extra = "VIRTUAL GENERATED"
-		}
+		for rows.Next() {
+			var (
+				tableName string
+				cid       int
+				pk        int
+				notnull   int
+				hidden    int
+				name      string
+				colType   string
+				dflt      sql.NullString
+			)
+			if err := rows.Scan(&tableName, &cid, &name, &colType, &notnull, &dflt, &pk, &hidden); err != nil {
+				rows.Close()
+				return nil, nil, err
+			}
 
-		parseSQLiteTypeParams(&col, colType)
-		colsByTable[tableName] = append(colsByTable[tableName], col)
-		if pk > 0 {
-			pkColsByTable[tableName] = append(pkColsByTable[tableName], sqlitePKCol{name: name, pkPos: pk})
+			col := Column{
+				SourceName: name,
+				PGName:     identName(name),
+				DataType:   strings.ToLower(normalizeAffinity(colType)),
+				ColumnType: strings.ToLower(colType),
+				Nullable:   notnull == 0,
+				OrdinalPos: cid + 1,
+			}
+			if dflt.Valid {
+				col.Default = &dflt.String
+			}
+			switch hidden {
+			case 2:
+				col.Extra = "STORED GENERATED"
+			case 3:
+				col.Extra = "VIRTUAL GENERATED"
+			}
+
+			parseSQLiteTypeParams(&col, colType)
+			colsByTable[tableName] = append(colsByTable[tableName], col)
+			if pk > 0 {
+				pkColsByTable[tableName] = append(pkColsByTable[tableName], sqlitePKCol{name: name, pkPos: pk})
+			}
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, nil, err
+		}
+		rows.Close()
 	}
 
 	autoIncrColsByTable := make(map[string]map[string]bool)
@@ -468,23 +492,6 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 		return indexesByTable, nil
 	}
 
-	var listParts []string
-	for _, tableName := range tableNames {
-		listParts = append(listParts,
-			fmt.Sprintf(
-				`SELECT %s AS table_name, seq, name, "unique", origin, partial FROM pragma_index_list(%s)`,
-				pgLiteral(tableName),
-				pgLiteral(tableName),
-			),
-		)
-	}
-
-	rows, err := db.Query(sqliteUnionQuery(listParts, "table_name, seq"))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	groups := make(map[string]*sqliteIndexesForTable)
 	type sqliteIndexSpec struct {
 		tableName string
@@ -492,52 +499,73 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 	}
 	var indexSpecs []sqliteIndexSpec
 
-	for rows.Next() {
-		var (
-			tableName string
-			seq       int
-			name      string
-			origin    string
-			unique    int
-			partial   int
-		)
-		if err := rows.Scan(&tableName, &seq, &name, &unique, &origin, &partial); err != nil {
+	for _, batch := range chunkSlice(tableNames, sqliteMaxCompoundSelectTerms) {
+		var listParts []string
+		for _, tableName := range batch {
+			listParts = append(listParts,
+				fmt.Sprintf(
+					`SELECT %s AS table_name, seq, name, "unique", origin, partial FROM pragma_index_list(%s)`,
+					pgLiteral(tableName),
+					pgLiteral(tableName),
+				),
+			)
+		}
+
+		rows, err := db.Query(sqliteUnionQuery(listParts, "table_name, seq"))
+		if err != nil {
 			return nil, err
 		}
-		_ = seq
-		if origin == "pk" {
-			continue
-		}
 
-		group := groups[tableName]
-		if group == nil {
-			group = &sqliteIndexesForTable{indexMap: make(map[string]*Index)}
-			groups[tableName] = group
-		}
+		for rows.Next() {
+			var (
+				tableName string
+				seq       int
+				name      string
+				origin    string
+				unique    int
+				partial   int
+			)
+			if err := rows.Scan(&tableName, &seq, &name, &unique, &origin, &partial); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			_ = seq
+			if origin == "pk" {
+				continue
+			}
 
-		idx := &Index{
-			Name:       identName(name),
-			SourceName: name,
-			Unique:     unique == 1,
-			IsPrimary:  false,
-			Type:       "BTREE",
-		}
-		if partial == 1 {
-			idx.HasExpression = true
-			log.Printf("    WARN: partial index %q on %s will be skipped (WHERE clause not migrated)", name, tableName)
-		}
+			group := groups[tableName]
+			if group == nil {
+				group = &sqliteIndexesForTable{indexMap: make(map[string]*Index)}
+				groups[tableName] = group
+			}
 
-		group.indexMap[name] = idx
-		group.order = append(group.order, name)
-		indexSpecs = append(indexSpecs, sqliteIndexSpec{tableName: tableName, indexName: name})
+			idx := &Index{
+				Name:       identName(name),
+				SourceName: name,
+				Unique:     unique == 1,
+				IsPrimary:  false,
+				Type:       "BTREE",
+			}
+			if partial == 1 {
+				idx.HasExpression = true
+				log.Printf("    WARN: partial index %q on %s will be skipped (WHERE clause not migrated)", name, tableName)
+			}
+
+			group.indexMap[name] = idx
+			group.order = append(group.order, name)
+			indexSpecs = append(indexSpecs, sqliteIndexSpec{tableName: tableName, indexName: name})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 
-	if len(indexSpecs) > 0 {
+	for _, batch := range chunkSlice(indexSpecs, sqliteMaxCompoundSelectTerms) {
 		var infoParts []string
-		for _, spec := range indexSpecs {
+		for _, spec := range batch {
 			infoParts = append(infoParts,
 				fmt.Sprintf(
 					"SELECT %s AS table_name, %s AS index_name, seqno, cid, name FROM pragma_index_info(%s)",
@@ -552,7 +580,6 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 		if err != nil {
 			return nil, err
 		}
-		defer infoRows.Close()
 
 		for infoRows.Next() {
 			var (
@@ -563,6 +590,7 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 				colName   sql.NullString
 			)
 			if err := infoRows.Scan(&tableName, &indexName, &seqno, &cid, &colName); err != nil {
+				infoRows.Close()
 				return nil, err
 			}
 			_ = seqno
@@ -576,8 +604,10 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 			idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
 		}
 		if err := infoRows.Err(); err != nil {
+			infoRows.Close()
 			return nil, err
 		}
+		infoRows.Close()
 	}
 
 	for tableName, group := range groups {
@@ -601,65 +631,69 @@ func introspectSQLiteForeignKeysByTable(db *sql.DB, tableNames []string, identNa
 		return fksByTable, nil
 	}
 
-	var parts []string
-	for _, tableName := range tableNames {
-		parts = append(parts,
-			fmt.Sprintf(
-				`SELECT %s AS table_name, id, seq, "table" AS ref_table, "from", "to", on_update, on_delete, match FROM pragma_foreign_key_list(%s)`,
-				pgLiteral(tableName),
-				pgLiteral(tableName),
-			),
-		)
-	}
-
-	rows, err := db.Query(sqliteUnionQuery(parts, "table_name, id, seq"))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
 	groups := make(map[string]*sqliteForeignKeysForTable)
-	for rows.Next() {
-		var (
-			tableName string
-			id        int
-			seq       int
-			refTable  string
-			from      string
-			to        string
-			onUpdate  string
-			onDelete  string
-			match     string
-		)
-		if err := rows.Scan(&tableName, &id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+	for _, batch := range chunkSlice(tableNames, sqliteMaxCompoundSelectTerms) {
+		var parts []string
+		for _, tableName := range batch {
+			parts = append(parts,
+				fmt.Sprintf(
+					`SELECT %s AS table_name, id, seq, "table" AS ref_table, "from", "to", on_update, on_delete, match FROM pragma_foreign_key_list(%s)`,
+					pgLiteral(tableName),
+					pgLiteral(tableName),
+				),
+			)
+		}
+
+		rows, err := db.Query(sqliteUnionQuery(parts, "table_name, id, seq"))
+		if err != nil {
 			return nil, err
 		}
-		_ = seq
-		_ = match
 
-		group := groups[tableName]
-		if group == nil {
-			group = &sqliteForeignKeysForTable{fkMap: make(map[int]*ForeignKey)}
-			groups[tableName] = group
-		}
-
-		fk := group.fkMap[id]
-		if fk == nil {
-			fk = &ForeignKey{
-				Name:       fmt.Sprintf("fk_%s_%d", identName(tableName), id),
-				RefTable:   refTable,
-				RefPGTable: identName(refTable),
-				UpdateRule: strings.ToUpper(onUpdate),
-				DeleteRule: strings.ToUpper(onDelete),
+		for rows.Next() {
+			var (
+				tableName string
+				id        int
+				seq       int
+				refTable  string
+				from      string
+				to        string
+				onUpdate  string
+				onDelete  string
+				match     string
+			)
+			if err := rows.Scan(&tableName, &id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+				rows.Close()
+				return nil, err
 			}
-			group.fkMap[id] = fk
-			group.order = append(group.order, id)
+			_ = seq
+			_ = match
+
+			group := groups[tableName]
+			if group == nil {
+				group = &sqliteForeignKeysForTable{fkMap: make(map[int]*ForeignKey)}
+				groups[tableName] = group
+			}
+
+			fk := group.fkMap[id]
+			if fk == nil {
+				fk = &ForeignKey{
+					Name:       fmt.Sprintf("fk_%s_%d", identName(tableName), id),
+					RefTable:   refTable,
+					RefPGTable: identName(refTable),
+					UpdateRule: strings.ToUpper(onUpdate),
+					DeleteRule: strings.ToUpper(onDelete),
+				}
+				group.fkMap[id] = fk
+				group.order = append(group.order, id)
+			}
+			fk.Columns = append(fk.Columns, identName(from))
+			fk.RefColumns = append(fk.RefColumns, identName(to))
 		}
-		fk.Columns = append(fk.Columns, identName(from))
-		fk.RefColumns = append(fk.RefColumns, identName(to))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
 	}
 
 	for tableName, group := range groups {
@@ -677,84 +711,6 @@ func introspectSQLiteForeignKeysByTable(db *sql.DB, tableNames []string, identNa
 		fksByTable[tableName] = fks
 	}
 	return fksByTable, nil
-}
-
-func introspectSQLiteColumns(db *sql.DB, tableName string, identName func(string) string) ([]Column, map[string]bool, error) {
-	quotedTable := strings.ReplaceAll(tableName, "\"", "\"\"")
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_xinfo(\"%s\")", quotedTable))
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-
-	type colInfo struct {
-		col    Column
-		pk     int
-		hidden int // 0=normal, 1=hidden, 2=generated stored, 3=generated virtual
-	}
-	var infos []colInfo
-
-	for rows.Next() {
-		var cid, pk, notnull, hidden int
-		var name, colType string
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk, &hidden); err != nil {
-			return nil, nil, err
-		}
-
-		col := Column{
-			SourceName: name,
-			PGName:     identName(name),
-			DataType:   strings.ToLower(normalizeAffinity(colType)),
-			ColumnType: strings.ToLower(colType),
-			Nullable:   notnull == 0,
-			OrdinalPos: cid + 1,
-		}
-		if dflt.Valid {
-			col.Default = &dflt.String
-		}
-
-		// Mark generated columns so they get materialized during migration
-		switch hidden {
-		case 2:
-			col.Extra = "STORED GENERATED"
-		case 3:
-			col.Extra = "VIRTUAL GENERATED"
-		}
-
-		parseSQLiteTypeParams(&col, colType)
-
-		infos = append(infos, colInfo{col: col, pk: pk, hidden: hidden})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, err
-	}
-
-	var cols []Column
-	for _, ci := range infos {
-		cols = append(cols, ci.col)
-	}
-
-	// Detect autoincrement columns from CREATE TABLE SQL
-	autoIncrCols := detectSQLiteAutoIncrement(db, tableName)
-
-	// Also mark INTEGER PRIMARY KEY as auto_increment (it's a rowid alias)
-	// Use pk info already collected — no need to re-query
-	pkCount := 0
-	for _, ci := range infos {
-		if ci.pk > 0 {
-			pkCount++
-		}
-	}
-	if pkCount == 1 {
-		for _, ci := range infos {
-			if ci.pk > 0 && strings.EqualFold(ci.col.ColumnType, "integer") {
-				autoIncrCols[ci.col.SourceName] = true
-			}
-		}
-	}
-
-	return cols, autoIncrCols, nil
 }
 
 // normalizeAffinity extracts the base type name for SQLite's flexible type system.
@@ -790,22 +746,6 @@ func parseSQLiteTypeParams(col *Column, declaredType string) {
 	}
 }
 
-func detectSQLiteAutoIncrement(db *sql.DB, tableName string) map[string]bool {
-	result := make(map[string]bool)
-	var createSQL sql.NullString
-	err := db.QueryRow(
-		"SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
-		tableName,
-	).Scan(&createSQL)
-	if err != nil || !createSQL.Valid {
-		return result
-	}
-	if colName := detectSQLiteAutoIncrementColumnFromSQL(createSQL.String); colName != "" {
-		result[colName] = true
-	}
-	return result
-}
-
 func detectSQLiteAutoIncrementColumnFromSQL(createSQL string) string {
 	if !strings.Contains(strings.ToUpper(createSQL), "AUTOINCREMENT") {
 		return ""
@@ -827,181 +767,6 @@ func detectSQLiteAutoIncrementColumnFromSQL(createSQL string) string {
 		return strings.Trim(tokens[i], ",(\n\r\t ")
 	}
 	return ""
-}
-
-func introspectSQLiteIndexes(db *sql.DB, tableName string, identName func(string) string) ([]Index, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA index_list(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var indexes []Index
-	for rows.Next() {
-		var seq int
-		var name, origin string
-		var unique, partial int
-		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
-			return nil, err
-		}
-
-		// Skip auto-generated PK indexes — we handle PKs from table_info
-		if origin == "pk" {
-			continue
-		}
-
-		idx := Index{
-			Name:       identName(name),
-			SourceName: name,
-			Unique:     unique == 1,
-			IsPrimary:  false,
-			Type:       "BTREE",
-		}
-
-		if partial == 1 {
-			idx.HasExpression = true
-			log.Printf("    WARN: partial index %q on %s will be skipped (WHERE clause not migrated)", name, tableName)
-		}
-
-		// Get columns for this index
-		colRows, err := db.Query(fmt.Sprintf("PRAGMA index_info(\"%s\")", strings.ReplaceAll(name, "\"", "\"\"")))
-		if err != nil {
-			return nil, err
-		}
-
-		for colRows.Next() {
-			var seqno, cid int
-			var colName sql.NullString
-			if err := colRows.Scan(&seqno, &cid, &colName); err != nil {
-				colRows.Close()
-				return nil, err
-			}
-			if !colName.Valid {
-				// Expression index
-				idx.HasExpression = true
-				continue
-			}
-			idx.Columns = append(idx.Columns, identName(colName.String))
-			idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
-		}
-		colRows.Close()
-
-		indexes = append(indexes, idx)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	// Build PK from PRAGMA table_info pk column
-	pk, err := buildPKFromTableInfo(db, tableName, identName)
-	if err != nil {
-		return nil, err
-	}
-	if pk != nil {
-		indexes = append(indexes, *pk)
-	}
-
-	return indexes, nil
-}
-
-func buildPKFromTableInfo(db *sql.DB, tableName string, identName func(string) string) (*Index, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA table_info(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	type pkCol struct {
-		name  string
-		pkPos int
-	}
-	var pkCols []pkCol
-
-	for rows.Next() {
-		var cid, pk int
-		var name, colType string
-		var notnull int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &colType, &notnull, &dflt, &pk); err != nil {
-			return nil, err
-		}
-		if pk > 0 {
-			pkCols = append(pkCols, pkCol{name: name, pkPos: pk})
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	if len(pkCols) == 0 {
-		return nil, nil
-	}
-
-	slices.SortFunc(pkCols, func(a, b pkCol) int { return a.pkPos - b.pkPos })
-
-	idx := &Index{
-		Name:       "PRIMARY",
-		SourceName: "PRIMARY",
-		Unique:     true,
-		IsPrimary:  true,
-		Type:       "BTREE",
-	}
-	for _, pc := range pkCols {
-		idx.Columns = append(idx.Columns, identName(pc.name))
-		idx.ColumnOrders = append(idx.ColumnOrders, "ASC")
-	}
-	return idx, nil
-}
-
-func introspectSQLiteForeignKeys(db *sql.DB, tableName string, identName func(string) string) ([]ForeignKey, error) {
-	rows, err := db.Query(fmt.Sprintf("PRAGMA foreign_key_list(\"%s\")", strings.ReplaceAll(tableName, "\"", "\"\"")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	fkMap := make(map[int]*ForeignKey)
-	var fkOrder []int
-
-	for rows.Next() {
-		var id, seq int
-		var refTable, from, to, onUpdate, onDelete, match string
-		if err := rows.Scan(&id, &seq, &refTable, &from, &to, &onUpdate, &onDelete, &match); err != nil {
-			return nil, err
-		}
-
-		fk, ok := fkMap[id]
-		if !ok {
-			fk = &ForeignKey{
-				Name:       fmt.Sprintf("fk_%s_%d", identName(tableName), id),
-				RefTable:   refTable,
-				RefPGTable: identName(refTable),
-				UpdateRule: strings.ToUpper(onUpdate),
-				DeleteRule: strings.ToUpper(onDelete),
-			}
-			fkMap[id] = fk
-			fkOrder = append(fkOrder, id)
-		}
-		fk.Columns = append(fk.Columns, identName(from))
-		fk.RefColumns = append(fk.RefColumns, identName(to))
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	var fks []ForeignKey
-	for _, id := range fkOrder {
-		fk := *fkMap[id]
-		// Normalize rules
-		if fk.UpdateRule == "NO ACTION" || fk.UpdateRule == "" {
-			fk.UpdateRule = "NO ACTION"
-		}
-		if fk.DeleteRule == "NO ACTION" || fk.DeleteRule == "" {
-			fk.DeleteRule = "NO ACTION"
-		}
-		fks = append(fks, fk)
-	}
-	return fks, nil
 }
 
 // --- Type mapping ---

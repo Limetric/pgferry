@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 type mssqlIntrospectionStub struct {
@@ -167,7 +166,7 @@ func openMSSQLIntrospectionStubDB(t *testing.T) (*sql.DB, *mssqlIntrospectionStu
 	t.Helper()
 
 	stub := &mssqlIntrospectionStub{}
-	driverName := fmt.Sprintf("mssql-introspection-stub-%d", time.Now().UnixNano())
+	driverName := nextIntrospectionStubDriverName("mssql-introspection-stub")
 	sql.Register(driverName, &mssqlStubDriver{stub: stub})
 
 	db, err := sql.Open(driverName, "")
