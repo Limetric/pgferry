@@ -20,9 +20,15 @@ type mssqlSourceDB struct {
 func (m *mssqlSourceDB) Name() string                         { return "MSSQL" }
 func (m *mssqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
 func (m *mssqlSourceDB) SetCharset(_ string)                  {}
-func (m *mssqlSourceDB) SetSourceSchema(schema string)        { m.sourceSchema = schema }
-func (m *mssqlSourceDB) SupportsSnapshotMode() bool           { return true }
-func (m *mssqlSourceDB) MaxWorkers() int                      { return 0 }
+func (m *mssqlSourceDB) SetSourceSchema(schema string) {
+	schema = strings.TrimSpace(schema)
+	if schema == "" {
+		schema = "dbo"
+	}
+	m.sourceSchema = schema
+}
+func (m *mssqlSourceDB) SupportsSnapshotMode() bool { return true }
+func (m *mssqlSourceDB) MaxWorkers() int            { return 0 }
 
 // identName converts a source identifier to its PostgreSQL name.
 func (m *mssqlSourceDB) identName(s string) string {
@@ -38,10 +44,7 @@ func (m *mssqlSourceDB) QuoteIdentifier(name string) string {
 
 func (m *mssqlSourceDB) SourceTableRef(table Table) string {
 	tableRef := m.QuoteIdentifier(table.SourceName)
-	// Treat empty or whitespace-only schema values as "no schema override" so
-	// source-side reads fall back to bare table names instead of emitting an
-	// invalid-looking qualified reference.
-	if strings.TrimSpace(m.sourceSchema) == "" {
+	if m.sourceSchema == "" {
 		return tableRef
 	}
 	return m.QuoteIdentifier(m.sourceSchema) + "." + tableRef
