@@ -814,6 +814,8 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	stmts := []string{
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -879,6 +881,8 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	t.Helper()
 
 	stmts := []string{
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -972,6 +976,8 @@ func seedSakila(t *testing.T, db *sql.DB) {
 		"SET FOREIGN_KEY_CHECKS=0",
 
 		// Drop tables from other tests sharing the same database
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
