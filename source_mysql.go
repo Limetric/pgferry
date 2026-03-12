@@ -77,11 +77,6 @@ func (m *mysqlSourceDB) supportsAxisOrderOption() bool {
 	return m.supportsAxisOrderExpr
 }
 
-func mysqlSupportsAxisOrderOption(db *sql.DB) bool {
-	var probe []byte
-	return db.QueryRow("SELECT ST_AsWKB(ST_GeomFromText('POINT(0 0)'), 'axis-order=long-lat')").Scan(&probe) == nil
-}
-
 func (m *mysqlSourceDB) ExtractDBName(dsn string) (string, error) {
 	return extractMySQLDBName(dsn)
 }

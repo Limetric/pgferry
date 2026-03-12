@@ -982,17 +982,18 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 
 func insertMySQLSpatialAmsterdam(db *sql.DB) error {
 	stmt := "INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326, 'axis-order=long-lat'))"
-	if _, err := db.Exec(stmt); err == nil {
+	_, err := db.Exec(stmt)
+	if err == nil {
 		return nil
-	} else {
-		var mysqlErr *mysql.MySQLError
-		if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1582 {
-			return err
-		}
+	}
+
+	var mysqlErr *mysql.MySQLError
+	if !errors.As(err, &mysqlErr) || mysqlErr.Number != 1582 {
+		return err
 	}
 
 	legacyStmt := "INSERT INTO places (name, shape) VALUES ('amsterdam', ST_GeomFromText('POINT(4.9 52.37)', 4326))"
-	_, err := db.Exec(legacyStmt)
+	_, err = db.Exec(legacyStmt)
 	return err
 }
 

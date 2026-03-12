@@ -22,8 +22,10 @@ func collectRequiredExtensions(schema *Schema, src SourceDB, cfg *MigrationConfi
 
 	if schemaUsesCitext(schema, src, typeMap) {
 		reqs = append(reqs, extensionRequirement{
-			Name:            "citext",
-			Feature:         "ci_as_citext",
+			Name:    "citext",
+			Feature: "ci_as_citext",
+			// Preserve the pre-refactor behavior: citext is auto-created when
+			// needed so existing configs do not need a new toggle.
 			CreateIfMissing: true,
 		})
 	}
@@ -40,7 +42,7 @@ func collectRequiredExtensions(schema *Schema, src SourceDB, cfg *MigrationConfi
 				CreateHint:      "or set [postgis].create_extension = true",
 			})
 		} else {
-			log.Printf("postgis.enabled = true but no MySQL spatial columns were detected; PostGIS will not be used")
+			log.Printf("WARN: postgis.enabled = true but no MySQL spatial columns were detected; PostGIS will not be used")
 		}
 	}
 
