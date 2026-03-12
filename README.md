@@ -4,14 +4,12 @@ Migrate MySQL, SQLite, or MSSQL databases to PostgreSQL with one config file and
 
 Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy — and real migrations always do — you get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
-- Single binary, zero runtime dependencies
-- MySQL, SQLite, and MSSQL sources, PostgreSQL target
-- Parallel workers and range-based chunking for large tables
-- Split into `schema_only` and `data_only` phases for tighter control
-- Preflight `plan` reports what needs manual attention
+- No runtime dependencies or extra tooling to install
+- MySQL, SQLite, and MSSQL support that holds up in production
+- Fast parallel `COPY` loads with range-based chunking for large tables
+- `schema_only` and `data_only` runs when you need tighter control
+- Preflight `plan` command, resumable checkpoints, and SQL hooks for messy migrations
 - Extension-backed features like `citext` and PostGIS, with validation and optional auto-create
-- Resume interrupted runs from checkpoints
-- SQL hooks at four pipeline stages
 
 CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation, MSSQL 2017 through 2025, and SQLite against the latest PostgreSQL release on every commit.
 
@@ -90,17 +88,6 @@ pgferry plan migration.toml --output-dir hooks --format json
 ```
 
 `plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, required extensions, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
-
-## Why pgferry over pgloader
-
-We maintain a [pgloader fork](https://github.com/Limetric/pgloader) with fixes for common upstream issues — this comparison comes from hands-on experience shipping both tools.
-
-[`pgloader`](https://github.com/dimitri/pgloader) is the established choice, but it has real gaps that `pgferry` fills:
-
-- **Better MSSQL support**: pgloader's MSSQL path depends on FreeTDS, while pgferry uses `go-mssqldb` (pure Go, native TDS) and handles modern MSSQL types, Azure SQL, and parallel reads.
-- **Better MySQL support**: pgferry works with modern MySQL auth, including `caching_sha2_password`, out of the box.
-- **Static binary**: no Common Lisp runtime, no SBCL setup, no dependency chase. One binary, runs anywhere.
-- **Operational control**: resumable checkpoints, declarative TOML config, preflight `plan`, and SQL hooks make production migrations easier to reason about.
 
 ## Examples
 
