@@ -121,17 +121,17 @@ func introspectMySQLSchema(db *sql.DB, dbName string, identName func(string) str
 	// round trips total: tables, columns, indexes, and foreign keys.
 	columnsByTable, err := introspectMySQLColumnsByTable(db, dbName, identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect columns: %w", err)
+		return nil, fmt.Errorf("introspect columns for schema %s: %w", dbName, err)
 	}
 
 	indexesByTable, err := introspectMySQLIndexesByTable(db, dbName, identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect indexes: %w", err)
+		return nil, fmt.Errorf("introspect indexes for schema %s: %w", dbName, err)
 	}
 
 	foreignKeysByTable, err := introspectMySQLForeignKeysByTable(db, dbName, identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect foreign keys: %w", err)
+		return nil, fmt.Errorf("introspect foreign keys for schema %s: %w", dbName, err)
 	}
 
 	for i := range tables {
@@ -320,7 +320,6 @@ func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func
 		 JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
 		   ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
 		   AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-		   AND kcu.TABLE_NAME = rc.TABLE_NAME
 		 WHERE kcu.TABLE_SCHEMA = ?
 		   AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
 		 ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`,

@@ -12,6 +12,7 @@ import (
 	_ "modernc.org/sqlite" // pure-Go SQLite driver
 )
 
+// SQLite's default SQLITE_LIMIT_COMPOUND_SELECT is 500; stay well below it.
 const sqliteMaxCompoundSelectTerms = 400
 
 type sqliteSourceDB struct {
@@ -87,17 +88,17 @@ func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error)
 	tableNames := sqliteTableNames(tables)
 	columnsByTable, primaryKeysByTable, err := introspectSQLiteColumnsByTable(db, tableNames, s.identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect columns: %w", err)
+		return nil, fmt.Errorf("introspect columns across %d tables: %w", len(tableNames), err)
 	}
 
 	indexesByTable, err := introspectSQLiteIndexesByTable(db, tableNames, s.identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect indexes: %w", err)
+		return nil, fmt.Errorf("introspect indexes across %d tables: %w", len(tableNames), err)
 	}
 
 	foreignKeysByTable, err := introspectSQLiteForeignKeysByTable(db, tableNames, s.identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect foreign keys: %w", err)
+		return nil, fmt.Errorf("introspect foreign keys across %d tables: %w", len(tableNames), err)
 	}
 
 	for i := range tables {
@@ -310,6 +311,12 @@ func sqliteUnionQuery(parts []string, orderBy string) string {
 	return b.String()
 }
 
+// sqliteLiteral reuses standard SQL single-quoted string escaping, which is
+// valid for SQLite table-valued PRAGMA arguments.
+func sqliteLiteral(v string) string {
+	return pgLiteral(v)
+}
+
 func chunkSlice[T any](items []T, size int) [][]T {
 	if len(items) == 0 {
 		return nil
@@ -368,8 +375,8 @@ func introspectSQLiteColumnsByTable(db *sql.DB, tableNames []string, identName f
 			parts = append(parts,
 				fmt.Sprintf(
 					`SELECT %s AS table_name, cid, name, type, "notnull", dflt_value, pk, hidden FROM pragma_table_xinfo(%s)`,
-					pgLiteral(tableName),
-					pgLiteral(tableName),
+					sqliteLiteral(tableName),
+					sqliteLiteral(tableName),
 				),
 			)
 		}
@@ -505,8 +512,8 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 			listParts = append(listParts,
 				fmt.Sprintf(
 					`SELECT %s AS table_name, seq, name, "unique", origin, partial FROM pragma_index_list(%s)`,
-					pgLiteral(tableName),
-					pgLiteral(tableName),
+					sqliteLiteral(tableName),
+					sqliteLiteral(tableName),
 				),
 			)
 		}
@@ -569,9 +576,9 @@ func introspectSQLiteIndexesByTable(db *sql.DB, tableNames []string, identName f
 			infoParts = append(infoParts,
 				fmt.Sprintf(
 					"SELECT %s AS table_name, %s AS index_name, seqno, cid, name FROM pragma_index_info(%s)",
-					pgLiteral(spec.tableName),
-					pgLiteral(spec.indexName),
-					pgLiteral(spec.indexName),
+					sqliteLiteral(spec.tableName),
+					sqliteLiteral(spec.indexName),
+					sqliteLiteral(spec.indexName),
 				),
 			)
 		}
@@ -638,8 +645,8 @@ func introspectSQLiteForeignKeysByTable(db *sql.DB, tableNames []string, identNa
 			parts = append(parts,
 				fmt.Sprintf(
 					`SELECT %s AS table_name, id, seq, "table" AS ref_table, "from", "to", on_update, on_delete, match FROM pragma_foreign_key_list(%s)`,
-					pgLiteral(tableName),
-					pgLiteral(tableName),
+					sqliteLiteral(tableName),
+					sqliteLiteral(tableName),
 				),
 			)
 		}

@@ -146,17 +146,17 @@ func (m *mssqlSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error) 
 
 	columnsByTable, err := introspectMSSQLColumnsByTable(db, m.sourceSchema, m.identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect columns: %w", err)
+		return nil, fmt.Errorf("introspect columns for schema %s: %w", m.sourceSchema, err)
 	}
 
 	indexesByTable, err := introspectMSSQLIndexesByTable(db, m.sourceSchema, m.identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect indexes: %w", err)
+		return nil, fmt.Errorf("introspect indexes for schema %s: %w", m.sourceSchema, err)
 	}
 
 	foreignKeysByTable, err := introspectMSSQLForeignKeysByTable(db, m.sourceSchema, m.identName)
 	if err != nil {
-		return nil, fmt.Errorf("introspect foreign keys: %w", err)
+		return nil, fmt.Errorf("introspect foreign keys for schema %s: %w", m.sourceSchema, err)
 	}
 
 	for i := range tables {
