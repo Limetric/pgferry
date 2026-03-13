@@ -101,6 +101,15 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	return runPlanWithConfig(cfg, cmd.OutOrStdout())
+}
+
+func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
+	format := planFormat
+	if format == "" {
+		format = "text"
+	}
+
 	ctx := context.Background()
 
 	src, err := newConfiguredSourceDB(cfg)
@@ -140,12 +149,12 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	typeMap := effectiveTypeMapping(cfg)
 	report := buildPlanReport(schema, sourceObjects, src, cfg, typeMap)
 
-	if planFormat == "json" {
-		if err := writePlanJSON(cmd.OutOrStdout(), report); err != nil {
+	if format == "json" {
+		if err := writePlanJSON(out, report); err != nil {
 			return err
 		}
 	} else {
-		writePlanText(cmd.OutOrStdout(), report)
+		writePlanText(out, report)
 	}
 
 	if planOutputDir != "" {

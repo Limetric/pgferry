@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
@@ -9,20 +11,44 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
+	"github.com/go-sql-driver/mysql"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/microsoft/go-mssqldb/msdsn"
 	"github.com/spf13/cobra"
 )
 
 var generatedConfigRunner = runMigrationWithConfig
+var generatedConfigPlanner = runPlanWithConfig
+var wizardSourceDSNValidator = validateWizardSourceDSN
+var wizardTargetDSNValidator = validateWizardTargetDSN
+var wizardSourceConnectionTester = testWizardSourceConnection
+var wizardTargetConnectionTester = testWizardTargetConnection
 
 type wizardPrompter struct {
-	in  *bufio.Reader
-	out io.Writer
+	in     *bufio.Reader
+	out    io.Writer
+	styles wizardStyles
+	blocks int
 }
 
 type wizardOption struct {
-	key string
+	key  string
+	help string
+}
+
+type wizardStyles struct {
+	enabled bool
+}
+
+var wizardAdvancedOptionsNote = []string{
+	"Advanced options not covered by the wizard:",
+	"- PostgreSQL extensions / PostGIS support",
+	"- Validation, resume, chunk_size, and index_workers",
+	"- Hooks, collation overrides, and other source-specific type mapping tweaks",
+	"You can still add these manually to the generated TOML before running the migration.",
 }
 
 func runGenerateWizard(cmd *cobra.Command, _ []string) error {
@@ -32,12 +58,13 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 	}
 
 	w := wizardPrompter{
-		in:  bufio.NewReader(cmd.InOrStdin()),
-		out: cmd.OutOrStdout(),
+		in:     bufio.NewReader(cmd.InOrStdin()),
+		out:    cmd.OutOrStdout(),
+		styles: newWizardStyles(cmd.OutOrStdout()),
 	}
 
-	fmt.Fprintln(w.out, "pgferry config wizard")
-	fmt.Fprintln(w.out, "Press Enter to accept the default shown in brackets.")
+	fmt.Fprintln(w.out, w.styles.header("pgferry config wizard"))
+	fmt.Fprintln(w.out, w.styles.muted("Press Enter to accept the default shown in brackets."))
 	fmt.Fprintln(w.out)
 
 	cfg, err := collectGeneratedConfig(&w, cwd)
@@ -46,19 +73,27 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 	}
 
 	rendered := renderConfigTOML(cfg)
-	fmt.Fprintln(w.out, "Generated config:")
+	fmt.Fprintln(w.out, w.styles.accent("Generated config:"))
 	fmt.Fprintln(w.out, rendered)
+	fmt.Fprintln(w.out)
+	for i, line := range wizardAdvancedOptionsNote {
+		if i == 0 {
+			fmt.Fprintln(w.out, w.styles.header(line))
+			continue
+		}
+		fmt.Fprintln(w.out, w.styles.muted(line))
+	}
 
-	action, err := w.promptChoice("Next step", []wizardOption{
-		{key: "write"},
-		{key: "run"},
-		{key: "write_run"},
-	}, "write")
+	saveConfig, err := w.promptBoolGuided(
+		"Save generated config to a file",
+		true,
+		"Recommended if you want to review, edit, reuse, or version the generated TOML before migrating.",
+	)
 	if err != nil {
 		return err
 	}
 
-	if action == "write" || action == "write_run" {
+	if saveConfig {
 		outputPath, err := w.promptString("Output file", "migration.toml", validateRequired)
 		if err != nil {
 			return err
@@ -76,11 +111,27 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 		if err := finalizeConfig(cfg, filepath.Dir(absPath)); err != nil {
 			return err
 		}
-		fmt.Fprintf(w.out, "Saved %s\n", absPath)
+		fmt.Fprintf(w.out, "%s\n", w.styles.success("Saved "+absPath))
 	}
 
-	if action == "run" || action == "write_run" {
-		fmt.Fprintln(w.out, "Starting migration...")
+	nextStep, err := w.promptChoice("Next step", []wizardOption{
+		{key: "stop", help: "Finish here. Use this if you want to inspect or edit the generated config manually."},
+		{key: "plan", help: "Analyze the source and print a migration plan report without changing the target database."},
+		{key: "run", help: "Start the migration now using the generated config. This will connect to both databases and begin making target-side changes."},
+	}, "plan")
+	if err != nil {
+		return err
+	}
+
+	if nextStep == "plan" {
+		fmt.Fprintln(w.out, w.styles.accent("Generating migration plan..."))
+		if err := generatedConfigPlanner(cfg, w.out); err != nil {
+			return fmt.Errorf("run plan: %w", err)
+		}
+	}
+
+	if nextStep == "run" {
+		fmt.Fprintln(w.out, w.styles.accent("Starting migration..."))
 		if err := generatedConfigRunner(cfg); err != nil {
 			return err
 		}
@@ -102,33 +153,31 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 	cfg.Source.Type = sourceType
 
-	sourcePrompt := "Source DSN"
-	switch sourceType {
-	case "sqlite":
-		sourcePrompt = "SQLite path or file: URI"
-	case "mssql":
-		sourcePrompt = "MSSQL DSN (e.g., sqlserver://user:pass@host:1433?database=mydb)"
-	}
-	cfg.Source.DSN, err = w.promptString(sourcePrompt, "", validateRequired)
+	cfg.Source.DSN, err = w.promptSourceDSN(sourceType)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.Target.DSN, err = w.promptString("PostgreSQL DSN", "", validateRequired)
+	cfg.Target.DSN, err = w.promptTargetDSN()
 	if err != nil {
 		return nil, err
 	}
 
-	schemaDefault := suggestSchemaName(sourceType, cfg.Source.DSN)
-	cfg.Schema, err = w.promptString("Target schema", schemaDefault, validateRequired)
+	schemaDefault := suggestSchemaName(sourceType, cfg.Source.DSN, cfg.Target.DSN)
+	cfg.Schema, err = w.promptStringGuided(
+		"Target schema",
+		schemaDefault,
+		"Creates or loads into this PostgreSQL schema. A dedicated schema keeps migrated tables isolated from public and avoids confusion with the target database name.",
+		validateRequired,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	mode, err := w.promptChoice("Migration mode", []wizardOption{
-		{key: "full"},
-		{key: "schema_only"},
-		{key: "data_only"},
+		{key: "full", help: "Create tables, copy rows, then add indexes, foreign keys, sequences, and triggers."},
+		{key: "schema_only", help: "Create the target schema without copying data. Good for dry runs and DDL review."},
+		{key: "data_only", help: "Copy rows into existing compatible tables. Use when the schema is already prepared."},
 	}, "full")
 	if err != nil {
 		return nil, err
@@ -137,8 +186,8 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	cfg.DataOnly = mode == "data_only"
 
 	cfg.OnSchemaExists, err = w.promptChoice("If target schema already exists", []wizardOption{
-		{key: "error"},
-		{key: "recreate"},
+		{key: "error", help: "Safest default. Stops instead of touching an existing schema."},
+		{key: "recreate", help: "Drops and recreates the target schema. Fast for clean reruns, but destructive."},
 	}, cfg.OnSchemaExists)
 	if err != nil {
 		return nil, err
@@ -147,8 +196,8 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	switch sourceType {
 	case "mysql", "mssql":
 		cfg.SourceSnapshotMode, err = w.promptChoice("Source snapshot mode", []wizardOption{
-			{key: "none"},
-			{key: "single_tx"},
+			{key: "none", help: "Fastest. Each worker reads independently, so source changes during the run can leak in."},
+			{key: "single_tx", help: "Uses one read-only transaction for a consistent snapshot. Safer, but longer-lived and less parallel-friendly."},
 		}, cfg.SourceSnapshotMode)
 		if err != nil {
 			return nil, err
@@ -159,31 +208,52 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 
 	if sourceType == "mssql" {
-		cfg.Source.SourceSchema, err = w.promptString("MSSQL source schema", "dbo", validateRequired)
+		cfg.Source.SourceSchema, err = w.promptStringGuided(
+			"MSSQL source schema",
+			"dbo",
+			"Usually dbo. Change this only if the source tables live in a different SQL Server schema.",
+			validateRequired,
+		)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if !cfg.SchemaOnly && !cfg.DataOnly {
-		cfg.UnloggedTables, err = w.promptBool("Use UNLOGGED tables during bulk load", cfg.UnloggedTables)
+		cfg.UnloggedTables, err = w.promptBoolGuided(
+			"Use UNLOGGED tables during bulk load",
+			cfg.UnloggedTables,
+			"Speeds up large loads by reducing WAL, but the tables are crash-unsafe until pgferry switches them back to logged.",
+		)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	cfg.PreserveDefaults, err = w.promptBool("Preserve source DEFAULT values", cfg.PreserveDefaults)
+	cfg.PreserveDefaults, err = w.promptBoolGuided(
+		"Preserve source DEFAULT values",
+		cfg.PreserveDefaults,
+		"Keeps source defaults on created tables. Good if the app will keep inserting rows after cutover; less useful if you want the leanest first-pass schema.",
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.SnakeCaseIdentifiers, err = w.promptBool("Convert identifiers to snake_case", cfg.SnakeCaseIdentifiers)
+	cfg.SnakeCaseIdentifiers, err = w.promptBoolGuided(
+		"Convert identifiers to snake_case",
+		cfg.SnakeCaseIdentifiers,
+		"Produces cleaner PostgreSQL names, for example OrderItems -> order_items and USER_ID -> user_id. If turned off, pgferry only lowercases names, so OrderItems becomes orderitems instead. Leave it on unless existing SQL or application code depends on the original source naming.",
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	if !cfg.SchemaOnly {
-		cfg.CleanOrphans, err = w.promptBool("Clean orphaned rows before adding foreign keys", cfg.CleanOrphans)
+		cfg.CleanOrphans, err = w.promptBoolGuided(
+			"Clean orphaned rows before adding foreign keys",
+			cfg.CleanOrphans,
+			"Deletes rows that would break foreign keys so the migration can finish. Turn it off if you would rather fail and inspect the bad data.",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +261,12 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 
 	defaultWorkers := effectiveDefaultWorkers(sourceType)
 	if sourceType == "mysql" || sourceType == "mssql" {
-		cfg.Workers, err = w.promptInt("Parallel workers", defaultWorkers, 1)
+		cfg.Workers, err = w.promptIntGuided(
+			"Parallel workers",
+			defaultWorkers,
+			1,
+			"More workers usually mean faster copy throughput, but they also put more load on both source and target databases. The default is based on CPU count, capped at 8, and may be reduced further for source-specific limits.",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -199,37 +274,61 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		cfg.Workers = defaultWorkers
 	}
 
-	cfg.TypeMapping.JSONAsJSONB, err = w.promptBool("Map JSON columns to jsonb", cfg.TypeMapping.JSONAsJSONB)
+	cfg.TypeMapping.JSONAsJSONB, err = w.promptBoolGuided(
+		"Map JSON columns to jsonb",
+		cfg.TypeMapping.JSONAsJSONB,
+		"jsonb is usually the better PostgreSQL type for indexing and querying. If turned off, JSON columns map to json instead.",
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.TypeMapping.UnknownAsText, err = w.promptBool("Map unknown source types to text instead of failing", cfg.TypeMapping.UnknownAsText)
+	cfg.TypeMapping.UnknownAsText, err = w.promptBoolGuided(
+		"Map unknown source types to text instead of failing",
+		cfg.TypeMapping.UnknownAsText,
+		"Useful for getting a first migration through. If turned off, unsupported source types fail the migration instead of mapping to text.",
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	if sourceType == "mssql" {
-		cfg.TypeMapping.NvarcharAsText, err = w.promptBool("Map nvarchar(n) to text", cfg.TypeMapping.NvarcharAsText)
+		cfg.TypeMapping.NvarcharAsText, err = w.promptBoolGuided(
+			"Map nvarchar(n) to text",
+			cfg.TypeMapping.NvarcharAsText,
+			"Simplifies the PostgreSQL schema by avoiding many varying length limits. If turned off, nvarchar(n) maps to varchar(n) instead, while nvarchar(max) still maps to text.",
+		)
 		if err != nil {
 			return nil, err
 		}
-		cfg.TypeMapping.MoneyAsNumeric, err = w.promptBool("Map money to numeric (recommended over PG money)", cfg.TypeMapping.MoneyAsNumeric)
+		cfg.TypeMapping.MoneyAsNumeric, err = w.promptBoolGuided(
+			"Map money to numeric",
+			cfg.TypeMapping.MoneyAsNumeric,
+			"Recommended. money maps to numeric(19,4) and smallmoney to numeric(10,4). If turned off, those columns fall back to text instead.",
+		)
 		if err != nil {
 			return nil, err
 		}
-		cfg.TypeMapping.XmlAsText, err = w.promptBool("Map xml to text", cfg.TypeMapping.XmlAsText)
+		cfg.TypeMapping.XmlAsText, err = w.promptBoolGuided(
+			"Map xml to text",
+			cfg.TypeMapping.XmlAsText,
+			"Easiest portable mapping. Keeps the content, but you lose XML typing and server-side validation. If turned off, xml stays xml in PostgreSQL.",
+		)
 		if err != nil {
 			return nil, err
 		}
-		cfg.TypeMapping.DatetimeAsTimestamptz, err = w.promptBool("Map datetime/datetime2 to timestamptz", cfg.TypeMapping.DatetimeAsTimestamptz)
+		cfg.TypeMapping.DatetimeAsTimestamptz, err = w.promptBoolGuided(
+			"Map datetime/datetime2 to timestamptz",
+			cfg.TypeMapping.DatetimeAsTimestamptz,
+			"Use this when the source values represent real instants in time. If turned off, datetime, smalldatetime, and datetime2 map to timestamp instead.",
+		)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.SpatialMode, err = w.promptChoice("Spatial type mapping", []wizardOption{
-			{key: "off"},
-			{key: "wkb_bytea"},
-			{key: "wkt_text"},
+			{key: "off", help: "No automatic spatial conversion. Best if you will handle spatial columns manually."},
+			{key: "wkb_bytea", help: "Stores spatial values as WKB bytes. Safer fallback when you want to preserve binary geometry data."},
+			{key: "wkt_text", help: "Stores spatial values as readable text. Easier to inspect, but larger and less exact than binary."},
 		}, cfg.TypeMapping.SpatialMode)
 		if err != nil {
 			return nil, err
@@ -237,83 +336,107 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 
 	if sourceType == "mysql" {
-		cfg.TypeMapping.TinyInt1AsBoolean, err = w.promptBool("Map tinyint(1) to boolean", cfg.TypeMapping.TinyInt1AsBoolean)
+		cfg.TypeMapping.TinyInt1AsBoolean, err = w.promptBoolGuided(
+			"Map tinyint(1) to boolean",
+			cfg.TypeMapping.TinyInt1AsBoolean,
+			"Good when tinyint(1) really means true/false. If turned off, tinyint columns map to smallint instead.",
+		)
 		if err != nil {
 			return nil, err
 		}
-		cfg.TypeMapping.DatetimeAsTimestamptz, err = w.promptBool("Map datetime to timestamptz", cfg.TypeMapping.DatetimeAsTimestamptz)
+		cfg.TypeMapping.DatetimeAsTimestamptz, err = w.promptBoolGuided(
+			"Map datetime to timestamptz",
+			cfg.TypeMapping.DatetimeAsTimestamptz,
+			"Use this if MySQL datetime values should become timezone-aware instants. If turned off, datetime maps to timestamp instead.",
+		)
 		if err != nil {
 			return nil, err
 		}
-		cfg.TypeMapping.Binary16AsUUID, err = w.promptBool("Map binary(16) to uuid", cfg.TypeMapping.Binary16AsUUID)
+		cfg.TypeMapping.Binary16AsUUID, err = w.promptBoolGuided(
+			"Map binary(16) to uuid",
+			cfg.TypeMapping.Binary16AsUUID,
+			"Turn this on only when those binary(16) columns really store UUIDs. If turned off, binary(16) stays bytea instead.",
+		)
 		if err != nil {
 			return nil, err
 		}
 		if cfg.TypeMapping.Binary16AsUUID {
 			cfg.TypeMapping.Binary16UUIDMode, err = w.promptChoice("Binary UUID byte order", []wizardOption{
-				{key: "rfc4122"},
-				{key: "mysql_uuid_to_bin_swap"},
+				{key: "rfc4122", help: "Standard UUID byte order. Use for application-stored UUID bytes."},
+				{key: "mysql_uuid_to_bin_swap", help: "Use only if the source stored UUIDs with MySQL UUID_TO_BIN(..., 1) byte swapping."},
 			}, cfg.TypeMapping.Binary16UUIDMode)
 			if err != nil {
 				return nil, err
 			}
 		}
-		cfg.TypeMapping.StringUUIDAsUUID, err = w.promptBool("Map char(36)/varchar(36) to uuid", cfg.TypeMapping.StringUUIDAsUUID)
+		cfg.TypeMapping.StringUUIDAsUUID, err = w.promptBoolGuided(
+			"Map char(36)/varchar(36) to uuid",
+			cfg.TypeMapping.StringUUIDAsUUID,
+			"Useful when those columns always contain UUID strings. If turned off, they stay varchar(36)-style text columns instead.",
+		)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.EnumMode, err = w.promptChoice("Enum mode", []wizardOption{
-			{key: "text"},
-			{key: "check"},
-			{key: "native"},
+			{key: "text", help: "Simplest and most portable. Values are stored as text with no PostgreSQL-side enforcement."},
+			{key: "check", help: "Adds CHECK constraints for allowed values. Good middle ground between portability and enforcement."},
+			{key: "native", help: "Creates PostgreSQL ENUM types. Strongest typing, but future enum changes are more involved."},
 		}, cfg.TypeMapping.EnumMode)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.SetMode, err = w.promptChoice("Set mode", []wizardOption{
-			{key: "text"},
-			{key: "text_array"},
-			{key: "text_array_check"},
+			{key: "text", help: "Keeps the original comma-separated source value as plain text. Least opinionated."},
+			{key: "text_array", help: "More PostgreSQL-native and easier to query, but does not enforce allowed members."},
+			{key: "text_array_check", help: "Array storage plus a CHECK against allowed values. Safest, with more DDL."},
 		}, cfg.TypeMapping.SetMode)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.BitMode, err = w.promptChoice("BIT(n) mapping", []wizardOption{
-			{key: "bytea"},
-			{key: "bit"},
-			{key: "varbit"},
+			{key: "bytea", help: "Safest fallback when you mainly care about preserving bits as raw bytes."},
+			{key: "bit", help: "Fixed-length bit strings. Good when the source width is meaningful and stable."},
+			{key: "varbit", help: "Variable-length bit strings. More flexible if widths differ across data."},
 		}, cfg.TypeMapping.BitMode)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.TimeMode, err = w.promptChoice("TIME mapping", []wizardOption{
-			{key: "time"},
-			{key: "text"},
-			{key: "interval"},
+			{key: "time", help: "Best when the source column means time-of-day."},
+			{key: "text", help: "Safest for quirky or out-of-range values that might not fit PostgreSQL time cleanly."},
+			{key: "interval", help: "Use only when the source column semantically stores durations, not clock times."},
 		}, cfg.TypeMapping.TimeMode)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.ZeroDateMode, err = w.promptChoice("Zero-date handling", []wizardOption{
-			{key: "null"},
-			{key: "error"},
+			{key: "null", help: "Practical default. Converts zero dates to NULL so the migration can continue."},
+			{key: "error", help: "Strict mode. Stops on zero dates so you can clean the source data explicitly."},
 		}, cfg.TypeMapping.ZeroDateMode)
 		if err != nil {
 			return nil, err
 		}
 		cfg.TypeMapping.SpatialMode, err = w.promptChoice("Spatial type mapping", []wizardOption{
-			{key: "off"},
-			{key: "wkb_bytea"},
-			{key: "wkt_text"},
+			{key: "off", help: "No automatic spatial conversion. Choose this if you will handle spatial columns manually or with PostGIS later."},
+			{key: "wkb_bytea", help: "Stores geometry as WKB bytes. Better for fidelity than text."},
+			{key: "wkt_text", help: "Stores geometry as text. Easier to inspect, but larger and less binary-faithful."},
 		}, cfg.TypeMapping.SpatialMode)
 		if err != nil {
 			return nil, err
 		}
-		cfg.AddUnsignedChecks, err = w.promptBool("Add unsigned integer CHECK constraints", cfg.AddUnsignedChecks)
+		cfg.AddUnsignedChecks, err = w.promptBoolGuided(
+			"Add unsigned integer CHECK constraints",
+			cfg.AddUnsignedChecks,
+			"Preserves MySQL unsigned ranges in PostgreSQL. Better fidelity, but adds extra DDL and can fail if the loaded data already violates those ranges.",
+		)
 		if err != nil {
 			return nil, err
 		}
-		cfg.ReplicateOnUpdateCurrentTimestamp, err = w.promptBool("Emulate ON UPDATE CURRENT_TIMESTAMP", cfg.ReplicateOnUpdateCurrentTimestamp)
+		cfg.ReplicateOnUpdateCurrentTimestamp, err = w.promptBoolGuided(
+			"Emulate ON UPDATE CURRENT_TIMESTAMP",
+			cfg.ReplicateOnUpdateCurrentTimestamp,
+			"Adds PostgreSQL triggers to mimic MySQL auto-updated timestamp columns. Better compatibility, but more objects and some write overhead.",
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -327,6 +450,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 
 func maybeConfirmOverwrite(w *wizardPrompter, path string) error {
 	if _, err := os.Stat(path); err == nil {
+		fmt.Fprintln(w.out, w.styles.warning("Output file already exists."))
 		overwrite, promptErr := w.promptBool(fmt.Sprintf("Overwrite %s", path), false)
 		if promptErr != nil {
 			return promptErr
@@ -536,12 +660,12 @@ func tomlStringArray(values []string) string {
 	return "[" + strings.Join(parts, ", ") + "]"
 }
 
-func suggestSchemaName(sourceType, dsn string) string {
+func suggestSchemaName(sourceType, sourceDSN, targetDSN string) string {
 	src, err := newSourceDB(sourceType)
 	if err != nil {
 		return "app"
 	}
-	name, err := src.ExtractDBName(dsn)
+	name, err := src.ExtractDBName(sourceDSN)
 	if err != nil {
 		return "app"
 	}
@@ -569,9 +693,29 @@ func suggestSchemaName(sourceType, dsn string) string {
 		return "app"
 	}
 	if schema[0] >= '0' && schema[0] <= '9' {
-		return "app_" + schema
+		schema = "app_" + schema
+	}
+
+	targetDBName, err := extractPostgresDBName(targetDSN)
+	if err != nil {
+		return schema
+	}
+	if strings.EqualFold(schema, targetDBName) {
+		return "app"
 	}
 	return schema
+}
+
+func extractPostgresDBName(dsn string) (string, error) {
+	cfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return "", err
+	}
+	name := strings.TrimSpace(cfg.ConnConfig.Database)
+	if name == "" {
+		return "", fmt.Errorf("cannot extract database name from PostgreSQL DSN")
+	}
+	return name, nil
 }
 
 func effectiveDefaultWorkers(sourceType string) int {
@@ -593,24 +737,172 @@ func validateRequired(v string) error {
 	return nil
 }
 
-func (w *wizardPrompter) promptString(label, defaultValue string, validate func(string) error) (string, error) {
-	for {
-		if defaultValue == "" {
-			fmt.Fprintf(w.out, "%s: ", label)
-		} else {
-			fmt.Fprintf(w.out, "%s [%s]: ", label, defaultValue)
-		}
+func newWizardStyles(out io.Writer) wizardStyles {
+	if os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		return wizardStyles{}
+	}
+	f, ok := out.(*os.File)
+	if !ok {
+		return wizardStyles{}
+	}
+	info, err := f.Stat()
+	if err != nil || (info.Mode()&os.ModeCharDevice) == 0 {
+		return wizardStyles{}
+	}
+	return wizardStyles{enabled: true}
+}
 
-		value, err := w.readLine()
+func (s wizardStyles) wrap(code, text string) string {
+	if !s.enabled || text == "" {
+		return text
+	}
+	return code + text + "\033[0m"
+}
+
+func (s wizardStyles) header(text string) string  { return s.wrap("\033[1;36m", text) }
+func (s wizardStyles) accent(text string) string  { return s.wrap("\033[1;34m", text) }
+func (s wizardStyles) muted(text string) string   { return s.wrap("\033[2m", text) }
+func (s wizardStyles) prompt(text string) string  { return s.wrap("\033[1m", text) }
+func (s wizardStyles) success(text string) string { return s.wrap("\033[32m", text) }
+func (s wizardStyles) warning(text string) string { return s.wrap("\033[33m", text) }
+func (s wizardStyles) error(text string) string   { return s.wrap("\033[31m", text) }
+
+func wizardSourceDSNPrompt(sourceType string) (string, string) {
+	switch sourceType {
+	case "mysql":
+		return "Source DSN", "root:root@tcp(127.0.0.1:3306)/source_db"
+	case "sqlite":
+		return "SQLite path or file: URI", "/path/to/database.db"
+	case "mssql":
+		return "MSSQL DSN", "sqlserver://sa:YourStrong!Pass@127.0.0.1:1433?database=source_db"
+	default:
+		return "Source DSN", ""
+	}
+}
+
+func wizardTargetDSNPrompt() (string, string) {
+	return "PostgreSQL DSN", "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+}
+
+func validateWizardSourceDSN(sourceType, dsn string) error {
+	dsn = strings.TrimSpace(dsn)
+	if err := validateRequired(dsn); err != nil {
+		return err
+	}
+
+	switch sourceType {
+	case "mysql":
+		if _, err := mysql.ParseDSN(dsn); err != nil {
+			return fmt.Errorf("invalid MySQL DSN: %w", err)
+		}
+	case "sqlite":
+		if _, err := sqliteReadOnlyURI(dsn); err != nil {
+			return fmt.Errorf("invalid SQLite DSN: %w", err)
+		}
+	case "mssql":
+		if _, err := msdsn.Parse(dsn); err != nil {
+			return fmt.Errorf("invalid MSSQL DSN: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported source type %q", sourceType)
+	}
+
+	src, err := newSourceDB(sourceType)
+	if err != nil {
+		return err
+	}
+	if _, err := src.ExtractDBName(dsn); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateWizardTargetDSN(dsn string) error {
+	dsn = strings.TrimSpace(dsn)
+	if err := validateRequired(dsn); err != nil {
+		return err
+	}
+	if _, err := pgxpool.ParseConfig(dsn); err != nil {
+		return fmt.Errorf("invalid PostgreSQL DSN: %w", err)
+	}
+	return nil
+}
+
+func testWizardSourceConnection(sourceType, dsn string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var (
+		db  *sql.DB
+		err error
+	)
+
+	switch sourceType {
+	case "mysql":
+		normalizedDSN, err := normalizedMySQLDSN(dsn, "utf8mb4")
+		if err != nil {
+			return err
+		}
+		db, err = sql.Open("mysql", normalizedDSN)
+		if err != nil {
+			return fmt.Errorf("open mysql: %w", err)
+		}
+	case "sqlite":
+		uri, err := sqliteReadOnlyURI(dsn)
+		if err != nil {
+			return err
+		}
+		db, err = sql.Open("sqlite", uri)
+		if err != nil {
+			return fmt.Errorf("open sqlite: %w", err)
+		}
+		db.SetMaxOpenConns(1)
+	case "mssql":
+		db, err = sql.Open("sqlserver", dsn)
+		if err != nil {
+			return fmt.Errorf("open mssql: %w", err)
+		}
+	default:
+		return fmt.Errorf("unsupported source type %q", sourceType)
+	}
+	defer db.Close()
+
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping %s: %w", strings.ToLower(sourceType), err)
+	}
+	return nil
+}
+
+func testWizardTargetConnection(dsn string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping postgres: %w", err)
+	}
+	return nil
+}
+
+func (w *wizardPrompter) promptString(label, defaultValue string, validate func(string) error) (string, error) {
+	w.startBlock()
+	return w.promptStringInline(label, defaultValue, validate)
+}
+
+func (w *wizardPrompter) promptStringInline(label, defaultValue string, validate func(string) error) (string, error) {
+	for {
+		value, err := w.promptInput(label, defaultValue)
 		if err != nil {
 			return "", err
 		}
-		if value == "" {
-			value = defaultValue
-		}
 		if validate != nil {
 			if err := validate(value); err != nil {
-				fmt.Fprintf(w.out, "%s\n", err)
+				fmt.Fprintf(w.out, "%s\n", w.styles.error(err.Error()))
 				continue
 			}
 		}
@@ -618,13 +910,125 @@ func (w *wizardPrompter) promptString(label, defaultValue string, validate func(
 	}
 }
 
+func (w *wizardPrompter) startBlock() {
+	if w.blocks > 0 {
+		fmt.Fprintln(w.out)
+	}
+	w.blocks++
+}
+
+func (w *wizardPrompter) promptInput(label, defaultValue string) (string, error) {
+	if defaultValue == "" {
+		fmt.Fprintf(w.out, "%s: ", w.styles.prompt(label))
+	} else {
+		fmt.Fprintf(w.out, "%s [%s]: ", w.styles.prompt(label), defaultValue)
+	}
+
+	value, err := w.readLine()
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		value = defaultValue
+	}
+	return value, nil
+}
+
+func (w *wizardPrompter) printGuide(text string) {
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	fmt.Fprintf(w.out, "  %s\n", w.styles.muted(text))
+}
+
+func (w *wizardPrompter) promptStringGuided(label, defaultValue, guide string, validate func(string) error) (string, error) {
+	w.startBlock()
+	fmt.Fprintln(w.out, w.styles.header(label))
+	w.printGuide(guide)
+	return w.promptStringInline("Value", defaultValue, validate)
+}
+
+func (w *wizardPrompter) promptStringWithExample(label, example, defaultValue string, validate func(string) error) (string, error) {
+	w.startBlock()
+	fmt.Fprintln(w.out, w.styles.header(label))
+	if example != "" {
+		fmt.Fprintf(w.out, "  %s\n", w.styles.muted("Example: "+example))
+	}
+	return w.promptStringInline("Value", defaultValue, validate)
+}
+
+func (w *wizardPrompter) promptSourceDSN(sourceType string) (string, error) {
+	label, example := wizardSourceDSNPrompt(sourceType)
+	defaultValue := ""
+	for {
+		dsn, err := w.promptStringWithExample(label, example, defaultValue, func(value string) error {
+			return wizardSourceDSNValidator(sourceType, value)
+		})
+		if err != nil {
+			return "", err
+		}
+		defaultValue = dsn
+
+		testNow, err := w.promptBool("Test source connection now (recommended)", true)
+		if err != nil {
+			return "", err
+		}
+		if !testNow {
+			return dsn, nil
+		}
+
+		if err := wizardSourceConnectionTester(sourceType, dsn); err != nil {
+			fmt.Fprintf(w.out, "%s\n", w.styles.error("Source connection test failed: "+err.Error()))
+			fmt.Fprintln(w.out, w.styles.muted("Press Enter at the DSN prompt to keep the same value, then choose whether to test again."))
+			continue
+		}
+
+		fmt.Fprintln(w.out, w.styles.success("Source connection OK."))
+		return dsn, nil
+	}
+}
+
+func (w *wizardPrompter) promptTargetDSN() (string, error) {
+	label, example := wizardTargetDSNPrompt()
+	defaultValue := ""
+	for {
+		dsn, err := w.promptStringWithExample(label, example, defaultValue, wizardTargetDSNValidator)
+		if err != nil {
+			return "", err
+		}
+		defaultValue = dsn
+
+		testNow, err := w.promptBool("Test PostgreSQL connection now (recommended)", true)
+		if err != nil {
+			return "", err
+		}
+		if !testNow {
+			return dsn, nil
+		}
+
+		if err := wizardTargetConnectionTester(dsn); err != nil {
+			fmt.Fprintf(w.out, "%s\n", w.styles.error("PostgreSQL connection test failed: "+err.Error()))
+			fmt.Fprintln(w.out, w.styles.muted("Press Enter at the DSN prompt to keep the same value, then choose whether to test again."))
+			continue
+		}
+
+		fmt.Fprintln(w.out, w.styles.success("PostgreSQL connection OK."))
+		return dsn, nil
+	}
+}
+
 func (w *wizardPrompter) promptBool(label string, defaultValue bool) (bool, error) {
+	w.startBlock()
+	return w.promptBoolInline(label, defaultValue)
+}
+
+func (w *wizardPrompter) promptBoolInline(label string, defaultValue bool) (bool, error) {
 	hint := "y/N"
 	if defaultValue {
 		hint = "Y/n"
 	}
 	for {
-		fmt.Fprintf(w.out, "%s [%s]: ", label, hint)
+		fmt.Fprintf(w.out, "%s [%s]: ", w.styles.prompt(label), hint)
 		value, err := w.readLine()
 		if err != nil {
 			return false, err
@@ -638,14 +1042,26 @@ func (w *wizardPrompter) promptBool(label string, defaultValue bool) (bool, erro
 		case "n", "no":
 			return false, nil
 		default:
-			fmt.Fprintln(w.out, "Enter y or n.")
+			fmt.Fprintln(w.out, w.styles.error("Enter y or n."))
 		}
 	}
 }
 
+func (w *wizardPrompter) promptBoolGuided(label string, defaultValue bool, guide string) (bool, error) {
+	w.startBlock()
+	fmt.Fprintln(w.out, w.styles.header(label))
+	w.printGuide(guide)
+	return w.promptBoolInline("Answer", defaultValue)
+}
+
 func (w *wizardPrompter) promptInt(label string, defaultValue, min int) (int, error) {
+	w.startBlock()
+	return w.promptIntInline(label, defaultValue, min)
+}
+
+func (w *wizardPrompter) promptIntInline(label string, defaultValue, min int) (int, error) {
 	for {
-		fmt.Fprintf(w.out, "%s [%d]: ", label, defaultValue)
+		fmt.Fprintf(w.out, "%s [%d]: ", w.styles.prompt(label), defaultValue)
 		value, err := w.readLine()
 		if err != nil {
 			return 0, err
@@ -655,32 +1071,41 @@ func (w *wizardPrompter) promptInt(label string, defaultValue, min int) (int, er
 		}
 		n, err := strconv.Atoi(value)
 		if err != nil || n < min {
-			fmt.Fprintf(w.out, "Enter a whole number >= %d.\n", min)
+			fmt.Fprintf(w.out, "%s\n", w.styles.error(fmt.Sprintf("Enter a whole number >= %d.", min)))
 			continue
 		}
 		return n, nil
 	}
 }
 
+func (w *wizardPrompter) promptIntGuided(label string, defaultValue, min int, guide string) (int, error) {
+	w.startBlock()
+	fmt.Fprintln(w.out, w.styles.header(label))
+	w.printGuide(guide)
+	return w.promptIntInline("Value", defaultValue, min)
+}
+
 func (w *wizardPrompter) promptChoice(label string, options []wizardOption, defaultValue string) (string, error) {
+	w.startBlock()
 	keys := make([]string, 0, len(options))
 	for _, option := range options {
 		keys = append(keys, option.key)
 	}
 
 	for {
-		fmt.Fprintf(w.out, "%s [%s]", label, strings.Join(keys, "/"))
+		fmt.Fprint(w.out, w.styles.header(label))
 		if defaultValue != "" {
-			fmt.Fprintf(w.out, " (default: %s)", defaultValue)
+			fmt.Fprintf(w.out, " %s", w.styles.muted("(default: "+defaultValue+")"))
 		}
-		fmt.Fprint(w.out, ": ")
-
-		value, err := w.readLine()
+		fmt.Fprintln(w.out)
+		for _, option := range options {
+			if strings.TrimSpace(option.help) != "" {
+				fmt.Fprintf(w.out, "  %s: %s\n", w.styles.accent(option.key), w.styles.muted(option.help))
+			}
+		}
+		value, err := w.promptInput("Choice ["+strings.Join(keys, "/")+"]", defaultValue)
 		if err != nil {
 			return "", err
-		}
-		if value == "" {
-			return defaultValue, nil
 		}
 		value = strings.ToLower(value)
 		for i, option := range options {
@@ -688,7 +1113,7 @@ func (w *wizardPrompter) promptChoice(label string, options []wizardOption, defa
 				return option.key, nil
 			}
 		}
-		fmt.Fprintf(w.out, "Enter one of: %s\n", strings.Join(keys, ", "))
+		fmt.Fprintf(w.out, "%s\n", w.styles.error("Enter one of: "+strings.Join(keys, ", ")))
 	}
 }
 

@@ -34,7 +34,7 @@ go build -o build/pgferry .
 
 ## Quick Start
 
-Create `migration.toml` manually or via `pgferry generate`.
+Create `migration.toml` manually or via `pgferry wizard`.
 
 **MySQL -> PostgreSQL**
 
