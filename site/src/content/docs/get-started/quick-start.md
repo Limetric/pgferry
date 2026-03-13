@@ -13,18 +13,9 @@ pgferry wizard
 
 In an interactive terminal, plain `pgferry` also opens the wizard. It walks you through the source DSN, target DSN, target schema, migration mode, and the most important type-mapping options. At the end, you can save the generated `migration.toml`, run `plan`, start the migration immediately, or do both.
 
-## Pick your source path
-
-<div class="route-list">
-	<a href="#mysql-to-postgresql">MySQL minimal config</a>
-	<a href="#sqlite-to-postgresql">SQLite minimal config</a>
-	<a href="#mssql-to-postgresql">MSSQL minimal config</a>
-	<a href="/examples/mysql/minimal-safe/">MySQL example playbook</a>
-	<a href="/examples/sqlite/minimal-safe/">SQLite example playbook</a>
-	<a href="/examples/mssql/minimal-safe/">MSSQL example playbook</a>
-</div>
-
 Every migration starts with a TOML file. If you do not want to write that file by hand, use the wizard first and edit the generated config afterward.
+
+## The first-run flow
 
 ## MySQL to PostgreSQL
 
@@ -65,6 +56,12 @@ dsn = "sqlserver://sa:YourStrong!Pass@127.0.0.1:1433?database=source_db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
+If you want a fuller starting point instead of this minimal config, jump to:
+
+- [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
+- [SQLite minimal-safe example](/examples/sqlite/minimal-safe/)
+- [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
+
 ## Run the migration
 
 ```bash
@@ -80,27 +77,9 @@ The default pipeline is:
 4. Stream table data with `COPY`.
 5. Add indexes, foreign keys, sequences, and optional triggers afterward.
 
-## High-value defaults
-
-- `snake_case_identifiers = true`
-- `unlogged_tables = true`
-- `preserve_defaults = true`
-- `clean_orphans = true`
-- `validation = "none"`
-- `workers = min(runtime.NumCPU(), 8)`
-
-These defaults bias toward fast full-load migrations while keeping the resulting PostgreSQL schema usable without much extra tuning.
-
-## When to stop using the minimal config
-
-Add more configuration when you need:
-
-- `source_snapshot_mode = "single_tx"` for a consistent source snapshot on MySQL or MSSQL.
-- `resume = true` plus `unlogged_tables = false` for chunk checkpoint reuse.
-- `validation = "row_count"` for a post-load sanity check.
-- Hook files for views, routines, cleanup SQL, or foreign-key sequencing.
-- Source-specific type mapping, including PostGIS-backed MySQL spatial migration.
-
 ## Next step
 
-Run [Plan and Validate](/get-started/plan-and-validate/) before pointing the tool at a real production schema.
+After the first run, move to:
+
+- [Choose Your Path](/get-started/choose-your-path/) if you need more operational control
+- [Plan and Validate](/get-started/plan-and-validate/) before pointing the tool at a real production schema
