@@ -1,6 +1,8 @@
 ---
 title: Install
 description: Install pgferry from releases or build it from source.
+sidebar:
+  order: 1
 ---
 
 `pgferry` is a single Go binary. There are no sidecar services, no runtime agents, and no extra database middleware to deploy.

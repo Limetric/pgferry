@@ -1,9 +1,30 @@
 ---
 title: Quick Start
 description: Create a migration config and run your first pgferry migration.
+sidebar:
+  order: 2
 ---
 
-Every migration starts with a TOML file. The required shape is intentionally small: a PostgreSQL schema name, a source connection, and a target connection.
+The fastest correct first run is:
+
+```bash
+pgferry wizard
+```
+
+In an interactive terminal, plain `pgferry` also opens the wizard. It walks you through the source DSN, target DSN, target schema, migration mode, and the most important type-mapping options. At the end, you can save the generated `migration.toml`, run `plan`, start the migration immediately, or do both.
+
+## Pick your source path
+
+<div class="route-list">
+	<a href="#mysql-to-postgresql">MySQL minimal config</a>
+	<a href="#sqlite-to-postgresql">SQLite minimal config</a>
+	<a href="#mssql-to-postgresql">MSSQL minimal config</a>
+	<a href="/examples/mysql/minimal-safe/">MySQL example playbook</a>
+	<a href="/examples/sqlite/minimal-safe/">SQLite example playbook</a>
+	<a href="/examples/mssql/minimal-safe/">MSSQL example playbook</a>
+</div>
+
+Every migration starts with a TOML file. If you do not want to write that file by hand, use the wizard first and edit the generated config afterward.
 
 ## MySQL to PostgreSQL
 
@@ -47,10 +68,9 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ## Run the migration
 
 ```bash
+pgferry plan migration.toml
 pgferry migrate migration.toml
 ```
-
-In an interactive terminal, plain `pgferry` starts the config wizard. The shorthand `pgferry migration.toml` still works for direct execution.
 
 The default pipeline is:
 

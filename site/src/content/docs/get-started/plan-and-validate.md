@@ -1,6 +1,8 @@
 ---
 title: Plan and Validate
 description: Inspect the source first, then migrate with validation instead of guesswork.
+sidebar:
+  order: 3
 ---
 
 The safest pgferry workflow is not "point and pray." Run a plan first, fix what the report tells you, and only then move data.
