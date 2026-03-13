@@ -171,7 +171,11 @@ resume = true
 ### Checkpoint lifecycle
 
 1. **On start:** if a checkpoint file exists, load it and skip completed chunks.
-   If no checkpoint exists, create a fresh one.
+   Before any work is skipped, pgferry verifies that the checkpoint matches the
+   current migration shape (chunking, identifier rules, relevant type mapping,
+   hooks, and introspected table layout). If the checkpoint is incompatible,
+   pgferry aborts and tells you to delete the checkpoint or restore the original
+   config/schema. If no checkpoint exists, create a fresh one.
 2. **During migration:** checkpoint state is tracked in memory and flushed to
    disk after every 10 completed items, or within 5 seconds of the next
    completed item (there is no background timer — flushes are evaluated when
@@ -195,6 +199,9 @@ eliminating all checkpoint-related I/O from the data copy hot path.
 - `resume = true` is incompatible with `schema_only = true` (no data to resume).
 - If the source data changes between runs, the resumed migration may produce
   inconsistent results. Ensure source stability during resumed migrations.
+- Checkpoints from older pgferry versions are rejected for safe resume. Delete
+  the checkpoint and rerun the migration from scratch if compatibility cannot be
+  established.
 
 ## Post-load validation
 

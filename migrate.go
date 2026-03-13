@@ -15,30 +15,31 @@ import (
 
 // migrateDataConfig holds parameters for data migration.
 type migrateDataConfig struct {
-	Src                SourceDB
-	SrcDSN             string
-	Pool               *pgxpool.Pool
-	Schema             *Schema
-	PGSchema           string
-	Workers            int
-	TypeMap            TypeMappingConfig
-	SourceSnapshotMode string
-	ChunkSize          int64
-	Resume             bool
-	ConfigDir          string
+	Src                 SourceDB
+	SrcDSN              string
+	Pool                *pgxpool.Pool
+	Schema              *Schema
+	PGSchema            string
+	Workers             int
+	TypeMap             TypeMappingConfig
+	SourceSnapshotMode  string
+	ChunkSize           int64
+	Resume              bool
+	ConfigDir           string
+	ResumeCompatibility checkpointCompatibility
 }
 
 // migrateData streams data from the source to PostgreSQL for all tables using parallel workers.
 func migrateData(ctx context.Context, cfg migrateDataConfig) error {
 	switch cfg.SourceSnapshotMode {
 	case "single_tx":
-		return migrateDataSingleTx(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, cfg.Schema, cfg.PGSchema, cfg.TypeMap, cfg.ChunkSize, cfg.Resume, cfg.ConfigDir)
+		return migrateDataSingleTx(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, cfg.Schema, cfg.PGSchema, cfg.TypeMap, cfg.ChunkSize, cfg.Resume, cfg.ConfigDir, cfg.ResumeCompatibility)
 	default:
-		return migrateDataParallel(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, cfg.Schema, cfg.PGSchema, cfg.Workers, cfg.TypeMap, cfg.ChunkSize, cfg.Resume, cfg.ConfigDir)
+		return migrateDataParallel(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, cfg.Schema, cfg.PGSchema, cfg.Workers, cfg.TypeMap, cfg.ChunkSize, cfg.Resume, cfg.ConfigDir, cfg.ResumeCompatibility)
 	}
 }
 
-func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig, chunkSize int64, resume bool, configDir string) error {
+func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig, chunkSize int64, resume bool, configDir string, compat checkpointCompatibility) error {
 	// Plan chunks for each table
 	plans, err := buildChunkPlans(ctx, src, srcDSN, schema, chunkSize)
 	if err != nil {
@@ -50,7 +51,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	cpPath := checkpointPath(configDir)
 	var mgr checkpointManager
 	if resume {
-		pm, mgrErr := newPersistentCheckpointManager(cpPath)
+		pm, mgrErr := newPersistentCheckpointManager(cpPath, &compat)
 		if mgrErr != nil {
 			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
@@ -143,7 +144,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	return nil
 }
 
-func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig, chunkSize int64, resume bool, configDir string) error {
+func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig, chunkSize int64, resume bool, configDir string, compat checkpointCompatibility) error {
 	srcDB, err := src.OpenDB(srcDSN)
 	if err != nil {
 		return err
@@ -180,7 +181,7 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	cpPath := checkpointPath(configDir)
 	var mgr checkpointManager
 	if resume {
-		pm, mgrErr := newPersistentCheckpointManager(cpPath)
+		pm, mgrErr := newPersistentCheckpointManager(cpPath, &compat)
 		if mgrErr != nil {
 			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}

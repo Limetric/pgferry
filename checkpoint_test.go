@@ -9,11 +9,29 @@ import (
 	"time"
 )
 
+func testCheckpointCompatibility() checkpointCompatibility {
+	return checkpointCompatibility{
+		Fingerprint: "compat-fingerprint",
+		Summary: checkpointCompatibilitySummary{
+			SourceType:         "mysql",
+			SourceDBName:       "appdb",
+			TargetSchema:       "public",
+			SourceSnapshotMode: "none",
+			ChunkSize:          100000,
+			TypeMapping:        defaultTypeMappingConfig(),
+			Tables: []checkpointCompatibilityTable{
+				{SourceName: "users", PGName: "users", TableHash: "users-hash"},
+			},
+		},
+	}
+}
+
 func TestCheckpointRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	state := newCheckpointState()
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
 	state.recordFullTable("users", 1000)
 	state.recordChunk("orders", 0, 500, 3)
 	state.recordChunk("orders", 1, 300, 3)
@@ -29,8 +47,11 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("loaded state is nil")
 	}
-	if loaded.Version != 1 {
-		t.Errorf("Version = %d, want 1", loaded.Version)
+	if loaded.Version != checkpointVersion {
+		t.Errorf("Version = %d, want %d", loaded.Version, checkpointVersion)
+	}
+	if loaded.Compatibility.Fingerprint != compat.Fingerprint {
+		t.Errorf("Compatibility.Fingerprint = %q, want %q", loaded.Compatibility.Fingerprint, compat.Fingerprint)
 	}
 	if !loaded.isTableDone("users") {
 		t.Error("users should be done")
@@ -141,8 +162,8 @@ func TestCheckpointUnsupportedVersion(t *testing.T) {
 
 func TestNewCheckpointState(t *testing.T) {
 	state := newCheckpointState()
-	if state.Version != 1 {
-		t.Errorf("Version = %d, want 1", state.Version)
+	if state.Version != checkpointVersion {
+		t.Errorf("Version = %d, want %d", state.Version, checkpointVersion)
 	}
 	if state.Tables == nil {
 		t.Error("Tables should not be nil")
@@ -207,7 +228,8 @@ func TestPersistentCheckpointManager_FreshStart(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	compat := testCheckpointCompatibility()
+	mgr, err := newPersistentCheckpointManager(path, &compat)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -217,6 +239,9 @@ func TestPersistentCheckpointManager_FreshStart(t *testing.T) {
 	}
 	if mgr.IsChunkCompleted("t1", 0) {
 		t.Error("fresh manager should not report chunk completed")
+	}
+	if mgr.state.Compatibility.Fingerprint != compat.Fingerprint {
+		t.Errorf("Compatibility.Fingerprint = %q, want %q", mgr.state.Compatibility.Fingerprint, compat.Fingerprint)
 	}
 }
 
@@ -233,7 +258,7 @@ func TestPersistentCheckpointManager_SkipSets(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -262,7 +287,7 @@ func TestPersistentCheckpointManager_BatchedFlush(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -299,7 +324,7 @@ func TestPersistentCheckpointManager_ExplicitFlush(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -334,7 +359,7 @@ func TestPersistentCheckpointManager_Cleanup(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -357,7 +382,7 @@ func TestPersistentCheckpointManager_ConcurrentRecords(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -401,7 +426,7 @@ func TestPersistentCheckpointManager_TimeBasedFlush(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -423,7 +448,7 @@ func TestPersistentCheckpointManager_FlushPreservesProgressOnError(t *testing.T)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -457,7 +482,7 @@ func TestPersistentCheckpointManager_FlushPreservesProgressOnError(t *testing.T)
 	}
 
 	// A new manager loading this checkpoint should skip the completed work
-	mgr2, err := newPersistentCheckpointManager(path)
+	mgr2, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager 2: %v", err)
 	}
@@ -479,7 +504,7 @@ func TestPersistentCheckpointManager_DirtyRetainedOnWriteFailure(t *testing.T) {
 	// Use a path where the directory does not exist so writeCheckpointFile fails.
 	path := filepath.Join(t.TempDir(), "nonexistent_subdir", "checkpoint.json")
 
-	mgr, err := newPersistentCheckpointManager(path)
+	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -497,6 +522,93 @@ func TestPersistentCheckpointManager_DirtyRetainedOnWriteFailure(t *testing.T) {
 	mgr.mu.Unlock()
 	if !stillDirty {
 		t.Error("dirty flag should remain true after failed write")
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsIncompatibleChunkSize(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
+	state.recordChunk("users", 0, 100, 2)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	incompatible := compat
+	incompatible.Summary.ChunkSize = 50000
+	incompatible.Fingerprint = "new-fingerprint"
+
+	_, err := newPersistentCheckpointManager(path, &incompatible)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "chunk_size changed") {
+		t.Fatalf("expected chunk_size mismatch, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsChangedHookContent(t *testing.T) {
+	dir := t.TempDir()
+	hookPath := filepath.Join(dir, "before_data.sql")
+	if err := os.WriteFile(hookPath, []byte("SELECT 1;"), 0644); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
+
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "app"
+	cfg.Source = SourceConfig{Type: "mysql"}
+	cfg.Hooks.BeforeData = []string{"before_data.sql"}
+	cfg.configDir = dir
+
+	schema := &Schema{Tables: []Table{{SourceName: "users", PGName: "users"}}}
+	src := &mysqlSourceDB{}
+
+	compat, err := buildCheckpointCompatibility(&cfg, schema, src, "appdb")
+	if err != nil {
+		t.Fatalf("build compatibility: %v", err)
+	}
+
+	path := filepath.Join(dir, "checkpoint.json")
+	state := newCheckpointStateWithCompatibility(&compat)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	if err := os.WriteFile(hookPath, []byte("SELECT 2;"), 0644); err != nil {
+		t.Fatalf("rewrite hook: %v", err)
+	}
+
+	changedCompat, err := buildCheckpointCompatibility(&cfg, schema, src, "appdb")
+	if err != nil {
+		t.Fatalf("build changed compatibility: %v", err)
+	}
+
+	_, err = newPersistentCheckpointManager(path, &changedCompat)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "before_data hook changed") {
+		t.Fatalf("expected hook mismatch, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsLegacyCheckpointForSafeResume(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	if err := os.WriteFile(path, []byte(`{"version":1,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	compat := testCheckpointCompatibility()
+	_, err := newPersistentCheckpointManager(path, &compat)
+	if err == nil {
+		t.Fatal("expected legacy checkpoint rejection")
+	}
+	if !strings.Contains(err.Error(), "older pgferry version") {
+		t.Fatalf("expected legacy version message, got: %v", err)
 	}
 }
 

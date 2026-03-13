@@ -136,6 +136,11 @@ The checkpoint records which chunks and tables have been completed.
 - **Stale checkpoints:** If the source data changes between runs, resuming from
   a stale checkpoint may produce inconsistent results. pgferry logs the
   checkpoint's `started_at` timestamp when resuming.
+- **Compatibility checks:** `resume = true` only reuses a checkpoint when the
+  current migration still matches the saved checkpoint shape (chunking,
+  identifier normalization, relevant type mapping, hooks, and introspected
+  table layout). Incompatible or legacy checkpoints are rejected with a clear
+  error so pgferry does not skip work under stale assumptions.
 
 ## Source-specific notes
 

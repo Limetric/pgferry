@@ -153,6 +153,13 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		}
 	}
 	typeMap := effectiveTypeMapping(cfg)
+	var resumeCompatibility checkpointCompatibility
+	if cfg.Resume {
+		resumeCompatibility, err = buildCheckpointCompatibility(cfg, schema, src, dbName)
+		if err != nil {
+			return fmt.Errorf("build resume compatibility: %w", err)
+		}
+	}
 	if warnings := collectIndexCompatibilityWarnings(schema, typeMap); len(warnings) > 0 {
 		log.Printf("index compatibility report: %d index(es) may require manual handling", len(warnings))
 		for _, w := range warnings {
@@ -248,17 +255,18 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 					log.Printf("migrating data with %d workers...", cfg.Workers)
 				}
 				return migrateData(ctx, migrateDataConfig{
-					Src:                src,
-					SrcDSN:             cfg.Source.DSN,
-					Pool:               pgPool,
-					Schema:             schema,
-					PGSchema:           cfg.Schema,
-					Workers:            cfg.Workers,
-					TypeMap:            typeMap,
-					SourceSnapshotMode: cfg.SourceSnapshotMode,
-					ChunkSize:          cfg.ChunkSize,
-					Resume:             cfg.Resume,
-					ConfigDir:          cfg.configDir,
+					Src:                 src,
+					SrcDSN:              cfg.Source.DSN,
+					Pool:                pgPool,
+					Schema:              schema,
+					PGSchema:            cfg.Schema,
+					Workers:             cfg.Workers,
+					TypeMap:             typeMap,
+					SourceSnapshotMode:  cfg.SourceSnapshotMode,
+					ChunkSize:           cfg.ChunkSize,
+					Resume:              cfg.Resume,
+					ConfigDir:           cfg.configDir,
+					ResumeCompatibility: resumeCompatibility,
 				})
 			},
 			func() error {
