@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 const distDir = path.resolve(process.cwd(), 'dist');
+const siteURL = 'https://pgferry.com';
 
 const expectedRoutes = [
 	'/',
@@ -35,8 +36,29 @@ for (const route of expectedRoutes) {
 	}
 }
 
+const sitemapIndex = await readText('/sitemap-index.xml');
+if (!sitemapIndex.includes(`${siteURL}/sitemap-0.xml`)) {
+	throw new Error('sitemap-index.xml does not reference the expected sitemap shard');
+}
+
+const sitemap = await readText('/sitemap-0.xml');
+for (const route of expectedRoutes) {
+	if (!sitemap.includes(`<loc>${siteURL}${route}</loc>`)) {
+		throw new Error(`sitemap-0.xml is missing expected route ${route}`);
+	}
+}
+
+const robots = await readText('/robots.txt');
+if (!robots.includes(`Sitemap: ${siteURL}/sitemap-index.xml`)) {
+	throw new Error('robots.txt is missing the expected sitemap declaration');
+}
+
 for (const [route, htmlPath] of routeMap) {
 	const html = await readFile(htmlPath, 'utf8');
+	if (route !== '/404.html') {
+		assertIncludes(html, `<link rel="canonical" href="${siteURL}${route}"/>`, `${route} canonical`);
+		assertIncludes(html, '<link rel="sitemap" href="/sitemap-index.xml"/>', `${route} sitemap link`);
+	}
 	for (const href of extractInternalHrefs(html)) {
 		const resolved = resolveHref(route, href);
 		if (resolved.kind === 'route') {
@@ -52,6 +74,11 @@ for (const [route, htmlPath] of routeMap) {
 }
 
 console.log(`verified ${routeMap.size} routes and ${assetSet.size} assets in ${distDir}`);
+
+async function readText(assetPath) {
+	const asset = path.join(distDir, assetPath.replace(/^\//, ''));
+	return readFile(asset, 'utf8');
+}
 
 async function crawl(dir) {
 	for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -119,6 +146,12 @@ function classifyPath(pathname) {
 		return { kind: 'asset', value: pathname };
 	}
 	return { kind: 'route', value: `${pathname}/` };
+}
+
+function assertIncludes(haystack, needle, label) {
+	if (!haystack.includes(needle)) {
+		throw new Error(`missing ${label}: ${needle}`);
+	}
 }
 
 await assertDistExists();
