@@ -25,6 +25,7 @@ type checkpointCompatibilitySummary struct {
 	SnakeCaseIdentifiers bool                           `json:"snake_case_identifiers"`
 	SchemaOnly           bool                           `json:"schema_only"`
 	DataOnly             bool                           `json:"data_only"`
+	UnloggedTables       bool                           `json:"unlogged_tables"`
 	ChunkSize            int64                          `json:"chunk_size"`
 	TypeMapping          TypeMappingConfig              `json:"type_mapping"`
 	Hooks                []checkpointCompatibilityHook  `json:"hooks,omitempty"`
@@ -54,8 +55,13 @@ func buildCheckpointCompatibility(cfg *MigrationConfig, schema *Schema, src Sour
 		SnakeCaseIdentifiers: cfg.SnakeCaseIdentifiers,
 		SchemaOnly:           cfg.SchemaOnly,
 		DataOnly:             cfg.DataOnly,
-		ChunkSize:            cfg.ChunkSize,
-		TypeMapping:          typeMap,
+		// Track settings that affect the data-copy stage or target table state
+		// around resume. Pure schema-creation-only flags such as
+		// preserve_defaults are intentionally excluded because resume starts
+		// after that DDL work.
+		UnloggedTables: cfg.UnloggedTables,
+		ChunkSize:      cfg.ChunkSize,
+		TypeMapping:    typeMap,
 	}
 
 	hooks, err := checkpointCompatibilityHooks(cfg)
@@ -267,6 +273,9 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 	if saved.DataOnly != current.DataOnly {
 		reasons = append(reasons, fmt.Sprintf("data_only changed: was %t, now %t", saved.DataOnly, current.DataOnly))
 	}
+	if saved.UnloggedTables != current.UnloggedTables {
+		reasons = append(reasons, fmt.Sprintf("unlogged_tables changed: was %t, now %t", saved.UnloggedTables, current.UnloggedTables))
+	}
 	reasons = append(reasons, checkpointTypeMappingDiff(saved.TypeMapping, current.TypeMapping)...)
 
 	reasons = append(reasons, checkpointHookCompatibilityDiff(saved.Hooks, current.Hooks)...)
@@ -291,8 +300,8 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 }
 
 func checkpointHookCompatibilityDiff(saved, current []checkpointCompatibilityHook) []string {
-	savedByID := make(map[string]checkpointCompatibilityHook, len(saved))
-	currentByID := make(map[string]checkpointCompatibilityHook, len(current))
+	savedByID := make(map[checkpointHookKey]checkpointCompatibilityHook, len(saved))
+	currentByID := make(map[checkpointHookKey]checkpointCompatibilityHook, len(current))
 
 	for _, hook := range saved {
 		savedByID[checkpointHookID(hook)] = hook
@@ -322,8 +331,44 @@ func checkpointHookCompatibilityDiff(saved, current []checkpointCompatibilityHoo
 	return reasons
 }
 
-func checkpointHookID(hook checkpointCompatibilityHook) string {
-	return hook.Phase + ":" + hook.Path
+type checkpointHookKey struct {
+	Phase string
+	Path  string
+}
+
+func checkpointHookID(hook checkpointCompatibilityHook) checkpointHookKey {
+	return checkpointHookKey{Phase: hook.Phase, Path: hook.Path}
+}
+
+func cloneCheckpointCompatibility(compat *checkpointCompatibility) *checkpointCompatibility {
+	if compat == nil {
+		return nil
+	}
+
+	cloned := &checkpointCompatibility{
+		Fingerprint: compat.Fingerprint,
+	}
+	if compat.Summary == nil {
+		return cloned
+	}
+
+	summaryCopy := *compat.Summary
+	if compat.Summary.Hooks != nil {
+		summaryCopy.Hooks = append([]checkpointCompatibilityHook(nil), compat.Summary.Hooks...)
+	}
+	if compat.Summary.Tables != nil {
+		summaryCopy.Tables = append([]checkpointCompatibilityTable(nil), compat.Summary.Tables...)
+	}
+	if compat.Summary.TypeMapping.CollationMap != nil {
+		mapCopy := make(map[string]string, len(compat.Summary.TypeMapping.CollationMap))
+		for k, v := range compat.Summary.TypeMapping.CollationMap {
+			mapCopy[k] = v
+		}
+		summaryCopy.TypeMapping.CollationMap = mapCopy
+	}
+
+	cloned.Summary = &summaryCopy
+	return cloned
 }
 
 func checkpointTypeMappingDiff(saved, current TypeMappingConfig) []string {

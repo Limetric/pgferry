@@ -46,12 +46,7 @@ func newCheckpointState() *CheckpointState {
 func newCheckpointStateWithCompatibility(compat *checkpointCompatibility) *CheckpointState {
 	state := newCheckpointState()
 	if compat != nil {
-		copied := checkpointCompatibility{Fingerprint: compat.Fingerprint}
-		if compat.Summary != nil {
-			summaryCopy := *compat.Summary
-			copied.Summary = &summaryCopy
-		}
-		state.Compatibility = &copied
+		state.Compatibility = cloneCheckpointCompatibility(compat)
 	}
 	return state
 }

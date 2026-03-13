@@ -21,10 +21,7 @@ func testCheckpointCompatibility() checkpointCompatibility {
 			{SourceName: "users", PGName: "users", TableHash: "users-hash"},
 		},
 	}
-	return checkpointCompatibility{
-		Fingerprint: "compat-fingerprint",
-		Summary:     &summary,
-	}
+	return testCheckpointCompatibilityWithSummary(summary)
 }
 
 func testCheckpointCompatibilityWithSummary(summary checkpointCompatibilitySummary) checkpointCompatibility {
@@ -559,8 +556,7 @@ func TestPersistentCheckpointManager_RejectsIncompatibleChunkSize(t *testing.T) 
 	incompatible := compat
 	incompatibleSummary := *compat.Summary
 	incompatibleSummary.ChunkSize = 50000
-	incompatible.Summary = &incompatibleSummary
-	incompatible.Fingerprint = "new-fingerprint"
+	incompatible = testCheckpointCompatibilityWithSummary(incompatibleSummary)
 
 	_, err := newPersistentCheckpointManager(path, &incompatible)
 	if err == nil {
@@ -584,8 +580,7 @@ func TestPersistentCheckpointManager_RejectsChangedMigrationMode(t *testing.T) {
 	incompatible := compat
 	incompatibleSummary := *compat.Summary
 	incompatibleSummary.SchemaOnly = true
-	incompatible.Summary = &incompatibleSummary
-	incompatible.Fingerprint = "schema-only-fingerprint"
+	incompatible = testCheckpointCompatibilityWithSummary(incompatibleSummary)
 
 	_, err := newPersistentCheckpointManager(path, &incompatible)
 	if err == nil {
@@ -699,6 +694,51 @@ func TestPersistentCheckpointManager_RejectsChangedSnapshotMode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "source snapshot mode changed") {
 		t.Fatalf("expected source snapshot mode mismatch, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsChangedUnloggedTables(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	incompatibleSummary := *compat.Summary
+	incompatibleSummary.UnloggedTables = true
+	incompatible := testCheckpointCompatibilityWithSummary(incompatibleSummary)
+
+	_, err := newPersistentCheckpointManager(path, &incompatible)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "unlogged_tables changed") {
+		t.Fatalf("expected unlogged_tables mismatch, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_FallsBackToGenericFingerprintReason(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	incompatible := compat
+	incompatible.Fingerprint = "manually-changed-fingerprint"
+
+	_, err := newPersistentCheckpointManager(path, &incompatible)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "migration compatibility fingerprint changed") {
+		t.Fatalf("expected fallback fingerprint message, got: %v", err)
 	}
 }
 
