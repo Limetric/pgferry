@@ -1,81 +1,48 @@
 ---
 title: Quick Start
-description: Create a migration config and run your first pgferry migration.
+description: Start with the wizard, then run plan and migrate.
 sidebar:
   order: 2
 ---
 
-The fastest correct first run is:
+Quick Start should feel easy, because it is:
 
 ```bash
 pgferry wizard
 ```
 
-In an interactive terminal, plain `pgferry` also opens the wizard. It walks you through the source DSN, target DSN, target schema, migration mode, and the most important type-mapping options. At the end, you can save the generated `migration.toml`, run `plan`, start the migration immediately, or do both.
+In an interactive terminal, plain `pgferry` also opens the wizard. It asks the useful questions, writes the config, and gets you out of the “blank TOML file staring contest” phase quickly.
 
-Every migration starts with a TOML file. If you do not want to write that file by hand, use the wizard first and edit the generated config afterward.
+## 1. Run the wizard
 
-## The first-run flow
+Use the wizard to generate `migration.toml`.
 
-## MySQL to PostgreSQL
-
-```toml
-schema = "app"
-
-[source]
-type = "mysql"
-dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
-
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
-```
-
-## SQLite to PostgreSQL
-
-```toml
-schema = "app"
-
-[source]
-type = "sqlite"
-dsn = "/path/to/database.db"
-
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
-```
-
-## MSSQL to PostgreSQL
-
-```toml
-schema = "app"
-
-[source]
-type = "mssql"
-dsn = "sqlserver://sa:YourStrong!Pass@127.0.0.1:1433?database=source_db"
-
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
-```
-
-If you want a fuller starting point instead of this minimal config, jump to:
+If you already know your source type and want a fuller starter instead, jump to:
 
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [SQLite minimal-safe example](/examples/sqlite/minimal-safe/)
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 
-## Run the migration
+## 2. Run plan
 
 ```bash
 pgferry plan migration.toml
+```
+
+`plan` is the part where pgferry tells you the truth before PostgreSQL gets involved. If there are views, routines, generated columns, skipped indexes, or required extensions, this is where you find out.
+
+## 3. Run migrate
+
+```bash
 pgferry migrate migration.toml
 ```
 
-The default pipeline is:
+That runs the actual migration:
 
-1. Load and validate config.
-2. Introspect the source schema.
-3. Create PostgreSQL tables.
-4. Stream table data with `COPY`.
-5. Add indexes, foreign keys, sequences, and optional triggers afterward.
+1. introspect the source
+2. create PostgreSQL tables
+3. stream data with `COPY`
+4. add keys, indexes, sequences, and other post-load objects
 
 ## Next step
 
