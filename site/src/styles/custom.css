@@ -95,19 +95,19 @@ body {
 	font-family: var(--sl-font);
 }
 
-:global(.site-title),
-:global(.hero h1) {
+.site-title,
+.hero h1 {
 	font-family: 'Fraunces', serif;
 	font-weight: 700;
 	letter-spacing: -0.04em;
 }
 
-:global(.hero) {
+.hero {
 	position: relative;
 	padding-block-end: 1.5rem;
 }
 
-:global(.hero)::after {
+.hero::after {
 	content: '';
 	position: absolute;
 	inset: auto 0 -0.4rem;
@@ -116,19 +116,19 @@ body {
 	border-radius: 999px;
 }
 
-:global(.hero .tagline) {
+.hero .tagline {
 	font-size: clamp(1.15rem, 1.8vw, 1.4rem);
 	max-width: 52rem;
 }
 
-:global(.hero-band) {
+.hero-band {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 	gap: 0.8rem;
 	margin: 2rem 0 3rem;
 }
 
-:global(.hero-band span) {
+.hero-band span {
 	border: 1px solid var(--sl-color-hairline);
 	background: linear-gradient(180deg, rgba(255, 250, 242, 0.72), rgba(232, 221, 200, 0.62));
 	border-radius: 999px;
@@ -141,18 +141,18 @@ body {
 	box-shadow: var(--sl-shadow-sm);
 }
 
-:root[data-theme='dark'] :global(.hero-band span) {
+:root[data-theme='dark'] .hero-band span {
 	background: linear-gradient(180deg, rgba(16, 37, 54, 0.92), rgba(8, 20, 31, 0.92));
 }
 
-:global(.signal-grid) {
+.signal-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
 	gap: 1rem;
 	margin: 1.75rem 0 2.5rem;
 }
 
-:global(.signal-grid article) {
+.signal-grid article {
 	padding: 1.2rem;
 	border: 1px solid var(--sl-color-hairline);
 	border-radius: 1.4rem;
@@ -161,39 +161,39 @@ body {
 	backdrop-filter: blur(12px);
 }
 
-:root[data-theme='dark'] :global(.signal-grid article) {
+:root[data-theme='dark'] .signal-grid article {
 	background: rgba(13, 28, 42, 0.88);
 }
 
-:global(.signal-grid h3) {
+.signal-grid h3 {
 	font-family: 'Fraunces', serif;
 	font-size: 1.1rem;
 	margin-bottom: 0.35rem;
 }
 
-:global(.card) {
+.card {
 	border-radius: 1.35rem;
 	border: 1px solid var(--sl-color-hairline);
 	box-shadow: var(--sl-shadow-sm);
 }
 
-:global(.sl-markdown-content a) {
+.sl-markdown-content a {
 	text-decoration-thickness: 0.08em;
 	text-underline-offset: 0.16em;
 }
 
-:global(.sl-markdown-content code:not(pre code)) {
+.sl-markdown-content code:not(pre code) {
 	border: 1px solid var(--sl-color-hairline);
 	border-radius: 0.45rem;
 	padding: 0.15rem 0.35rem;
 }
 
-:global(.pagination-links a) {
+.pagination-links a {
 	border-radius: 1rem;
 }
 
 @media (max-width: 50rem) {
-	:global(.hero)::after {
+	.hero::after {
 		inset-inline: 0.2rem;
 	}
 }
