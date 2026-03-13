@@ -15,17 +15,19 @@ import (
 
 // migrateDataConfig holds parameters for data migration.
 type migrateDataConfig struct {
-	Src                 SourceDB
-	SrcDSN              string
-	Pool                *pgxpool.Pool
-	Schema              *Schema
-	PGSchema            string
-	Workers             int
-	TypeMap             TypeMappingConfig
-	SourceSnapshotMode  string
-	ChunkSize           int64
-	Resume              bool
-	ConfigDir           string
+	Src                SourceDB
+	SrcDSN             string
+	Pool               *pgxpool.Pool
+	Schema             *Schema
+	PGSchema           string
+	Workers            int
+	TypeMap            TypeMappingConfig
+	SourceSnapshotMode string
+	ChunkSize          int64
+	Resume             bool
+	ConfigDir          string
+	// ResumeCompatibility is used only when Resume=true to validate that an
+	// existing checkpoint still matches the current migration shape.
 	ResumeCompatibility checkpointCompatibility
 }
 
@@ -33,25 +35,25 @@ type migrateDataConfig struct {
 func migrateData(ctx context.Context, cfg migrateDataConfig) error {
 	switch cfg.SourceSnapshotMode {
 	case "single_tx":
-		return migrateDataSingleTx(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, cfg.Schema, cfg.PGSchema, cfg.TypeMap, cfg.ChunkSize, cfg.Resume, cfg.ConfigDir, cfg.ResumeCompatibility)
+		return migrateDataSingleTx(ctx, cfg)
 	default:
-		return migrateDataParallel(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, cfg.Schema, cfg.PGSchema, cfg.Workers, cfg.TypeMap, cfg.ChunkSize, cfg.Resume, cfg.ConfigDir, cfg.ResumeCompatibility)
+		return migrateDataParallel(ctx, cfg)
 	}
 }
 
-func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, workers int, typeMap TypeMappingConfig, chunkSize int64, resume bool, configDir string, compat checkpointCompatibility) error {
+func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 	// Plan chunks for each table
-	plans, err := buildChunkPlans(ctx, src, srcDSN, schema, chunkSize)
+	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize)
 	if err != nil {
 		return err
 	}
 
 	// Create checkpoint manager: noop when resume is disabled to avoid
 	// all checkpoint file I/O in the hot path.
-	cpPath := checkpointPath(configDir)
+	cpPath := checkpointPath(cfg.ConfigDir)
 	var mgr checkpointManager
-	if resume {
-		pm, mgrErr := newPersistentCheckpointManager(cpPath, &compat)
+	if cfg.Resume {
+		pm, mgrErr := newPersistentCheckpointManager(cpPath, &cfg.ResumeCompatibility)
 		if mgrErr != nil {
 			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
@@ -60,7 +62,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 		mgr = &noopCheckpointManager{path: cpPath}
 	}
 
-	sem := make(chan struct{}, workers)
+	sem := make(chan struct{}, cfg.Workers)
 	var wg sync.WaitGroup
 
 	// Count total work items for error channel sizing
@@ -87,7 +89,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				count, copyErr := migrateTableFull(ctx, src, srcDSN, pool, t, pgSchema, typeMap)
+				count, copyErr := migrateTableFull(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap)
 				if copyErr != nil {
 					errCh <- fmt.Errorf("table %s: %w", t.SourceName, copyErr)
 					return
@@ -106,7 +108,7 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 					sem <- struct{}{}
 					defer func() { <-sem }()
 
-					count, copyErr := migrateChunk(ctx, src, srcDSN, pool, t, pgSchema, typeMap, key, c)
+					count, copyErr := migrateChunk(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, key, c)
 					if copyErr != nil {
 						errCh <- fmt.Errorf("table %s chunk %d: %w", t.SourceName, c.Index, copyErr)
 						return
@@ -144,8 +146,8 @@ func migrateDataParallel(ctx context.Context, src SourceDB, srcDSN string, pool 
 	return nil
 }
 
-func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig, chunkSize int64, resume bool, configDir string, compat checkpointCompatibility) error {
-	srcDB, err := src.OpenDB(srcDSN)
+func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
+	srcDB, err := cfg.Src.OpenDB(cfg.SrcDSN)
 	if err != nil {
 		return err
 	}
@@ -154,7 +156,7 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	srcDB.SetMaxIdleConns(1)
 
 	var tx *sql.Tx
-	switch src.Name() {
+	switch cfg.Src.Name() {
 	case "MSSQL":
 		if _, err := srcDB.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"); err != nil {
 			return fmt.Errorf("set source transaction isolation (hint: ensure ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON): %w", err)
@@ -178,10 +180,10 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	defer tx.Rollback()
 
 	// Create checkpoint manager: noop when resume is disabled.
-	cpPath := checkpointPath(configDir)
+	cpPath := checkpointPath(cfg.ConfigDir)
 	var mgr checkpointManager
-	if resume {
-		pm, mgrErr := newPersistentCheckpointManager(cpPath, &compat)
+	if cfg.Resume {
+		pm, mgrErr := newPersistentCheckpointManager(cpPath, &cfg.ResumeCompatibility)
 		if mgrErr != nil {
 			return fmt.Errorf("load checkpoint: %w", mgrErr)
 		}
@@ -202,15 +204,15 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 	}()
 
 	log.Printf("source snapshot enabled: single_tx (sequential table copy)")
-	for _, t := range schema.Tables {
-		key := chunkKeyForTable(t, src)
+	for _, t := range cfg.Schema.Tables {
+		key := chunkKeyForTable(t, cfg.Src)
 		if key == nil {
 			// Not chunkable — full-table copy
 			if mgr.IsTableDone(t.SourceName) {
 				log.Printf("  [%s] skipping (completed in previous run)", t.SourceName)
 				continue
 			}
-			count, copyErr := migrateTableFromSourceFull(ctx, src, tx, pool, t, pgSchema, typeMap)
+			count, copyErr := migrateTableFromSourceFull(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap)
 			if copyErr != nil {
 				return fmt.Errorf("table %s: %w", t.SourceName, copyErr)
 			}
@@ -219,7 +221,7 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 		}
 
 		// Chunkable — run chunks sequentially within the transaction
-		min, max, hasRows, mmErr := queryMinMax(ctx, tx, src, t, *key)
+		min, max, hasRows, mmErr := queryMinMax(ctx, tx, cfg.Src, t, *key)
 		if mmErr != nil {
 			return mmErr
 		}
@@ -229,13 +231,13 @@ func migrateDataSingleTx(ctx context.Context, src SourceDB, srcDSN string, pool 
 			continue
 		}
 
-		chunks := planChunks(min, max, chunkSize)
+		chunks := planChunks(min, max, cfg.ChunkSize)
 		log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
 		for _, chunk := range chunks {
 			if mgr.IsChunkCompleted(t.SourceName, chunk.Index) {
 				continue
 			}
-			count, copyErr := migrateChunkFromSource(ctx, src, tx, pool, t, pgSchema, typeMap, *key, chunk)
+			count, copyErr := migrateChunkFromSource(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, *key, chunk)
 			if copyErr != nil {
 				return fmt.Errorf("table %s chunk %d: %w", t.SourceName, chunk.Index, copyErr)
 			}

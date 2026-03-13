@@ -44,7 +44,7 @@ type checkpointCompatibilityTable struct {
 	TableHash  string `json:"table_hash"`
 }
 
-func buildCheckpointCompatibility(cfg *MigrationConfig, schema *Schema, src SourceDB, sourceDBName string) (checkpointCompatibility, error) {
+func buildCheckpointCompatibility(cfg *MigrationConfig, schema *Schema, src SourceDB, sourceDBName string, typeMap TypeMappingConfig) (checkpointCompatibility, error) {
 	summary := checkpointCompatibilitySummary{
 		SourceType:           cfg.Source.Type,
 		SourceDBName:         sourceDBName,
@@ -55,7 +55,7 @@ func buildCheckpointCompatibility(cfg *MigrationConfig, schema *Schema, src Sour
 		SchemaOnly:           cfg.SchemaOnly,
 		DataOnly:             cfg.DataOnly,
 		ChunkSize:            cfg.ChunkSize,
-		TypeMapping:          effectiveTypeMapping(cfg),
+		TypeMapping:          typeMap,
 	}
 
 	hooks, err := checkpointCompatibilityHooks(cfg)
@@ -230,7 +230,7 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 		return fmt.Errorf("checkpoint %s is missing resume compatibility metadata and cannot be resumed safely; delete %s and rerun the migration", path, path)
 	}
 	if expected.Summary == nil {
-		return nil
+		return fmt.Errorf("current migration is missing resume compatibility metadata; refusing to compare against checkpoint %s", path)
 	}
 	if state.Compatibility.Fingerprint == expected.Fingerprint {
 		return nil
@@ -261,8 +261,11 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 	if saved.SnakeCaseIdentifiers != current.SnakeCaseIdentifiers {
 		reasons = append(reasons, fmt.Sprintf("snake_case_identifiers changed: was %t, now %t", saved.SnakeCaseIdentifiers, current.SnakeCaseIdentifiers))
 	}
-	if saved.SchemaOnly != current.SchemaOnly || saved.DataOnly != current.DataOnly {
-		reasons = append(reasons, fmt.Sprintf("migration mode changed: was schema_only=%t data_only=%t, now schema_only=%t data_only=%t", saved.SchemaOnly, saved.DataOnly, current.SchemaOnly, current.DataOnly))
+	if saved.SchemaOnly != current.SchemaOnly {
+		reasons = append(reasons, fmt.Sprintf("schema_only changed: was %t, now %t", saved.SchemaOnly, current.SchemaOnly))
+	}
+	if saved.DataOnly != current.DataOnly {
+		reasons = append(reasons, fmt.Sprintf("data_only changed: was %t, now %t", saved.DataOnly, current.DataOnly))
 	}
 	reasons = append(reasons, checkpointTypeMappingDiff(saved.TypeMapping, current.TypeMapping)...)
 

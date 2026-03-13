@@ -155,7 +155,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	typeMap := effectiveTypeMapping(cfg)
 	var resumeCompatibility checkpointCompatibility
 	if cfg.Resume {
-		resumeCompatibility, err = buildCheckpointCompatibility(cfg, schema, src, dbName)
+		resumeCompatibility, err = buildCheckpointCompatibility(cfg, schema, src, dbName, typeMap)
 		if err != nil {
 			return fmt.Errorf("build resume compatibility: %w", err)
 		}

@@ -27,6 +27,17 @@ func testCheckpointCompatibility() checkpointCompatibility {
 	}
 }
 
+func testCheckpointCompatibilityWithSummary(summary checkpointCompatibilitySummary) checkpointCompatibility {
+	fingerprint, err := checkpointCompatibilityFingerprint(summary)
+	if err != nil {
+		panic(err)
+	}
+	return checkpointCompatibility{
+		Fingerprint: fingerprint,
+		Summary:     &summary,
+	}
+}
+
 func TestCheckpointRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
@@ -265,6 +276,8 @@ func TestPersistentCheckpointManager_SkipSets(t *testing.T) {
 		t.Fatalf("save: %v", err)
 	}
 
+	// nil compatibility disables resume-shape validation; this test exercises
+	// persisted skip-set loading only.
 	mgr, err := newPersistentCheckpointManager(path, nil)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -578,7 +591,7 @@ func TestPersistentCheckpointManager_RejectsChangedMigrationMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected incompatibility error")
 	}
-	if !strings.Contains(err.Error(), "migration mode changed") {
+	if !strings.Contains(err.Error(), "schema_only changed") {
 		t.Fatalf("expected migration mode mismatch, got: %v", err)
 	}
 }
@@ -598,8 +611,9 @@ func TestPersistentCheckpointManager_RejectsChangedHookContent(t *testing.T) {
 
 	schema := &Schema{Tables: []Table{{SourceName: "users", PGName: "users"}}}
 	src := &mysqlSourceDB{}
+	typeMap := effectiveTypeMapping(&cfg)
 
-	compat, err := buildCheckpointCompatibility(&cfg, schema, src, "appdb")
+	compat, err := buildCheckpointCompatibility(&cfg, schema, src, "appdb", typeMap)
 	if err != nil {
 		t.Fatalf("build compatibility: %v", err)
 	}
@@ -614,7 +628,7 @@ func TestPersistentCheckpointManager_RejectsChangedHookContent(t *testing.T) {
 		t.Fatalf("rewrite hook: %v", err)
 	}
 
-	changedCompat, err := buildCheckpointCompatibility(&cfg, schema, src, "appdb")
+	changedCompat, err := buildCheckpointCompatibility(&cfg, schema, src, "appdb", typeMap)
 	if err != nil {
 		t.Fatalf("build changed compatibility: %v", err)
 	}
@@ -643,6 +657,48 @@ func TestPersistentCheckpointManager_RejectsLegacyCheckpointForSafeResume(t *tes
 	}
 	if !strings.Contains(err.Error(), "older pgferry version") {
 		t.Fatalf("expected legacy version message, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsMissingCompatibilityMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	if err := os.WriteFile(path, []byte(`{"version":2,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	compat := testCheckpointCompatibility()
+	_, err := newPersistentCheckpointManager(path, &compat)
+	if err == nil {
+		t.Fatal("expected missing compatibility metadata rejection")
+	}
+	if !strings.Contains(err.Error(), "missing resume compatibility metadata") {
+		t.Fatalf("expected missing metadata message, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsChangedSnapshotMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	incompatible := compat
+	incompatibleSummary := *compat.Summary
+	incompatibleSummary.SourceSnapshotMode = "single_tx"
+	incompatible = testCheckpointCompatibilityWithSummary(incompatibleSummary)
+
+	_, err := newPersistentCheckpointManager(path, &incompatible)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "source snapshot mode changed") {
+		t.Fatalf("expected source snapshot mode mismatch, got: %v", err)
 	}
 }
 
