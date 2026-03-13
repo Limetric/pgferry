@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -284,12 +283,8 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 	prevPlanner := generatedConfigPlanner
 	generatedConfigPlanner = func(cfg *MigrationConfig, out io.Writer) error {
 		gotCfg = cfg
-		buf := new(bytes.Buffer)
-		if _, err := io.Copy(buf, strings.NewReader("plan ok\n")); err != nil {
-			return err
-		}
-		gotOut = buf.String()
-		_, err := fmt.Fprint(out, gotOut)
+		gotOut = "plan ok\n"
+		_, err := out.Write([]byte(gotOut))
 		return err
 	}
 	t.Cleanup(func() {

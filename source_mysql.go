@@ -37,28 +37,36 @@ func (m *mysqlSourceDB) identName(s string) string {
 func (m *mysqlSourceDB) Name() string { return "MySQL" }
 
 func (m *mysqlSourceDB) OpenDB(dsn string) (*sql.DB, error) {
-	// Inject charset into DSN if not already present.
-	// The go-sql-driver/mysql driver natively parses charset= and sends SET NAMES on connect.
-	if m.charset != "" && !strings.Contains(dsn, "charset=") {
-		sep := "?"
-		if strings.Contains(dsn, "?") {
-			sep = "&"
-		}
-		dsn = dsn + sep + "charset=" + m.charset
-	}
-	cfg, err := mysql.ParseDSN(dsn)
+	normalizedDSN, err := normalizedMySQLDSN(dsn, m.charset)
 	if err != nil {
-		return nil, fmt.Errorf("parse mysql dsn: %w", err)
+		return nil, err
 	}
-	cfg.ParseTime = true
-	cfg.InterpolateParams = true
-	cfg.Loc = time.UTC
-	db, err := sql.Open("mysql", cfg.FormatDSN())
+	db, err := sql.Open("mysql", normalizedDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open mysql: %w", err)
 	}
 	m.detectServerCapabilities(db)
 	return db, nil
+}
+
+func normalizedMySQLDSN(dsn, charset string) (string, error) {
+	// Inject charset into DSN if not already present.
+	// The go-sql-driver/mysql driver natively parses charset= and sends SET NAMES on connect.
+	if charset != "" && !strings.Contains(dsn, "charset=") {
+		sep := "?"
+		if strings.Contains(dsn, "?") {
+			sep = "&"
+		}
+		dsn = dsn + sep + "charset=" + charset
+	}
+	cfg, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		return "", fmt.Errorf("parse mysql dsn: %w", err)
+	}
+	cfg.ParseTime = true
+	cfg.InterpolateParams = true
+	cfg.Loc = time.UTC
+	return cfg.FormatDSN(), nil
 }
 
 func (m *mysqlSourceDB) detectServerCapabilities(db *sql.DB) {

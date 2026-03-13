@@ -105,8 +105,9 @@ func runPlan(cmd *cobra.Command, args []string) error {
 }
 
 func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
-	if planFormat == "" {
-		planFormat = "text"
+	format := planFormat
+	if format == "" {
+		format = "text"
 	}
 
 	ctx := context.Background()
@@ -148,7 +149,7 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	typeMap := effectiveTypeMapping(cfg)
 	report := buildPlanReport(schema, sourceObjects, src, cfg, typeMap)
 
-	if planFormat == "json" {
+	if format == "json" {
 		if err := writePlanJSON(out, report); err != nil {
 			return err
 		}

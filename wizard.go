@@ -126,7 +126,7 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 	if nextStep == "plan" {
 		fmt.Fprintln(w.out, w.styles.accent("Generating migration plan..."))
 		if err := generatedConfigPlanner(cfg, w.out); err != nil {
-			return err
+			return fmt.Errorf("run plan: %w", err)
 		}
 	}
 
@@ -839,20 +839,11 @@ func testWizardSourceConnection(sourceType, dsn string) error {
 
 	switch sourceType {
 	case "mysql":
-		cfg, err := mysql.ParseDSN(dsn)
+		normalizedDSN, err := normalizedMySQLDSN(dsn, "utf8mb4")
 		if err != nil {
-			return fmt.Errorf("parse mysql dsn: %w", err)
+			return err
 		}
-		if !strings.Contains(dsn, "charset=") {
-			if cfg.Params == nil {
-				cfg.Params = map[string]string{}
-			}
-			cfg.Params["charset"] = "utf8mb4"
-		}
-		cfg.ParseTime = true
-		cfg.InterpolateParams = true
-		cfg.Loc = time.UTC
-		db, err = sql.Open("mysql", cfg.FormatDSN())
+		db, err = sql.Open("mysql", normalizedDSN)
 		if err != nil {
 			return fmt.Errorf("open mysql: %w", err)
 		}
@@ -988,7 +979,7 @@ func (w *wizardPrompter) promptSourceDSN(sourceType string) (string, error) {
 
 		if err := wizardSourceConnectionTester(sourceType, dsn); err != nil {
 			fmt.Fprintf(w.out, "%s\n", w.styles.error("Source connection test failed: "+err.Error()))
-			fmt.Fprintln(w.out, w.styles.muted("Re-enter the DSN or press Enter to try the same value again."))
+			fmt.Fprintln(w.out, w.styles.muted("Press Enter at the DSN prompt to keep the same value, then choose whether to test again."))
 			continue
 		}
 
@@ -1017,7 +1008,7 @@ func (w *wizardPrompter) promptTargetDSN() (string, error) {
 
 		if err := wizardTargetConnectionTester(dsn); err != nil {
 			fmt.Fprintf(w.out, "%s\n", w.styles.error("PostgreSQL connection test failed: "+err.Error()))
-			fmt.Fprintln(w.out, w.styles.muted("Re-enter the DSN or press Enter to try the same value again."))
+			fmt.Fprintln(w.out, w.styles.muted("Press Enter at the DSN prompt to keep the same value, then choose whether to test again."))
 			continue
 		}
 
