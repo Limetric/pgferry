@@ -69,16 +69,28 @@ export default defineConfig({
 					link: '/',
 				},
 				{
-					label: 'Get Started',
+					label: 'Start Here',
 					autogenerate: { directory: 'get-started' },
 				},
 				{
-					label: 'Reference',
-					autogenerate: { directory: 'reference' },
+					label: 'Migration Patterns',
+					autogenerate: { directory: 'migration-patterns' },
+				},
+				{
+					label: 'Source Guides',
+					autogenerate: { directory: 'source-guides' },
 				},
 				{
 					label: 'Examples',
 					autogenerate: { directory: 'examples' },
+				},
+				{
+					label: 'Operations',
+					autogenerate: { directory: 'operations' },
+				},
+				{
+					label: 'Reference',
+					autogenerate: { directory: 'reference' },
 				},
 				{
 					label: 'Project',

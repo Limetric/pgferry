@@ -9,6 +9,9 @@ const expectedRoutes = [
 	'/get-started/install/',
 	'/get-started/quick-start/',
 	'/get-started/plan-and-validate/',
+	'/migration-patterns/',
+	'/source-guides/',
+	'/operations/',
 	'/reference/',
 	'/reference/configuration/',
 	'/reference/type-mapping/',
@@ -16,6 +19,9 @@ const expectedRoutes = [
 	'/reference/hooks/',
 	'/reference/conventions-and-limitations/',
 	'/examples/',
+	'/examples/mysql/minimal-safe/',
+	'/examples/sqlite/minimal-safe/',
+	'/examples/mssql/minimal-safe/',
 ];
 
 const routeMap = new Map();
