@@ -277,7 +277,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	cfg.TypeMapping.JSONAsJSONB, err = w.promptBoolGuided(
 		"Map JSON columns to jsonb",
 		cfg.TypeMapping.JSONAsJSONB,
-		"jsonb is usually the better PostgreSQL type for indexing and querying. If turned off, JSON columns map to json instead.",
+		"jsonb is the default and usually the better PostgreSQL type for indexing and operators. Turn it off only if you need plain json semantics that preserve details like key order, duplicate keys, or insignificant whitespace more closely.",
 	)
 	if err != nil {
 		return nil, err

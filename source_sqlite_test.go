@@ -30,8 +30,8 @@ func TestSQLiteMapType(t *testing.T) {
 		{"BOOLEAN→boolean", Column{DataType: "boolean", ColumnType: "BOOLEAN"}, "boolean", false},
 		{"DATETIME→timestamp", Column{DataType: "datetime", ColumnType: "DATETIME"}, "timestamp", false},
 		{"DATE→date", Column{DataType: "date", ColumnType: "DATE"}, "date", false},
-		{"JSON→json", Column{DataType: "json", ColumnType: "JSON"}, "json", false},
-		{"JSON→jsonb opt-in", Column{DataType: "json", ColumnType: "JSON"}, "jsonb", false},
+		{"JSON→jsonb", Column{DataType: "json", ColumnType: "JSON"}, "jsonb", false},
+		{"JSON→json opt-out", Column{DataType: "json", ColumnType: "JSON"}, "json", false},
 		{"unknown→error", Column{DataType: "foobar", ColumnType: "FOOBAR"}, "", true},
 		{"unknown→text opt-in", Column{DataType: "foobar", ColumnType: "FOOBAR"}, "text", false},
 	}
@@ -39,8 +39,8 @@ func TestSQLiteMapType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tm := defaultTypeMappingConfig()
-			if tt.name == "JSON→jsonb opt-in" {
-				tm.JSONAsJSONB = true
+			if tt.name == "JSON→json opt-out" {
+				tm.JSONAsJSONB = false
 			}
 			if tt.name == "unknown→text opt-in" {
 				tm.UnknownAsText = true

@@ -1,11 +1,13 @@
 # Type mapping
 
-pgferry defaults to conservative, lossless type conversions. Semantic mappings
-(e.g. `tinyint(1)` &rarr; `boolean`) are opt-in via the `[type_mapping]` config section.
+pgferry defaults to conservative, mostly lossless type conversions. The main
+exception is JSON, which maps to PostgreSQL `jsonb` by default because that is
+usually the more useful PostgreSQL type. Other semantic mappings (for example
+`tinyint(1)` &rarr; `boolean`) remain opt-in via the `[type_mapping]` config section.
 
 ## MySQL &rarr; PostgreSQL type table
 
-| MySQL type | Default PG type | Opt-in PG type | Config flag |
+| MySQL type | Default PG type | Alternate PG type | Config flag |
 |---|---|---|---|
 | `tinyint(1)` | `smallint` | `boolean` | `tinyint1_as_boolean` |
 | `tinyint` | `smallint` | | |
@@ -22,7 +24,7 @@ pgferry defaults to conservative, lossless type conversions. Semantic mappings
 | `text` | `text` | | |
 | `mediumtext` | `text` | | |
 | `longtext` | `text` | | |
-| `json` | `json` | `jsonb` | `json_as_jsonb` |
+| `json` | `jsonb` | `json` | `json_as_jsonb = false` |
 | `enum(...)` | `text` | `text` + CHECK, native enum | `enum_mode` |
 | `set(...)` | `text` | `text[]`, `text[]` + CHECK | `set_mode` |
 | `timestamp` | `timestamptz` | | |
@@ -70,7 +72,7 @@ SQLite integers can be up to 64-bit.
 | `BOOLEAN` | `boolean` | |
 | `DATETIME`, `TIMESTAMP` | `timestamp` | |
 | `DATE` | `date` | |
-| `JSON` | `json` | `jsonb` with `json_as_jsonb = true` |
+| `JSON` | `jsonb` | `json` with `json_as_jsonb = false` |
 
 Any SQLite type not in this table is unsupported by default. Set
 `type_mapping.unknown_as_text = true` to coerce unknown types to `text`
@@ -84,7 +86,7 @@ instead of aborting.
 
 ## MSSQL &rarr; PostgreSQL type table
 
-| MSSQL type | Default PG type | Opt-in PG type | Config flag |
+| MSSQL type | Default PG type | Alternate PG type | Config flag |
 |---|---|---|---|
 | `int` | `integer` | | |
 | `bigint` | `bigint` | | |
@@ -114,7 +116,7 @@ instead of aborting.
 | `datetimeoffset` | `timestamptz` | | always timestamptz |
 | `uniqueidentifier` | `uuid` | | |
 | `xml` | `xml` | `text` | `xml_as_text` |
-| `json` | `json` | `jsonb` | `json_as_jsonb` |
+| `json` | `jsonb` | `json` | `json_as_jsonb = false` |
 | `sql_variant` | `text` | | |
 | `hierarchyid` | `text` | | |
 | `geography` | unsupported | `bytea`, `text` | `spatial_mode` |
@@ -152,7 +154,7 @@ tinyint1_as_boolean = false       # tinyint(1) → boolean (MySQL only)
 binary16_as_uuid = false          # binary(16) → uuid (MySQL only)
 datetime_as_timestamptz = false   # datetime → timestamptz (MySQL/MSSQL)
 varchar_as_text = false           # varchar(n)/char(n) → text (MySQL only)
-json_as_jsonb = false             # json → jsonb
+json_as_jsonb = true              # default: json → jsonb; set false to keep plain json
 sanitize_json_null_bytes = true   # strip \x00 from JSON values
 unknown_as_text = false           # unknown types → text (instead of error)
 enum_mode = "text"                # "text", "check", or "native" (MySQL only)
@@ -287,6 +289,13 @@ PostgreSQL does not. The `zero_date_mode` setting controls handling:
 
 - **`null`** (default) &mdash; converts zero dates to `NULL` during data streaming.
 - **`error`** &mdash; aborts the migration with an error when a zero date is encountered.
+
+### JSON vs JSONB
+
+`json_as_jsonb = true` by default. Use `jsonb` when you want PostgreSQL's
+indexing support and richer operators. Set `json_as_jsonb = false` only when
+you need plain `json` semantics that stay closer to the original text form,
+such as object key order, duplicate keys, or insignificant whitespace.
 
 ### JSON null bytes
 

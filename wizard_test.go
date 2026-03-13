@@ -111,7 +111,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		"",    // snake_case_identifiers = true
 		"",    // clean_orphans = true
 		"",    // workers = default
-		"",    // json_as_jsonb = false
+		"",    // json_as_jsonb = true
 		"",    // unknown_as_text = false
 		"",    // tinyint1_as_boolean = false
 		"",    // datetime_as_timestamptz = false
@@ -149,6 +149,9 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 	if gotCfg.Workers != effectiveDefaultWorkers("mysql") {
 		t.Fatalf("Workers = %d, want %d", gotCfg.Workers, effectiveDefaultWorkers("mysql"))
 	}
+	if !gotCfg.TypeMapping.JSONAsJSONB {
+		t.Fatalf("TypeMapping.JSONAsJSONB = %t, want true", gotCfg.TypeMapping.JSONAsJSONB)
+	}
 	if gotCfg.configDir != dir {
 		t.Fatalf("configDir = %q, want %q", gotCfg.configDir, dir)
 	}
@@ -156,10 +159,10 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 	if !strings.Contains(output, "If target schema already exists (default: error)\n  error: Safest default. Stops instead of touching an existing schema.\n  recreate: Drops and recreates the target schema. Fast for clean reruns, but destructive.\nChoice [error/recreate] [error]: ") {
 		t.Fatalf("wizard output missing improved schema-exists choice layout, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Map JSON columns to jsonb\n  jsonb is usually the better PostgreSQL type for indexing and querying.") {
+	if !strings.Contains(output, "Map JSON columns to jsonb\n  jsonb is the default and usually the better PostgreSQL type for indexing and operators.") {
 		t.Fatalf("wizard output missing jsonb guidance block, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Answer [y/N]: \nMap unknown source types to text instead of failing") {
+	if !strings.Contains(output, "Answer [Y/n]: \nMap unknown source types to text instead of failing") {
 		t.Fatalf("wizard output missing blank-line separation between prompt blocks, got:\n%s", output)
 	}
 }
@@ -336,7 +339,7 @@ func TestRenderConfigTOMLIncludesOnlyConfiguredOverrides(t *testing.T) {
 	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
 	cfg.Schema = "sakila"
 	cfg.OnSchemaExists = "recreate"
-	cfg.TypeMapping.JSONAsJSONB = true
+	cfg.TypeMapping.JSONAsJSONB = false
 	cfg.TypeMapping.UnknownAsText = true
 	cfg.TypeMapping.TinyInt1AsBoolean = true
 	cfg.Workers = 2
@@ -352,8 +355,8 @@ func TestRenderConfigTOMLIncludesOnlyConfiguredOverrides(t *testing.T) {
 	if !strings.Contains(rendered, "[type_mapping]") {
 		t.Fatalf("expected type_mapping section, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "json_as_jsonb = true") {
-		t.Fatalf("expected json_as_jsonb override, got:\n%s", rendered)
+	if !strings.Contains(rendered, "json_as_jsonb = false") {
+		t.Fatalf("expected json_as_jsonb opt-out, got:\n%s", rendered)
 	}
 	if !strings.Contains(rendered, "tinyint1_as_boolean = true") {
 		t.Fatalf("expected tinyint1_as_boolean override, got:\n%s", rendered)

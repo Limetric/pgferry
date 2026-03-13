@@ -15,7 +15,7 @@ source_schema = "dbo"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 
 [type_mapping]
-json_as_jsonb = false
+json_as_jsonb = true
 nvarchar_as_text = false
 money_as_numeric = true
 xml_as_text = false

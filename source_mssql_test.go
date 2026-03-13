@@ -71,8 +71,8 @@ func TestMSSQLMapType(t *testing.T) {
 		{"xml→text when xml_as_text", Column{DataType: "xml"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.XmlAsText = true; return t }(), "text", false},
 		{"sql_variant→text", Column{DataType: "sql_variant"}, defaultTypeMappingConfig(), "text", false},
 		{"hierarchyid→text", Column{DataType: "hierarchyid"}, defaultTypeMappingConfig(), "text", false},
-		{"json→json", Column{DataType: "json"}, defaultTypeMappingConfig(), "json", false},
-		{"json→jsonb", Column{DataType: "json"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.JSONAsJSONB = true; return t }(), "jsonb", false},
+		{"json→jsonb", Column{DataType: "json"}, defaultTypeMappingConfig(), "jsonb", false},
+		{"json→json opt-out", Column{DataType: "json"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.JSONAsJSONB = false; return t }(), "json", false},
 
 		// Spatial types
 		{"geography wkt_text→text", Column{DataType: "geography"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.SpatialMode = "wkt_text"; return t }(), "text", false},

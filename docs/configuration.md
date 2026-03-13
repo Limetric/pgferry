@@ -115,7 +115,7 @@ tinyint1_as_boolean = false       # tinyint(1) → boolean instead of smallint (
 binary16_as_uuid = false          # binary(16) → uuid instead of bytea (MySQL only)
 datetime_as_timestamptz = false   # datetime → timestamptz instead of timestamp (MySQL/MSSQL)
 varchar_as_text = false           # varchar(n)/char(n) → text instead of varchar(n) (MySQL only)
-json_as_jsonb = false             # json → jsonb instead of json
+json_as_jsonb = true              # default: json → jsonb; set false to keep plain json
 widen_unsigned_integers = true    # unsigned int → bigint; set false to keep as integer (MySQL only)
 sanitize_json_null_bytes = true   # strip \x00 from JSON values (PG rejects them)
 unknown_as_text = false           # map unrecognized source types to text instead of erroring
@@ -310,7 +310,7 @@ Fields omitted from the TOML file use these defaults:
 | `binary16_as_uuid` | `false` |
 | `datetime_as_timestamptz` | `false` |
 | `varchar_as_text` | `false` |
-| `json_as_jsonb` | `false` |
+| `json_as_jsonb` | `true` |
 | `widen_unsigned_integers` | `true` |
 | `sanitize_json_null_bytes` | `true` |
 | `unknown_as_text` | `false` |

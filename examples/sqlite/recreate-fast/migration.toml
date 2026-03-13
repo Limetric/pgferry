@@ -13,7 +13,7 @@ dsn = "./source.db"
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 
 [type_mapping]
-json_as_jsonb = false
+json_as_jsonb = true
 sanitize_json_null_bytes = true
 unknown_as_text = false
 

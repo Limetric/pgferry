@@ -18,7 +18,7 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 tinyint1_as_boolean = false
 binary16_as_uuid = false
 datetime_as_timestamptz = false
-json_as_jsonb = false
+json_as_jsonb = true
 enum_mode = "text"
 set_mode = "text"
 sanitize_json_null_bytes = true

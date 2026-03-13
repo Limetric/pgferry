@@ -158,8 +158,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.TypeMapping.DatetimeAsTimestamptz {
 		t.Errorf("default TypeMapping.DatetimeAsTimestamptz = %t, want false", cfg.TypeMapping.DatetimeAsTimestamptz)
 	}
-	if cfg.TypeMapping.JSONAsJSONB {
-		t.Errorf("default TypeMapping.JSONAsJSONB = %t, want false", cfg.TypeMapping.JSONAsJSONB)
+	if !cfg.TypeMapping.JSONAsJSONB {
+		t.Errorf("default TypeMapping.JSONAsJSONB = %t, want true", cfg.TypeMapping.JSONAsJSONB)
 	}
 	if cfg.TypeMapping.EnumMode != "text" {
 		t.Errorf("default TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "text")
@@ -217,7 +217,7 @@ dsn = "postgres://u:p@h:5432/db"
 tinyint1_as_boolean = true
 binary16_as_uuid = true
 datetime_as_timestamptz = true
-json_as_jsonb = true
+json_as_jsonb = false
 varchar_as_text = true
 enum_mode = "check"
 set_mode = "text_array"
@@ -242,8 +242,8 @@ unknown_as_text = true
 	if !cfg.TypeMapping.DatetimeAsTimestamptz {
 		t.Errorf("TypeMapping.DatetimeAsTimestamptz = %t, want true", cfg.TypeMapping.DatetimeAsTimestamptz)
 	}
-	if !cfg.TypeMapping.JSONAsJSONB {
-		t.Errorf("TypeMapping.JSONAsJSONB = %t, want true", cfg.TypeMapping.JSONAsJSONB)
+	if cfg.TypeMapping.JSONAsJSONB {
+		t.Errorf("TypeMapping.JSONAsJSONB = %t, want false", cfg.TypeMapping.JSONAsJSONB)
 	}
 	if cfg.TypeMapping.EnumMode != "check" {
 		t.Errorf("TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "check")

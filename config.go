@@ -341,7 +341,7 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		TinyInt1AsBoolean:     false,
 		Binary16AsUUID:        false,
 		DatetimeAsTimestamptz: false,
-		JSONAsJSONB:           false,
+		JSONAsJSONB:           true,
 		EnumMode:              "text",
 		SetMode:               "text",
 		WidenUnsignedIntegers: true,
