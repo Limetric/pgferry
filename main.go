@@ -18,7 +18,7 @@ import (
 var configPath string
 
 var rootCmd = &cobra.Command{
-	Use:   "pgferry [config.toml]",
+	Use:   "pgferry [migration.toml]",
 	Short: "Source database to PostgreSQL migration tool",
 	Args:  cobra.MaximumNArgs(1),
 	RunE:  runRoot,
@@ -34,7 +34,7 @@ var versionCmd = &cobra.Command{
 }
 
 var migrateCmd = &cobra.Command{
-	Use:     "migrate [config.toml]",
+	Use:     "migrate [migration.toml]",
 	Aliases: []string{"run"},
 	Short:   "Run a migration from a TOML config file",
 	Args:    cobra.MaximumNArgs(1),
@@ -103,7 +103,7 @@ func resolveMigrationConfigPath(args []string) string {
 }
 
 func missingMigrationConfigError() error {
-	return fmt.Errorf("config file required: pgferry <config.toml>, pgferry migrate <config.toml>, or pgferry wizard")
+	return fmt.Errorf("config file required: pgferry <migration.toml>, pgferry migrate <migration.toml>, or pgferry wizard")
 }
 
 func canLaunchWizardInteractively(cmd *cobra.Command) bool {

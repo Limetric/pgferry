@@ -72,7 +72,7 @@ func TestRunRoot_NoArgsNonInteractiveReturnsConfigError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runRoot() error = nil, want error")
 	}
-	want := "config file required: pgferry <config.toml>, pgferry migrate <config.toml>, or pgferry wizard"
+	want := "config file required: pgferry <migration.toml>, pgferry migrate <migration.toml>, or pgferry wizard"
 	if err.Error() != want {
 		t.Fatalf("runRoot() error = %q, want %q", err.Error(), want)
 	}

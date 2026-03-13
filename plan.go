@@ -18,7 +18,7 @@ var planOutputDir string
 var planFormat string
 
 var planCmd = &cobra.Command{
-	Use:   "plan [config.toml]",
+	Use:   "plan [migration.toml]",
 	Short: "Analyze source schema and generate a migration plan report",
 	Long: `Analyze the source database schema and produce a report of objects that
 require manual follow-up: views, routines, triggers, generated columns,
@@ -87,7 +87,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		cfgPath = args[0]
 	}
 	if cfgPath == "" {
-		return fmt.Errorf("config file required: pgferry plan <config.toml> or pgferry plan --config <config.toml>")
+		return fmt.Errorf("config file required: pgferry plan <migration.toml> or pgferry plan --config <migration.toml>")
 	}
 
 	switch planFormat {
