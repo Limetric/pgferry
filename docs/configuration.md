@@ -120,10 +120,10 @@ widen_unsigned_integers = true    # unsigned int → bigint; set false to keep a
 sanitize_json_null_bytes = true   # strip \x00 from JSON values (PG rejects them)
 unknown_as_text = false           # map unrecognized source types to text instead of erroring
 
-# Enum handling (MySQL only): "text" (default) stores as plain text;
-#                              "check" stores as text with a CHECK constraint on allowed values;
+# Enum handling (MySQL only): "check" (default) stores as text with a CHECK constraint on allowed values;
+#                              "text" stores as plain text with no PostgreSQL-side enforcement;
 #                              "native" creates native PostgreSQL enum types
-enum_mode = "text"
+enum_mode = "check"
 
 # Set handling (MySQL only): "text" (default) stores as comma-separated text;
 #                             "text_array" stores as text[] (PostgreSQL array);
@@ -314,7 +314,7 @@ Fields omitted from the TOML file use these defaults:
 | `widen_unsigned_integers` | `true` |
 | `sanitize_json_null_bytes` | `true` |
 | `unknown_as_text` | `false` |
-| `enum_mode` | `"text"` |
+| `enum_mode` | `"check"` for MySQL, `"text"` otherwise |
 | `set_mode` | `"text"` |
 | `bit_mode` | `"bytea"` |
 | `string_uuid_as_uuid` | `false` |

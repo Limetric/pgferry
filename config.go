@@ -154,6 +154,10 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.Validation == "" {
 		cfg.Validation = "none"
 	}
+	if cfg.Source.Type == "" {
+		return fmt.Errorf("source.type is required (must be mysql, sqlite, or mssql)")
+	}
+	applySourceTypeMappingDefaults(&cfg.TypeMapping, cfg.Source.Type)
 
 	cfg.Schema = strings.TrimSpace(cfg.Schema)
 	if cfg.Schema == "" {
@@ -252,9 +256,6 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 
 	// Source validation
-	if cfg.Source.Type == "" {
-		return fmt.Errorf("source.type is required (must be mysql, sqlite, or mssql)")
-	}
 	src, err := newSourceDB(cfg.Source.Type)
 	if err != nil {
 		return err
@@ -342,7 +343,6 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 		Binary16AsUUID:        false,
 		DatetimeAsTimestamptz: false,
 		JSONAsJSONB:           true,
-		EnumMode:              "text",
 		SetMode:               "text",
 		WidenUnsignedIntegers: true,
 		SanitizeJSONNullBytes: true,
@@ -357,8 +357,26 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 	}
 }
 
+func defaultEnumMode(sourceType string) string {
+	if sourceType == "mysql" {
+		return "check"
+	}
+	return "text"
+}
+
+func applySourceTypeMappingDefaults(tm *TypeMappingConfig, sourceType string) {
+	if tm.EnumMode == "" {
+		tm.EnumMode = defaultEnumMode(sourceType)
+	}
+}
+
+func effectiveTypeMappingForSource(typeMap TypeMappingConfig, sourceType string) TypeMappingConfig {
+	applySourceTypeMappingDefaults(&typeMap, sourceType)
+	return typeMap
+}
+
 func effectiveTypeMapping(cfg *MigrationConfig) TypeMappingConfig {
-	tm := cfg.TypeMapping
+	tm := effectiveTypeMappingForSource(cfg.TypeMapping, cfg.Source.Type)
 	tm.UsePostGIS = cfg.PostGIS.Enabled
 	return tm
 }

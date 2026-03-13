@@ -161,8 +161,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if !cfg.TypeMapping.JSONAsJSONB {
 		t.Errorf("default TypeMapping.JSONAsJSONB = %t, want true", cfg.TypeMapping.JSONAsJSONB)
 	}
-	if cfg.TypeMapping.EnumMode != "text" {
-		t.Errorf("default TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "text")
+	if cfg.TypeMapping.EnumMode != "check" {
+		t.Errorf("default TypeMapping.EnumMode = %q, want %q", cfg.TypeMapping.EnumMode, "check")
 	}
 	if cfg.TypeMapping.SetMode != "text" {
 		t.Errorf("default TypeMapping.SetMode = %q, want %q", cfg.TypeMapping.SetMode, "text")

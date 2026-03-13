@@ -30,6 +30,7 @@ func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 // generateCreateTable produces a CREATE TABLE statement.
 func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaults bool, typeMap TypeMappingConfig, src SourceDB) (string, error) {
 	var b strings.Builder
+	typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
 	tableKind := "TABLE"
 	if unlogged {
 		tableKind = "UNLOGGED TABLE"
@@ -129,6 +130,7 @@ func pgEnumTypeName(values []string) string {
 // createEnumTypes creates PostgreSQL enum types for all enum columns in the schema.
 // Identical enum definitions (same value sets) share the same PG type.
 func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
+	typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
 	if typeMap.EnumMode != "native" {
 		return nil
 	}
@@ -173,6 +175,7 @@ func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pg
 }
 
 func enumCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
+	typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
 	if col.DataType != "enum" || typeMap.EnumMode != "check" {
 		return "", nil
 	}

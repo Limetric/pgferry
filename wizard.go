@@ -152,6 +152,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		return nil, err
 	}
 	cfg.Source.Type = sourceType
+	applySourceTypeMappingDefaults(&cfg.TypeMapping, sourceType)
 
 	cfg.Source.DSN, err = w.promptSourceDSN(sourceType)
 	if err != nil {
@@ -378,8 +379,8 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 			return nil, err
 		}
 		cfg.TypeMapping.EnumMode, err = w.promptChoice("Enum mode", []wizardOption{
-			{key: "text", help: "Simplest and most portable. Values are stored as text with no PostgreSQL-side enforcement."},
 			{key: "check", help: "Adds CHECK constraints for allowed values. Good middle ground between portability and enforcement."},
+			{key: "text", help: "Simplest and most portable. Values are stored as text with no PostgreSQL-side enforcement."},
 			{key: "native", help: "Creates PostgreSQL ENUM types. Strongest typing, but future enum changes are more involved."},
 		}, cfg.TypeMapping.EnumMode)
 		if err != nil {
@@ -568,6 +569,8 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 
 func renderTypeMappingLines(cfg TypeMappingConfig, sourceType string) []string {
 	defaults := defaultTypeMappingConfig()
+	applySourceTypeMappingDefaults(&defaults, sourceType)
+	applySourceTypeMappingDefaults(&cfg, sourceType)
 	var lines []string
 
 	if cfg.JSONAsJSONB != defaults.JSONAsJSONB {

@@ -99,7 +99,7 @@ func (m *mssqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if !typeMap.WidenUnsignedIntegers {
 		errs = append(errs, "widen_unsigned_integers is a MySQL-only option")
 	}
-	if typeMap.EnumMode != "text" {
+	if effectiveTypeMappingForSource(typeMap, "mssql").EnumMode != "text" {
 		errs = append(errs, fmt.Sprintf("enum_mode=%q is a MySQL-only option", typeMap.EnumMode))
 	}
 	if typeMap.SetMode != "text" {

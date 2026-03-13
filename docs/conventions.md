@@ -182,8 +182,8 @@ and the column retains its original type with a `COLLATE` clause.
 
 Enum behavior is controlled by `type_mapping.enum_mode` (MySQL only):
 
-- **`text`** (default) &mdash; the column is created as `text` with no constraint. Any string value is accepted.
-- **`check`** &mdash; the column is created as `text` with a `CHECK` constraint restricting values to the original MySQL enum's allowed set.
+- **`check`** (default) &mdash; the column is created as `text` with a `CHECK` constraint restricting values to the original MySQL enum's allowed set.
+- **`text`** &mdash; the column is created as `text` with no constraint. Any string value is accepted.
 - **`native`** &mdash; creates a native PostgreSQL enum type. Type names are content-addressable
   (`pgferry_enum_XXXXXXXXXXXXXXXX` via FNV64a hash of sorted values), so columns with identical
   value sets share the same type. Enum types are created before table creation.

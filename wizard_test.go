@@ -117,7 +117,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		"",    // datetime_as_timestamptz = false
 		"",    // binary16_as_uuid = false (skips binary16_uuid_mode)
 		"",    // string_uuid_as_uuid = false
-		"",    // enum_mode = text
+		"",    // enum_mode = check
 		"",    // set_mode = text
 		"",    // bit_mode = bytea
 		"",    // time_mode = time

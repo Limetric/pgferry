@@ -25,7 +25,7 @@ usually the more useful PostgreSQL type. Other semantic mappings (for example
 | `mediumtext` | `text` | | |
 | `longtext` | `text` | | |
 | `json` | `jsonb` | `json` | `json_as_jsonb = false` |
-| `enum(...)` | `text` | `text` + CHECK, native enum | `enum_mode` |
+| `enum(...)` | `text` + CHECK | `text`, native enum | `enum_mode` |
 | `set(...)` | `text` | `text[]`, `text[]` + CHECK | `set_mode` |
 | `timestamp` | `timestamptz` | | |
 | `datetime` | `timestamp` | `timestamptz` | `datetime_as_timestamptz` |
@@ -157,7 +157,7 @@ varchar_as_text = false           # varchar(n)/char(n) → text (MySQL only)
 json_as_jsonb = true              # default: json → jsonb; set false to keep plain json
 sanitize_json_null_bytes = true   # strip \x00 from JSON values
 unknown_as_text = false           # unknown types → text (instead of error)
-enum_mode = "text"                # "text", "check", or "native" (MySQL only)
+enum_mode = "check"               # default for MySQL; use "text" or "native" to opt out
 set_mode = "text"                 # "text", "text_array", or "text_array_check" (MySQL only)
 bit_mode = "bytea"                # "bytea", "bit", or "varbit" (MySQL only)
 string_uuid_as_uuid = false       # char(36)/varchar(36) → uuid (MySQL only)
@@ -178,9 +178,9 @@ ci_as_citext = false              # _ci text columns → citext (MySQL only)
 
 ### Enum mode
 
-- **`text`** (default) &mdash; stores enum values as plain `text`. No constraint enforcement.
-- **`check`** &mdash; stores as `text` with a `CHECK` constraint restricting values to the
+- **`check`** (default) &mdash; stores as `text` with a `CHECK` constraint restricting values to the
   MySQL enum's allowed set.
+- **`text`** &mdash; stores enum values as plain `text`. No constraint enforcement.
 - **`native`** &mdash; creates a native PostgreSQL enum type per distinct set of values.
   Type names are content-addressable (`pgferry_enum_XXXXXXXXXXXXXXXX` using FNV64a hash
   of sorted values), so columns with identical enum definitions share the same type.

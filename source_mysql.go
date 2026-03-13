@@ -566,6 +566,7 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		}
 		return "json", nil
 	case col.DataType == "enum":
+		typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
 		switch typeMap.EnumMode {
 		case "text", "check":
 			return "text", nil
