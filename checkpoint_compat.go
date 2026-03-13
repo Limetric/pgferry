@@ -4,16 +4,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"sort"
 	"strings"
 )
 
 type checkpointCompatibility struct {
-	Fingerprint string                         `json:"fingerprint,omitempty"`
-	Summary     checkpointCompatibilitySummary `json:"summary,omitempty"`
+	Fingerprint string                          `json:"fingerprint,omitempty"`
+	Summary     *checkpointCompatibilitySummary `json:"summary,omitempty"`
 }
 
 type checkpointCompatibilitySummary struct {
@@ -76,7 +76,7 @@ func buildCheckpointCompatibility(cfg *MigrationConfig, schema *Schema, src Sour
 	}
 	return checkpointCompatibility{
 		Fingerprint: fingerprint,
-		Summary:     summary,
+		Summary:     &summary,
 	}, nil
 }
 
@@ -103,7 +103,7 @@ func checkpointCompatibilityHooks(cfg *MigrationConfig) ([]checkpointCompatibili
 			sum := sha256.Sum256(data)
 			hooks = append(hooks, checkpointCompatibilityHook{
 				Phase:  phase.phase,
-				Path:   path,
+				Path:   file,
 				SHA256: hex.EncodeToString(sum[:]),
 			})
 		}
@@ -223,16 +223,22 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 	if state == nil || expected.Fingerprint == "" {
 		return nil
 	}
-	if state.Version < checkpointVersion || state.Compatibility.Fingerprint == "" {
+	if state.Version < checkpointVersion {
 		return fmt.Errorf("checkpoint %s was created by an older pgferry version and cannot be resumed safely; delete %s and rerun the migration", path, path)
+	}
+	if state.Compatibility == nil || state.Compatibility.Fingerprint == "" || state.Compatibility.Summary == nil {
+		return fmt.Errorf("checkpoint %s is missing resume compatibility metadata and cannot be resumed safely; delete %s and rerun the migration", path, path)
+	}
+	if expected.Summary == nil {
+		return nil
 	}
 	if state.Compatibility.Fingerprint == expected.Fingerprint {
 		return nil
 	}
 
 	var reasons []string
-	saved := state.Compatibility.Summary
-	current := expected.Summary
+	saved := *state.Compatibility.Summary
+	current := *expected.Summary
 
 	if saved.SourceType != current.SourceType {
 		reasons = append(reasons, fmt.Sprintf("source type changed: was %q, now %q", saved.SourceType, current.SourceType))
@@ -258,9 +264,7 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 	if saved.SchemaOnly != current.SchemaOnly || saved.DataOnly != current.DataOnly {
 		reasons = append(reasons, fmt.Sprintf("migration mode changed: was schema_only=%t data_only=%t, now schema_only=%t data_only=%t", saved.SchemaOnly, saved.DataOnly, current.SchemaOnly, current.DataOnly))
 	}
-	if !reflect.DeepEqual(saved.TypeMapping, current.TypeMapping) {
-		reasons = append(reasons, "type_mapping changed")
-	}
+	reasons = append(reasons, checkpointTypeMappingDiff(saved.TypeMapping, current.TypeMapping)...)
 
 	reasons = append(reasons, checkpointHookCompatibilityDiff(saved.Hooks, current.Hooks)...)
 	reasons = append(reasons, checkpointTableCompatibilityDiff(saved.Tables, current.Tables)...)
@@ -280,7 +284,7 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 		fmt.Fprintf(&b, "  - %s\n", reason)
 	}
 	fmt.Fprintf(&b, "Delete %s and rerun the migration from scratch, or restore the original config/schema that created the checkpoint.", path)
-	return fmt.Errorf("%s", b.String())
+	return errors.New(b.String())
 }
 
 func checkpointHookCompatibilityDiff(saved, current []checkpointCompatibilityHook) []string {
@@ -317,6 +321,68 @@ func checkpointHookCompatibilityDiff(saved, current []checkpointCompatibilityHoo
 
 func checkpointHookID(hook checkpointCompatibilityHook) string {
 	return hook.Phase + ":" + hook.Path
+}
+
+func checkpointTypeMappingDiff(saved, current TypeMappingConfig) []string {
+	var reasons []string
+	appendIfChanged := func(name string, oldVal, newVal any) {
+		if oldVal != newVal {
+			reasons = append(reasons, fmt.Sprintf("type_mapping.%s changed: was %v, now %v", name, oldVal, newVal))
+		}
+	}
+
+	appendIfChanged("tinyint1_as_boolean", saved.TinyInt1AsBoolean, current.TinyInt1AsBoolean)
+	appendIfChanged("binary16_as_uuid", saved.Binary16AsUUID, current.Binary16AsUUID)
+	appendIfChanged("datetime_as_timestamptz", saved.DatetimeAsTimestamptz, current.DatetimeAsTimestamptz)
+	appendIfChanged("json_as_jsonb", saved.JSONAsJSONB, current.JSONAsJSONB)
+	appendIfChanged("enum_mode", saved.EnumMode, current.EnumMode)
+	appendIfChanged("set_mode", saved.SetMode, current.SetMode)
+	appendIfChanged("widen_unsigned_integers", saved.WidenUnsignedIntegers, current.WidenUnsignedIntegers)
+	appendIfChanged("varchar_as_text", saved.VarcharAsText, current.VarcharAsText)
+	appendIfChanged("sanitize_json_null_bytes", saved.SanitizeJSONNullBytes, current.SanitizeJSONNullBytes)
+	appendIfChanged("unknown_as_text", saved.UnknownAsText, current.UnknownAsText)
+	appendIfChanged("collation_mode", saved.CollationMode, current.CollationMode)
+	appendIfChanged("ci_as_citext", saved.CIAsCitext, current.CIAsCitext)
+	appendIfChanged("bit_mode", saved.BitMode, current.BitMode)
+	appendIfChanged("string_uuid_as_uuid", saved.StringUUIDAsUUID, current.StringUUIDAsUUID)
+	appendIfChanged("binary16_uuid_mode", saved.Binary16UUIDMode, current.Binary16UUIDMode)
+	appendIfChanged("time_mode", saved.TimeMode, current.TimeMode)
+	appendIfChanged("zero_date_mode", saved.ZeroDateMode, current.ZeroDateMode)
+	appendIfChanged("spatial_mode", saved.SpatialMode, current.SpatialMode)
+	appendIfChanged("nvarchar_as_text", saved.NvarcharAsText, current.NvarcharAsText)
+	appendIfChanged("money_as_numeric", saved.MoneyAsNumeric, current.MoneyAsNumeric)
+	appendIfChanged("xml_as_text", saved.XmlAsText, current.XmlAsText)
+	appendIfChanged("use_postgis", saved.UsePostGIS, current.UsePostGIS)
+
+	reasons = append(reasons, checkpointCollationMapDiff(saved.CollationMap, current.CollationMap)...)
+	sort.Strings(reasons)
+	return reasons
+}
+
+func checkpointCollationMapDiff(saved, current map[string]string) []string {
+	keys := make(map[string]struct{}, len(saved)+len(current))
+	for key := range saved {
+		keys[key] = struct{}{}
+	}
+	for key := range current {
+		keys[key] = struct{}{}
+	}
+
+	var reasons []string
+	for key := range keys {
+		oldVal, oldOK := saved[key]
+		newVal, newOK := current[key]
+		switch {
+		case !oldOK && newOK:
+			reasons = append(reasons, fmt.Sprintf("type_mapping.collation_map[%q] added: %q", key, newVal))
+		case oldOK && !newOK:
+			reasons = append(reasons, fmt.Sprintf("type_mapping.collation_map[%q] removed (was %q)", key, oldVal))
+		case oldVal != newVal:
+			reasons = append(reasons, fmt.Sprintf("type_mapping.collation_map[%q] changed: was %q, now %q", key, oldVal, newVal))
+		}
+	}
+	sort.Strings(reasons)
+	return reasons
 }
 
 func checkpointTableCompatibilityDiff(saved, current []checkpointCompatibilityTable) []string {

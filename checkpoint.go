@@ -16,7 +16,7 @@ const checkpointVersion = 2
 type CheckpointState struct {
 	Version       int                         `json:"version"`
 	StartedAt     time.Time                   `json:"started_at"`
-	Compatibility checkpointCompatibility     `json:"compatibility,omitempty"`
+	Compatibility *checkpointCompatibility    `json:"compatibility,omitempty"`
 	Tables        map[string]*TableCheckpoint `json:"tables"`
 }
 
@@ -46,7 +46,8 @@ func newCheckpointState() *CheckpointState {
 func newCheckpointStateWithCompatibility(compat *checkpointCompatibility) *CheckpointState {
 	state := newCheckpointState()
 	if compat != nil {
-		state.Compatibility = *compat
+		copied := *compat
+		state.Compatibility = &copied
 	}
 	return state
 }
@@ -262,7 +263,7 @@ func newPersistentCheckpointManager(path string, compat *checkpointCompatibility
 
 	if loaded != nil {
 		log.Printf("resuming from checkpoint (started %s)", loaded.StartedAt.Format(time.RFC3339))
-		if loaded.Compatibility.Fingerprint != "" {
+		if loaded.Compatibility != nil && loaded.Compatibility.Fingerprint != "" {
 			log.Printf("checkpoint compatibility fingerprint: %s", loaded.Compatibility.Fingerprint)
 		}
 		for name, tc := range loaded.Tables {

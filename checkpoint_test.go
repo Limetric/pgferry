@@ -10,19 +10,20 @@ import (
 )
 
 func testCheckpointCompatibility() checkpointCompatibility {
+	summary := checkpointCompatibilitySummary{
+		SourceType:         "mysql",
+		SourceDBName:       "appdb",
+		TargetSchema:       "public",
+		SourceSnapshotMode: "none",
+		ChunkSize:          100000,
+		TypeMapping:        defaultTypeMappingConfig(),
+		Tables: []checkpointCompatibilityTable{
+			{SourceName: "users", PGName: "users", TableHash: "users-hash"},
+		},
+	}
 	return checkpointCompatibility{
 		Fingerprint: "compat-fingerprint",
-		Summary: checkpointCompatibilitySummary{
-			SourceType:         "mysql",
-			SourceDBName:       "appdb",
-			TargetSchema:       "public",
-			SourceSnapshotMode: "none",
-			ChunkSize:          100000,
-			TypeMapping:        defaultTypeMappingConfig(),
-			Tables: []checkpointCompatibilityTable{
-				{SourceName: "users", PGName: "users", TableHash: "users-hash"},
-			},
-		},
+		Summary:     &summary,
 	}
 }
 
@@ -49,6 +50,9 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	}
 	if loaded.Version != checkpointVersion {
 		t.Errorf("Version = %d, want %d", loaded.Version, checkpointVersion)
+	}
+	if loaded.Compatibility == nil {
+		t.Fatal("Compatibility should not be nil")
 	}
 	if loaded.Compatibility.Fingerprint != compat.Fingerprint {
 		t.Errorf("Compatibility.Fingerprint = %q, want %q", loaded.Compatibility.Fingerprint, compat.Fingerprint)
@@ -239,6 +243,9 @@ func TestPersistentCheckpointManager_FreshStart(t *testing.T) {
 	}
 	if mgr.IsChunkCompleted("t1", 0) {
 		t.Error("fresh manager should not report chunk completed")
+	}
+	if mgr.state.Compatibility == nil {
+		t.Fatal("Compatibility should not be nil")
 	}
 	if mgr.state.Compatibility.Fingerprint != compat.Fingerprint {
 		t.Errorf("Compatibility.Fingerprint = %q, want %q", mgr.state.Compatibility.Fingerprint, compat.Fingerprint)
@@ -537,7 +544,9 @@ func TestPersistentCheckpointManager_RejectsIncompatibleChunkSize(t *testing.T) 
 	}
 
 	incompatible := compat
-	incompatible.Summary.ChunkSize = 50000
+	incompatibleSummary := *compat.Summary
+	incompatibleSummary.ChunkSize = 50000
+	incompatible.Summary = &incompatibleSummary
 	incompatible.Fingerprint = "new-fingerprint"
 
 	_, err := newPersistentCheckpointManager(path, &incompatible)
@@ -546,6 +555,31 @@ func TestPersistentCheckpointManager_RejectsIncompatibleChunkSize(t *testing.T) 
 	}
 	if !strings.Contains(err.Error(), "chunk_size changed") {
 		t.Fatalf("expected chunk_size mismatch, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsChangedMigrationMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	incompatible := compat
+	incompatibleSummary := *compat.Summary
+	incompatibleSummary.SchemaOnly = true
+	incompatible.Summary = &incompatibleSummary
+	incompatible.Fingerprint = "schema-only-fingerprint"
+
+	_, err := newPersistentCheckpointManager(path, &incompatible)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "migration mode changed") {
+		t.Fatalf("expected migration mode mismatch, got: %v", err)
 	}
 }
 
