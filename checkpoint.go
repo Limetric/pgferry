@@ -10,19 +10,22 @@ import (
 	"time"
 )
 
+const checkpointVersion = 2
+
 // CheckpointState persists the progress of a chunked migration.
 type CheckpointState struct {
-	Version   int                        `json:"version"`
-	StartedAt time.Time                  `json:"started_at"`
-	Tables    map[string]*TableCheckpoint `json:"tables"`
+	Version       int                         `json:"version"`
+	StartedAt     time.Time                   `json:"started_at"`
+	Compatibility *checkpointCompatibility    `json:"compatibility,omitempty"`
+	Tables        map[string]*TableCheckpoint `json:"tables"`
 }
 
 // TableCheckpoint tracks per-table progress.
 type TableCheckpoint struct {
-	ChunkCount      int                  `json:"chunk_count"`
-	CompletedChunks map[int]ChunkResult  `json:"completed_chunks"`
-	FullTableDone   bool                 `json:"full_table_done"`
-	TotalRowsCopied int64                `json:"total_rows_copied"`
+	ChunkCount      int                 `json:"chunk_count"`
+	CompletedChunks map[int]ChunkResult `json:"completed_chunks"`
+	FullTableDone   bool                `json:"full_table_done"`
+	TotalRowsCopied int64               `json:"total_rows_copied"`
 }
 
 // ChunkResult records the outcome of a single chunk copy.
@@ -34,10 +37,18 @@ type ChunkResult struct {
 // newCheckpointState creates a fresh checkpoint state.
 func newCheckpointState() *CheckpointState {
 	return &CheckpointState{
-		Version:   1,
+		Version:   checkpointVersion,
 		StartedAt: time.Now(),
 		Tables:    make(map[string]*TableCheckpoint),
 	}
+}
+
+func newCheckpointStateWithCompatibility(compat *checkpointCompatibility) *CheckpointState {
+	state := newCheckpointState()
+	if compat != nil {
+		state.Compatibility = cloneCheckpointCompatibility(compat)
+	}
+	return state
 }
 
 // loadCheckpoint reads checkpoint state from a JSON file.
@@ -55,8 +66,10 @@ func loadCheckpoint(path string) (*CheckpointState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("parse checkpoint: %w", err)
 	}
-	if state.Version != 1 {
-		return nil, fmt.Errorf("unsupported checkpoint version %d (expected 1)", state.Version)
+	switch state.Version {
+	case 1, checkpointVersion:
+	default:
+		return nil, fmt.Errorf("unsupported checkpoint version %d (expected 1 or %d)", state.Version, checkpointVersion)
 	}
 	if state.Tables == nil {
 		state.Tables = make(map[string]*TableCheckpoint)
@@ -224,7 +237,7 @@ type persistentCheckpointManager struct {
 // newPersistentCheckpointManager creates a checkpoint manager that persists
 // state to disk with batched writes. If a checkpoint file exists at path,
 // it is loaded and skip sets are pre-computed for fast lookups.
-func newPersistentCheckpointManager(path string) (*persistentCheckpointManager, error) {
+func newPersistentCheckpointManager(path string, compat *checkpointCompatibility) (*persistentCheckpointManager, error) {
 	loaded, err := loadCheckpoint(path)
 	if err != nil {
 		return nil, err
@@ -232,7 +245,11 @@ func newPersistentCheckpointManager(path string) (*persistentCheckpointManager, 
 
 	state := loaded
 	if state == nil {
-		state = newCheckpointState()
+		state = newCheckpointStateWithCompatibility(compat)
+	} else if compat != nil {
+		if err := validateCheckpointCompatibility(path, state, *compat); err != nil {
+			return nil, err
+		}
 	}
 
 	m := &persistentCheckpointManager{
@@ -245,6 +262,9 @@ func newPersistentCheckpointManager(path string) (*persistentCheckpointManager, 
 
 	if loaded != nil {
 		log.Printf("resuming from checkpoint (started %s)", loaded.StartedAt.Format(time.RFC3339))
+		if loaded.Compatibility != nil && loaded.Compatibility.Fingerprint != "" {
+			log.Printf("checkpoint compatibility fingerprint: %s", loaded.Compatibility.Fingerprint)
+		}
 		for name, tc := range loaded.Tables {
 			if tc.FullTableDone {
 				m.skipTables[name] = true
