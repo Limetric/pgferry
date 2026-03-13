@@ -18,40 +18,52 @@ npm run build
 npm run preview
 ```
 
-## Cloudflare Pages
+## Vercel
 
-If you use the minimal GitHub Actions deployment flow, keep Cloudflare pointed at the Pages project but do not rely on dashboard builds.
+This site can be deployed on Vercel using the built-in Git integration. Astro static sites deploy on Vercel with zero framework-specific configuration once the project is imported and the correct root directory is selected. Sources: [Astro on Vercel](https://vercel.com/docs/frameworks/frontend/astro), [Project settings](https://vercel.com/docs/project-configuration/project-settings).
 
-## GitHub Actions deployment
+### Recommended project settings
 
-The repository includes [site-deploy.yml](/home/atlas/Documents/Projects/pgferry/.github/workflows/site-deploy.yml), which:
+When importing the repository into Vercel:
 
-- installs dependencies from `site/package-lock.json`
-- builds the Astro site from `site/`
-- runs `wrangler pages deploy site/dist --project-name=pgferry`
+- Framework Preset: `Astro`
+- Root Directory: `site`
+- Install Command: `npm clean-install --progress=false`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Production Branch: `main`
 
-Required GitHub repository secrets:
+If Vercel auto-detects Astro after you set `site` as the root directory, you can keep the detected defaults.
 
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-- `PUBLIC_PLAUSIBLE_SRC`
-- `PUBLIC_PLAUSIBLE_API` (optional)
+### Environment variables
 
-The workflow currently assumes:
+Add these in Vercel under Project Settings -> Environment Variables:
 
-- Cloudflare Pages project name: `pgferry`
-- production site URL: `https://pgferry.com`
-- Plausible domain: `pgferry.com`
+- `SITE_URL=https://pgferry.com`
+- `PUBLIC_PLAUSIBLE_DOMAIN=pgferry.com`
+- `PUBLIC_PLAUSIBLE_SRC=https://your-plausible-host/js/script.js`
+- `PUBLIC_PLAUSIBLE_API=https://your-plausible-host/api/event` (optional)
 
-If those change, update the workflow env values.
+Vercel applies environment variables per environment and changes only affect new deployments, so redeploy after editing them. Sources: [Environment variables](https://vercel.com/docs/environment-variables), [Managing environment variables](https://vercel.com/docs/environment-variables/managing-environment-variables).
 
-## Cloudflare dashboard
+### Custom domain
 
-For the Pages project itself:
+After the first successful deployment:
 
-- connect the custom domain to the `pgferry` Pages project
-- disable automatic production builds if the project is Git-integrated
-- do not use `npx wrangler deploy` as a dashboard deploy command for this setup
+1. Open the Vercel project.
+2. Go to Settings -> Domains.
+3. Add `pgferry.com`.
+4. Optionally add `www.pgferry.com` and redirect it to the apex domain.
+5. Update your DNS records to the values Vercel shows for the project.
+
+Vercel documents apex domains with an `A` record and subdomains with a `CNAME`, but you should use the exact records shown in your project because they may be account-specific. Sources: [Setting up a custom domain](https://vercel.com/docs/domains/set-up-custom-domain), [Adding & configuring a custom domain](https://vercel.com/docs/domains/working-with-domains/add-a-domain).
+
+### Deploy flow
+
+- Push to `main` for production deployments.
+- Push other branches or open pull requests for preview deployments.
+
+That behavior is built into Vercel's Git-based deployment model. Source: [Deploying to Vercel](https://vercel.com/docs/deployments).
 
 ## Plausible
 
