@@ -34,8 +34,8 @@ var versionCmd = &cobra.Command{
 }
 
 var generateCmd = &cobra.Command{
-	Use:     "generate",
-	Aliases: []string{"init"},
+	Use:     "wizard",
+	Aliases: []string{"generate", "init"},
 	Short:   "Launch an interactive config wizard",
 	Args:    cobra.NoArgs,
 	RunE:    runGenerateWizard,

@@ -9,7 +9,7 @@ pgferry migration.toml
 If you want help creating that file, start the interactive wizard instead:
 
 ```bash
-pgferry generate
+pgferry wizard
 ```
 
 The wizard walks through the main migration settings and lets you either save the generated
