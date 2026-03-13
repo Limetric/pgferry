@@ -2,7 +2,26 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
-const site = process.env.SITE_URL || 'https://pgferry.com';
+function normalizeURL(value) {
+	if (!value) return null;
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	const candidate =
+		trimmed.startsWith('http://') || trimmed.startsWith('https://') ? trimmed : `https://${trimmed}`;
+	try {
+		const url = new URL(candidate);
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+		return url.toString().replace(/\/$/, '');
+	} catch {
+		return null;
+	}
+}
+
+const site =
+	normalizeURL(process.env.SITE_URL) ||
+	normalizeURL(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
+	normalizeURL(process.env.VERCEL_URL) ||
+	'https://pgferry.com';
 const plausibleDomain = process.env.PUBLIC_PLAUSIBLE_DOMAIN || '';
 const plausibleSrc = process.env.PUBLIC_PLAUSIBLE_SRC || '';
 const plausibleAPI = process.env.PUBLIC_PLAUSIBLE_API || '';

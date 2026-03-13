@@ -44,6 +44,8 @@ Add these in Vercel under Project Settings -> Environment Variables:
 - `PUBLIC_PLAUSIBLE_SRC=https://your-plausible-host/js/script.js`
 - `PUBLIC_PLAUSIBLE_API=https://your-plausible-host/api/event` (optional)
 
+`SITE_URL` should be a full absolute URL with protocol. Example: `https://pgferry.com`, not just `pgferry.com`.
+
 Vercel applies environment variables per environment and changes only affect new deployments, so redeploy after editing them. Sources: [Environment variables](https://vercel.com/docs/environment-variables), [Managing environment variables](https://vercel.com/docs/environment-variables/managing-environment-variables).
 
 ### Custom domain
