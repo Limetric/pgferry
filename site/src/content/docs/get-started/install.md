@@ -1,6 +1,8 @@
 ---
 title: Install
 description: Install pgferry from releases or build it from source.
+sidebar:
+  order: 1
 ---
 
 `pgferry` is a single Go binary. There are no sidecar services, no runtime agents, and no extra database middleware to deploy.
@@ -29,16 +31,6 @@ go build -o build/pgferry .
 - A source DSN for MySQL, SQLite, or MSSQL.
 - A target PostgreSQL DSN.
 - A TOML config file describing schema, type mapping, and migration behavior.
-
-## Test locally
-
-Unit tests do not require a database:
-
-```bash
-go test ./... -count=1
-```
-
-Integration coverage is split by source type. The repository README includes the exact environment variables and commands for MySQL, SQLite, and MSSQL runs.
 
 ## Next step
 
