@@ -56,6 +56,9 @@ export default defineConfig({
 			editLink: {
 				baseUrl: 'https://github.com/Limetric/pgferry/edit/main/site/src/content/docs/',
 			},
+			components: {
+				PageFrame: './src/components/PageFrame.astro',
+			},
 			lastUpdated: true,
 			customCss: ['/src/styles/custom.css'],
 			favicon: '/favicon.svg',
