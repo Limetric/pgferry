@@ -3,13 +3,19 @@
 pgferry is configured with a single TOML file passed as the first argument:
 
 ```bash
-pgferry migration.toml
+pgferry migrate migration.toml
 ```
 
 If you want help creating that file, start the interactive wizard instead:
 
 ```bash
-pgferry wizard
+pgferry
+```
+
+You can also run `pgferry wizard` explicitly. To execute a saved config, prefer:
+
+```bash
+pgferry migrate migration.toml
 ```
 
 The wizard walks through the main migration settings and lets you either save the generated

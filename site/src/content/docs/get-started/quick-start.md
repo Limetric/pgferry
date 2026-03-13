@@ -47,8 +47,10 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ## Run the migration
 
 ```bash
-pgferry migration.toml
+pgferry migrate migration.toml
 ```
+
+In an interactive terminal, plain `pgferry` starts the config wizard. The shorthand `pgferry migration.toml` still works for direct execution.
 
 The default pipeline is:
 

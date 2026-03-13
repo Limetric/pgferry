@@ -34,7 +34,7 @@ go build -o build/pgferry .
 
 ## Quick Start
 
-Create `migration.toml` manually or via `pgferry wizard`.
+Create `migration.toml` manually or via `pgferry wizard`. In an interactive terminal, running plain `pgferry` also opens the wizard.
 
 **MySQL -> PostgreSQL**
 
@@ -78,8 +78,10 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 Run the migration:
 
 ```bash
-pgferry migration.toml
+pgferry migrate migration.toml
 ```
+
+`pgferry migration.toml` remains supported as a shorthand.
 
 ## Check First, Migrate Second
 

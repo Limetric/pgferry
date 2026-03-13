@@ -21,7 +21,7 @@ var rootCmd = &cobra.Command{
 	Use:   "pgferry [config.toml]",
 	Short: "Source database to PostgreSQL migration tool",
 	Args:  cobra.MaximumNArgs(1),
-	RunE:  runMigration,
+	RunE:  runRoot,
 }
 
 var versionCmd = &cobra.Command{
@@ -33,6 +33,14 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var migrateCmd = &cobra.Command{
+	Use:     "migrate [config.toml]",
+	Aliases: []string{"run"},
+	Short:   "Run a migration from a TOML config file",
+	Args:    cobra.MaximumNArgs(1),
+	RunE:    runMigration,
+}
+
 var generateCmd = &cobra.Command{
 	Use:     "wizard",
 	Aliases: []string{"generate", "init"},
@@ -41,11 +49,17 @@ var generateCmd = &cobra.Command{
 	RunE:    runGenerateWizard,
 }
 
+var rootMigrationRunner = runMigration
+var rootWizardRunner = runGenerateWizard
+var rootWizardModeChecker = canLaunchWizardInteractively
+
 func init() {
 	rootCmd.Version = versionString()
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
+	migrateCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(planCmd)
 }
@@ -57,14 +71,20 @@ func main() {
 	}
 }
 
-func runMigration(cmd *cobra.Command, args []string) error {
-	// Resolve config path: positional arg takes precedence over --config flag
-	cfgPath := configPath
-	if len(args) > 0 {
-		cfgPath = args[0]
+func runRoot(cmd *cobra.Command, args []string) error {
+	if resolveMigrationConfigPath(args) != "" {
+		return rootMigrationRunner(cmd, args)
 	}
+	if rootWizardModeChecker(cmd) {
+		return rootWizardRunner(cmd, args)
+	}
+	return missingMigrationConfigError()
+}
+
+func runMigration(cmd *cobra.Command, args []string) error {
+	cfgPath := resolveMigrationConfigPath(args)
 	if cfgPath == "" {
-		return fmt.Errorf("config file required: pgferry <config.toml> or pgferry --config <config.toml>")
+		return missingMigrationConfigError()
 	}
 
 	cfg, err := loadConfig(cfgPath)
@@ -73,6 +93,33 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	}
 
 	return runMigrationWithConfig(cfg)
+}
+
+func resolveMigrationConfigPath(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	return configPath
+}
+
+func missingMigrationConfigError() error {
+	return fmt.Errorf("config file required: pgferry <config.toml>, pgferry migrate <config.toml>, or pgferry wizard")
+}
+
+func canLaunchWizardInteractively(cmd *cobra.Command) bool {
+	return isInteractiveDevice(cmd.InOrStdin()) && isInteractiveDevice(cmd.OutOrStdout())
+}
+
+func isInteractiveDevice(v any) bool {
+	f, ok := v.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func runMigrationWithConfig(cfg *MigrationConfig) error {
