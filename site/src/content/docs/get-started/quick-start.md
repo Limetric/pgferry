@@ -5,15 +5,17 @@ sidebar:
   order: 2
 ---
 
-Quick Start should feel easy, because it is:
+pgferry is meant to be easy to use for the first run. You should not need to memorize every config option before you can get moving.
+
+The fastest path is simple: let the wizard generate the config, run `plan` to see what needs attention, then run `migrate`.
+
+## 1. Run the wizard
 
 ```bash
 pgferry wizard
 ```
 
 In an interactive terminal, plain `pgferry` also opens the wizard. It asks the useful questions, writes the config, and gets you out of the “blank TOML file staring contest” phase quickly.
-
-## 1. Run the wizard
 
 Use the wizard to generate `migration.toml`.
 
