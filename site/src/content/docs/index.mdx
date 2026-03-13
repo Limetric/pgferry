@@ -1,17 +1,17 @@
 ---
 title: pgferry
-description: Move MySQL, SQLite, or MSSQL into PostgreSQL without trusting a brittle black box.
+description: The operator-first docs surface for MySQL, SQLite, and MSSQL migrations into PostgreSQL.
 template: splash
 hero:
-  tagline: Deterministic schema conversion, resumable COPY loads, and the operator controls you need when the source database is messy.
+  tagline: Migrate MySQL, SQLite, or MSSQL into PostgreSQL with a plan-first workflow, copy-pasteable configs, and explicit handling for the messy parts.
   actions:
-    - text: Install
-      link: /get-started/install/
-      icon: right-arrow
-    - text: Quick Start
+    - text: Start Here
       link: /get-started/quick-start/
       icon: right-arrow
-    - text: Browse Examples
+    - text: Plan First
+      link: /get-started/plan-and-validate/
+      icon: right-arrow
+    - text: Choose An Example
       link: /examples/
       icon: right-arrow
     - text: GitHub
@@ -23,67 +23,182 @@ hero:
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
 <div class="hero-band">
-	<span>MySQL 5.7+</span>
+	<span>Plan before migrate</span>
+	<span>Wizard-first setup</span>
 	<span>SQLite</span>
+	<span>MySQL 5.7+</span>
 	<span>MSSQL 2017-2025</span>
 	<span>PostgreSQL target</span>
-	<span>Chunked COPY</span>
-	<span>Plan before migrate</span>
+	<span>Chunked COPY + resume</span>
 </div>
 
-## Why pgferry exists
+<section class="hero-recommendation">
+	<p class="eyebrow">Recommended First Move</p>
+	<h2>Run <code>pgferry wizard</code>, save a config, then run <code>pgferry plan</code> before you ever point the tool at production.</h2>
+	<p>
+		The website is organized around that operator path: pick a migration pattern, copy a working config, read the source-specific caveats, and only then run the real load.
+	</p>
+</section>
 
-Most migration tools are fine until the schema gets ugly: generated columns, unsupported indexes, collations, extension-backed types, or the first interruption halfway through a bulk copy. `pgferry` was built for that failure mode.
+## What pgferry is for
+
+`pgferry` is for one-shot database migrations into PostgreSQL when you want explicit behavior instead of a black box: schema introspection, predictable table creation, `COPY`-based loading, resumable chunking, hook phases, and post-load validation.
+
+<div class="config-stage">
+	<div class="config-panel">
+
+```toml
+schema = "app"
+on_schema_exists = "error"
+unlogged_tables = false
+resume = true
+validation = "row_count"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+
+[target]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+```
+
+	</div>
+	<div class="config-notes">
+		<article>
+			<h3>Safe by default</h3>
+			<p><code>on_schema_exists = "error"</code> avoids destroying prior target state during rehearsals.</p>
+		</article>
+		<article>
+			<h3>Crash-safe runs</h3>
+			<p><code>unlogged_tables = false</code> plus <code>resume = true</code> is the correct long-run pairing.</p>
+		</article>
+		<article>
+			<h3>Sanity check built in</h3>
+			<p><code>validation = "row_count"</code> gives you a quick first-pass verification before cutover.</p>
+		</article>
+	</div>
+</div>
 
 <div class="signal-grid">
 	<article>
 		<h3>One config file</h3>
-		<p>Use one TOML file to define source, target, hooks, validation, type mapping, and cutover behavior.</p>
+		<p>Define source, target, hooks, validation, type mapping, and cutover behavior in one place.</p>
 	</article>
 	<article>
 		<h3>Preflight first</h3>
-		<p><code>pgferry plan</code> finds unsupported objects and generates hook skeletons before PostgreSQL is touched.</p>
+		<p><code>pgferry plan</code> reports unsupported objects and can generate hook skeletons before PostgreSQL is touched.</p>
 	</article>
 	<article>
 		<h3>Resume when reality happens</h3>
-		<p>Checkpointed chunking means long migrations can survive network failures and operator mistakes.</p>
+		<p>Checkpointed chunking lets long migrations survive failures without restarting from zero.</p>
 	</article>
 	<article>
 		<h3>Modern edge cases included</h3>
-		<p>PostGIS, <code>citext</code>, generated columns, source-specific type mapping, and bounded post-load parallelism are all first-class.</p>
+		<p>Generated columns, skipped index warnings, `citext`, PostGIS, and source-specific type mapping are all part of the documented path.</p>
 	</article>
 </div>
 
-## What you get
+## Choose your migration path
 
 <CardGrid>
-	<Card title="Introspection that errs on the side of honesty" icon="list">
-		Source schema analysis reports unsupported types, generated columns, skipped indexes, views, routines, and triggers that need manual handling.
+	<Card title="Minimal-safe" icon="shield">
+		Use this first for production rehearsals. Keeps logged tables, avoids destructive schema recreation, and biases toward inspection over speed.
 	</Card>
-	<Card title="COPY performance with control" icon="bolt">
-		Chunked range planning for eligible tables, worker pools for the hot path, and bounded index creation during post-migration cleanup.
+	<Card title="Recreate-fast" icon="bolt">
+		Use this for disposable dev or staging targets. Drops the schema, uses <code>UNLOGGED</code> tables, and optimizes for fast repeat runs.
 	</Card>
-	<Card title="Operational escape hatches" icon="gear">
-		Hooks at four phases, <code>schema_only</code> and <code>data_only</code> modes, orphan cleanup, snapshot options, and configurable defaults preservation.
+	<Card title="Chunked-resume" icon="refresh">
+		Use this for large tables or long-running loads where interruption cost matters more than raw bulk-load speed.
 	</Card>
-	<Card title="Validation instead of vibes" icon="check-circle">
-		Optional row-count checks and explicit logging reduce the number of surprises left for cutover day.
+	<Card title="Schema-only / data-only" icon="list">
+		Use this when you need more control over DDL review, cutover sequencing, or a separate schema approval step.
 	</Card>
 </CardGrid>
 
-## Default path through a migration
+<div class="route-list">
+	<a href="/migration-patterns/minimal-safe/">Read the safe-default playbook</a>
+	<a href="/migration-patterns/recreate-fast/">Read the fast disposable playbook</a>
+	<a href="/migration-patterns/chunked-resume/">Read the resumable large-table playbook</a>
+	<a href="/examples/">Browse copy-pasteable examples by source</a>
+</div>
 
 ```bash
+pgferry wizard
 pgferry plan migration.toml
 pgferry migrate migration.toml
 ```
 
-1. Inspect the source and generate a preflight report.
-2. Fill in hooks for views, routines, or custom data cleanup.
-3. Run the migration with chunking, checkpoints, and optional validation.
-4. Review post-load objects, row counts, and extension-backed features before cutover.
+<div class="plan-terminal">
 
-## Source matrix
+```text
+$ pgferry plan migration.toml
+found 42 tables
+WARN: generated column report: 3 generated column(s) need manual expression migration
+WARN: index compatibility report: 2 index(es) may require manual handling
+WARN: source object report:
+  views require manual migration
+  routines require manual migration
+recommended hook files written to ./hooks/
+```
+
+</div>
+
+## The migration flow
+
+<div class="flow-grid">
+	<article>
+		<span>01</span>
+		<h3>Plan</h3>
+		<p>Inspect the source, learn what needs manual handling, and generate hook scaffolding.</p>
+	</article>
+	<article>
+		<span>02</span>
+		<h3>Prepare</h3>
+		<p>Pick a migration pattern, choose snapshot mode, and install any required target extensions.</p>
+	</article>
+	<article>
+		<span>03</span>
+		<h3>Load</h3>
+		<p>Create tables, stream data with `COPY`, and use chunking or resume when the run is long.</p>
+	</article>
+	<article>
+		<span>04</span>
+		<h3>Finalize</h3>
+		<p>Add keys, indexes, foreign keys, sequences, and optional trigger emulation after the heavy load is done.</p>
+	</article>
+	<article>
+		<span>05</span>
+		<h3>Cut over</h3>
+		<p>Check row counts, run application-specific follow-up SQL, and verify the target behaves the way production needs.</p>
+	</article>
+</div>
+
+## What pgferry handles automatically
+
+<div class="do-dont-grid">
+	<article>
+		<h3>Handled by pgferry</h3>
+		<ul>
+			<li>source schema introspection</li>
+			<li>table creation and PostgreSQL identifier normalization</li>
+			<li>`COPY`-based data loading with chunking support</li>
+			<li>post-load PK, index, FK, sequence, and optional trigger creation</li>
+			<li>checkpointed resume and optional row-count validation</li>
+		</ul>
+	</article>
+	<article>
+		<h3>You still need to own</h3>
+		<ul>
+			<li>views, routines, and source-trigger replacements</li>
+			<li>generated-column expression semantics</li>
+			<li>application-specific cutover checks</li>
+			<li>unsupported index redesign where needed</li>
+			<li>decisions about speed versus safety for your environment</li>
+		</ul>
+	</article>
+</div>
+
+## Proof surface
 
 | Source | Driver | Workers | Snapshot mode |
 | ------ | ------ | ------- | ------------- |
@@ -91,9 +206,24 @@ pgferry migrate migration.toml
 | SQLite | `modernc.org/sqlite` | Sequential | `none` |
 | MSSQL | `go-mssqldb` | Parallel | `none`, `single_tx` |
 
+<div class="proof-grid">
+	<article>
+		<h3>Operator guidance</h3>
+		<p>Use the site to decide when to choose `minimal-safe`, `recreate-fast`, `resume`, `single_tx`, and hooks.</p>
+	</article>
+	<article>
+		<h3>Copy-pasteable examples</h3>
+		<p>The examples section now renders real configs and SQL snippets inline instead of sending you to GitHub first.</p>
+	</article>
+	<article>
+		<h3>Complete on-site reference</h3>
+		<p>Configuration, type mapping, pipeline stages, hooks, and operational limits all live under the website reference section.</p>
+	</article>
+</div>
+
 ## Read next
 
-- [Install pgferry](/get-started/install/)
-- [Quick start for MySQL, SQLite, and MSSQL](/get-started/quick-start/)
-- [Plan and validate before cutover](/get-started/plan-and-validate/)
-- [Examples by source database](/examples/)
+- [Start with install and quick start](/get-started/install/)
+- [Choose a migration pattern](/migration-patterns/)
+- [Read the source-specific caveats](/source-guides/)
+- [Pick a copy-pasteable example](/examples/)

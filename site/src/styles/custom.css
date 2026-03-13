@@ -177,6 +177,151 @@ body {
 	box-shadow: var(--sl-shadow-sm);
 }
 
+.eyebrow {
+	margin: 0 0 0.5rem;
+	font-size: 0.85rem;
+	font-weight: 700;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--sl-color-text-accent);
+}
+
+.hero-recommendation,
+.config-panel,
+.config-notes article,
+.flow-grid article,
+.do-dont-grid article,
+.proof-grid article,
+.route-list a,
+.plan-terminal {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 1.5rem;
+	box-shadow: var(--sl-shadow-sm);
+}
+
+.hero-recommendation {
+	padding: 1.6rem;
+	margin: 1rem 0 2rem;
+	background:
+		linear-gradient(135deg, rgba(95, 185, 170, 0.15), transparent 55%),
+		radial-gradient(circle at top right, rgba(194, 108, 43, 0.16), transparent 30%),
+		rgba(255, 250, 242, 0.72);
+}
+
+:root[data-theme='dark'] .hero-recommendation,
+:root[data-theme='dark'] .config-panel,
+:root[data-theme='dark'] .config-notes article,
+:root[data-theme='dark'] .flow-grid article,
+:root[data-theme='dark'] .do-dont-grid article,
+:root[data-theme='dark'] .proof-grid article,
+:root[data-theme='dark'] .route-list a,
+:root[data-theme='dark'] .plan-terminal {
+	background: rgba(13, 28, 42, 0.88);
+}
+
+.hero-recommendation h2 {
+	font-family: 'Fraunces', serif;
+	font-size: clamp(1.6rem, 2.4vw, 2.3rem);
+	line-height: 1.02;
+	margin: 0 0 0.8rem;
+}
+
+.config-stage,
+.do-dont-grid,
+.proof-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+	gap: 1rem;
+	margin: 1.5rem 0 2.5rem;
+}
+
+.config-panel {
+	padding: 1rem 1.2rem;
+	background: rgba(255, 250, 242, 0.72);
+}
+
+.config-panel pre {
+	margin: 0;
+}
+
+.config-notes {
+	display: grid;
+	gap: 1rem;
+}
+
+.config-notes article,
+.flow-grid article,
+.do-dont-grid article,
+.proof-grid article {
+	padding: 1.2rem;
+	background: rgba(255, 250, 242, 0.72);
+}
+
+.config-notes h3,
+.flow-grid h3,
+.do-dont-grid h3,
+.proof-grid h3 {
+	font-family: 'Fraunces', serif;
+	margin: 0 0 0.45rem;
+}
+
+.route-list {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+	gap: 0.85rem;
+	margin: 1.25rem 0 2.25rem;
+}
+
+.route-list a {
+	padding: 1rem 1.1rem;
+	background: rgba(255, 250, 242, 0.72);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.route-list a:hover {
+	transform: translateY(-1px);
+}
+
+.plan-terminal {
+	padding: 1rem 1.2rem;
+	background: #09141f;
+	margin: 1.5rem 0 2.5rem;
+}
+
+.plan-terminal pre {
+	margin: 0;
+}
+
+.flow-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+	gap: 1rem;
+	margin: 1.5rem 0 2.5rem;
+}
+
+.flow-grid article span {
+	display: inline-flex;
+	width: 2.1rem;
+	height: 2.1rem;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999px;
+	background: var(--sl-color-accent);
+	color: #08202c;
+	font-weight: 700;
+	margin-bottom: 0.8rem;
+}
+
+.do-dont-grid ul {
+	margin: 0;
+	padding-left: 1.1rem;
+}
+
+.proof-grid {
+	margin-top: 1.25rem;
+}
+
 .sl-markdown-content a {
 	text-decoration-thickness: 0.08em;
 	text-underline-offset: 0.16em;
@@ -195,5 +340,11 @@ body {
 @media (max-width: 50rem) {
 	.hero::after {
 		inset-inline: 0.2rem;
+	}
+
+	.hero-recommendation,
+	.config-panel,
+	.plan-terminal {
+		padding-inline: 1rem;
 	}
 }
