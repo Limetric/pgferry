@@ -493,8 +493,8 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	if cfg.SourceSnapshotMode != defaults.SourceSnapshotMode {
 		writeLine("source_snapshot_mode = %s", strconv.Quote(cfg.SourceSnapshotMode))
 	}
-	if cfg.UnloggedTables {
-		writeLine("unlogged_tables = true")
+	if cfg.UnloggedTables != defaults.UnloggedTables {
+		writeLine("unlogged_tables = %t", cfg.UnloggedTables)
 	}
 	if !cfg.PreserveDefaults {
 		writeLine("preserve_defaults = false")

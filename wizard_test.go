@@ -106,7 +106,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		"",    // migration mode = full
 		"",    // on_schema_exists = error
 		"",    // source_snapshot_mode = none
-		"",    // unlogged_tables = false
+		"",    // unlogged_tables = true
 		"",    // preserve_defaults = true
 		"",    // snake_case_identifiers = true
 		"",    // clean_orphans = true
@@ -360,6 +360,21 @@ func TestRenderConfigTOMLIncludesOnlyConfiguredOverrides(t *testing.T) {
 	}
 	if strings.Contains(rendered, "preserve_defaults = true") {
 		t.Fatalf("did not expect default preserve_defaults in output, got:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigTOMLIncludesUnloggedOptOut(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "sakila"
+	cfg.UnloggedTables = false
+
+	rendered := renderConfigTOML(&cfg)
+
+	if !strings.Contains(rendered, "unlogged_tables = false") {
+		t.Fatalf("expected unlogged opt-out in rendered config, got:\n%s", rendered)
 	}
 }
 

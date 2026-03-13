@@ -38,7 +38,7 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 
 **Migration pipeline** (orchestrated in `main.go:runMigration`):
 
-1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `index_workers=workers`, `unlogged_tables=false`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `snake_case_identifiers=true`, `replicate_on_update_current_timestamp=false`, `chunk_size=100000`, `resume=false`, `validation=none`)
+1. `loadConfig` — TOML config (`schema` required; defaults: `on_schema_exists=error`, `source_snapshot_mode=none`, `workers=min(runtime.NumCPU(), 8)`, `index_workers=workers`, `unlogged_tables=true`, `preserve_defaults=true`, `add_unsigned_checks=false`, `clean_orphans=true`, `snake_case_identifiers=true`, `replicate_on_update_current_timestamp=false`, `chunk_size=100000`, `resume=false`, `validation=none`)
 2. `src.IntrospectSchema` — source-specific schema introspection (tables, columns, indexes, FKs). Also reports source views/routines/triggers that require manual migration.
 3. `createTables` — columns only, no constraints (UNLOGGED only when enabled, defaults included by default; omitted when `preserve_defaults=false`)
 4. `loadAndExecSQLFiles` — before_data hooks
@@ -52,7 +52,7 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 ## Conventions
 
 - Source names are converted to snake_case by default via `toSnakeCase`; when `snake_case_identifiers=false`, only lowercased; PostgreSQL reserved words are quoted via `pgIdent`
-- Tables are created as regular logged tables by default; set `unlogged_tables=true` to use UNLOGGED during bulk load
+- Tables are created as UNLOGGED by default during full migrations; set `unlogged_tables=false` for crash-safe WAL logging or when using `resume=true`
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
 - `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`) — MySQL only
 - Some type mapping options are MySQL-only (`tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `widen_unsigned_integers`, `enum_mode`, `set_mode`); some are MSSQL-only (`nvarchar_as_text`, `money_as_numeric`, `xml_as_text`); some are shared (`datetime_as_timestamptz`, `spatial_mode`). Incompatible sources reject these at config validation

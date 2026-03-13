@@ -12,7 +12,7 @@ all data was copied.
 | `chunk_size` | `100000` | Split tables into 100k-row chunks by PK range |
 | `resume` | `true` | Skip completed chunks on rerun |
 | `validation` | `row_count` | Compare source/target row counts after data load |
-| `unlogged_tables` | `true` | Skip WAL during bulk load for speed |
+| `unlogged_tables` | `false` | Resume requires logged tables so checkpoints match durable target data |
 | `workers` | `8` | Parallel chunk/table workers |
 
 ## When to use
@@ -20,6 +20,7 @@ all data was copied.
 - Large tables with millions of rows that dominate migration runtime.
 - You want crash-resilient migrations that can resume without recopying data.
 - You want verification that all rows were copied.
+- You are willing to trade some bulk-load speed for resumability.
 
 ## How chunking works
 
@@ -31,8 +32,8 @@ non-numeric keys, no PK) fall back to full-table copy.
 ## Checkpoint file
 
 Progress is saved to `pgferry_checkpoint.json` in the same directory as the
-TOML config file. The checkpoint is atomically updated after each chunk and
-deleted on successful completion.
+TOML config file. The checkpoint is atomically updated in batches during the
+run and deleted on successful completion.
 
 ## Usage
 

@@ -21,7 +21,7 @@ If the source is production and you want the least drama:
 
 1. Begin with `minimal-safe`.
 2. Run `pgferry plan`.
-3. Add `validation = "row_count"` and `resume = true`.
+3. Add `validation = "row_count"`, `resume = true`, and `unlogged_tables = false`.
 4. Only switch to `recreate-fast` after you understand the operational tradeoff.
 
 ## MySQL-only features to look for

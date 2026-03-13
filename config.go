@@ -126,6 +126,7 @@ func defaultMigrationConfig() MigrationConfig {
 	return MigrationConfig{
 		OnSchemaExists:       "error",
 		SourceSnapshotMode:   "none",
+		UnloggedTables:       true,
 		PreserveDefaults:     true,
 		CleanOrphans:         true,
 		SnakeCaseIdentifiers: true,
@@ -245,6 +246,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 	if cfg.Resume && cfg.SchemaOnly {
 		return fmt.Errorf("resume is incompatible with schema_only (no data to resume)")
+	}
+	if cfg.Resume && cfg.UnloggedTables {
+		return fmt.Errorf("resume is incompatible with unlogged_tables=true (checkpointed progress can outlive crash-truncated UNLOGGED tables)")
 	}
 
 	// Source validation

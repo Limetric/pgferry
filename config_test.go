@@ -118,8 +118,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.SourceSnapshotMode != "none" {
 		t.Errorf("default SourceSnapshotMode = %q, want %q", cfg.SourceSnapshotMode, "none")
 	}
-	if cfg.UnloggedTables {
-		t.Errorf("default UnloggedTables = %t, want false", cfg.UnloggedTables)
+	if !cfg.UnloggedTables {
+		t.Errorf("default UnloggedTables = %t, want true", cfg.UnloggedTables)
 	}
 	if !cfg.PreserveDefaults {
 		t.Errorf("default PreserveDefaults = %t, want true", cfg.PreserveDefaults)
@@ -1386,6 +1386,7 @@ func TestLoadConfig_ChunkingExplicit(t *testing.T) {
 
 	content := `
 schema = "target"
+unlogged_tables = false
 chunk_size = 50000
 resume = true
 validation = "row_count"
@@ -1497,6 +1498,35 @@ dsn = "postgres://u:p@h:5432/db"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for resume + schema_only")
+	}
+}
+
+func TestLoadConfig_ResumeWithUnloggedConflict(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "resume_unlogged.toml")
+
+	content := `
+schema = "target"
+resume = true
+unlogged_tables = true
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for resume + unlogged_tables")
+	}
+	if !strings.Contains(err.Error(), "unlogged_tables") {
+		t.Fatalf("error should mention unlogged_tables, got: %v", err)
 	}
 }
 

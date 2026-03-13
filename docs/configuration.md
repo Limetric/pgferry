@@ -50,8 +50,8 @@ snake_case_identifiers = true
 # Use UNLOGGED tables during bulk load, then SET LOGGED after
 # Faster writes because WAL is skipped, but data is lost on crash during migration
 # Ignored when schema_only or data_only is true
-# Default: false
-unlogged_tables = false
+# Default: true
+unlogged_tables = true
 
 # Preserve source column DEFAULT values in the PostgreSQL schema
 # When false, defaults are omitted from CREATE TABLE
@@ -85,7 +85,7 @@ chunk_size = 100000
 
 # Resume from a previous incomplete migration using the checkpoint file
 # When true, completed chunks/tables are skipped on rerun
-# Incompatible with on_schema_exists=recreate and schema_only
+# Incompatible with on_schema_exists=recreate, schema_only, and unlogged_tables=true
 # Default: false
 resume = false
 
@@ -280,6 +280,7 @@ pgferry validates the config at load time and reports errors before connecting t
 | `chunk_size` | Defaults to `100000` if &le; 0 |
 | `resume` + `on_schema_exists=recreate` | Incompatible &mdash; recreate would destroy data to resume into |
 | `resume` + `schema_only` | Incompatible &mdash; no data to resume |
+| `resume` + `unlogged_tables=true` | Incompatible &mdash; checkpoints can outlive crash-truncated UNLOGGED tables |
 | `schema_only` + `data_only` | Mutually exclusive &mdash; cannot both be `true` |
 | `target.dsn` | Required |
 | `workers` | Defaults to `min(NumCPU, 8)` if &le; 0; capped at 1 for SQLite |
@@ -296,7 +297,7 @@ Fields omitted from the TOML file use these defaults:
 | `schema_only` | `false` |
 | `data_only` | `false` |
 | `source_snapshot_mode` | `"none"` |
-| `unlogged_tables` | `false` |
+| `unlogged_tables` | `true` |
 | `preserve_defaults` | `true` |
 | `add_unsigned_checks` | `false` |
 | `clean_orphans` | `true` |

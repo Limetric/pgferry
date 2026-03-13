@@ -132,6 +132,9 @@ The checkpoint records which chunks and tables have been completed.
   progress.
 - **No overhead when disabled:** when `resume = false` (the default), no
   checkpoint file is created or updated.
+- **Logged target required for resume:** `resume = true` requires
+  `unlogged_tables = false` so checkpointed progress matches durable target
+  data after a crash.
 - **Cleanup:** Automatically deleted when migration completes successfully
 - **Stale checkpoints:** If the source data changes between runs, resuming from
   a stale checkpoint may produce inconsistent results. pgferry logs the
@@ -283,4 +286,5 @@ table to convert them back to regular logged tables.
 This option is ignored in `schema_only` and `data_only` modes.
 
 **Warning:** If pgferry crashes or is killed during migration with UNLOGGED
-tables, any data in those tables is lost.
+tables, any data in those tables is lost. Because of that, `resume = true`
+requires `unlogged_tables = false`.

@@ -1,6 +1,6 @@
 schema = "app"
 on_schema_exists = "error"
-unlogged_tables = true
+unlogged_tables = false
 workers = 8
 chunk_size = 100000
 resume = true

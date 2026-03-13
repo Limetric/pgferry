@@ -165,6 +165,7 @@ If the migration is interrupted (crash, Ctrl+C, error), rerunning with
 `resume = true` will skip completed work and continue from where it left off.
 
 ```toml
+unlogged_tables = false
 resume = true
 ```
 
@@ -193,6 +194,8 @@ eliminating all checkpoint-related I/O from the data copy hot path.
 - `resume = true` is incompatible with `on_schema_exists = "recreate"` (which
   would drop the schema containing data to resume into).
 - `resume = true` is incompatible with `schema_only = true` (no data to resume).
+- `resume = true` is incompatible with `unlogged_tables = true` because
+  checkpointed progress can outlive crash-truncated UNLOGGED tables.
 - If the source data changes between runs, the resumed migration may produce
   inconsistent results. Ensure source stability during resumed migrations.
 

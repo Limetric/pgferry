@@ -25,6 +25,7 @@ With `--output-dir`, pgferry also writes hook skeletons you can fill in before t
 ## Use validation during the real run
 
 ```toml
+unlogged_tables = false
 validation = "row_count"
 resume = true
 chunk_size = 100000
@@ -34,6 +35,7 @@ These settings are a strong default for long-running operational migrations:
 
 - `validation = "row_count"` checks source and target table counts after load.
 - `resume = true` keeps progress in `pgferry_checkpoint.json`.
+- `unlogged_tables = false` keeps checkpoints aligned with durable target data.
 - `chunk_size` makes range-based retries cheaper on large tables.
 
 ## Snapshot strategy

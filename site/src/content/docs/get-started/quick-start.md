@@ -61,19 +61,20 @@ The default pipeline is:
 ## High-value defaults
 
 - `snake_case_identifiers = true`
+- `unlogged_tables = true`
 - `preserve_defaults = true`
 - `clean_orphans = true`
 - `validation = "none"`
 - `workers = min(runtime.NumCPU(), 8)`
 
-These defaults are conservative enough to start with but still fast enough for ordinary migrations.
+These defaults bias toward fast full-load migrations while keeping the resulting PostgreSQL schema usable without much extra tuning.
 
 ## When to stop using the minimal config
 
 Add more configuration when you need:
 
 - `source_snapshot_mode = "single_tx"` for a consistent source snapshot on MySQL or MSSQL.
-- `resume = true` for chunk checkpoint reuse.
+- `resume = true` plus `unlogged_tables = false` for chunk checkpoint reuse.
 - `validation = "row_count"` for a post-load sanity check.
 - Hook files for views, routines, cleanup SQL, or foreign-key sequencing.
 - Source-specific type mapping, including PostGIS-backed MySQL spatial migration.

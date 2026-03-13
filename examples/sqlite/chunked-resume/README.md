@@ -11,7 +11,7 @@ chunk. Post-load row count validation confirms all data was copied.
 | `chunk_size` | `100000` | Split tables into 100k-row chunks by PK range |
 | `resume` | `true` | Skip completed chunks on rerun |
 | `validation` | `row_count` | Compare source/target row counts after data load |
-| `unlogged_tables` | `true` | Skip WAL during bulk load for speed |
+| `unlogged_tables` | `false` | Resume requires logged tables so checkpoints match durable target data |
 
 ## SQLite-specific notes
 
@@ -23,6 +23,7 @@ time, but chunking still provides resume capability and progress tracking.
 - Large SQLite databases where a single table dominates migration time.
 - You want crash-resilient migrations that can resume without recopying data.
 - You want verification that all rows were copied.
+- You are willing to trade some bulk-load speed for resumability.
 
 ## Usage
 
