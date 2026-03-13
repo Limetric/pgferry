@@ -32,16 +32,6 @@ go build -o build/pgferry .
 - A target PostgreSQL DSN.
 - A TOML config file describing schema, type mapping, and migration behavior.
 
-## Test locally
-
-Unit tests do not require a database:
-
-```bash
-go test ./... -count=1
-```
-
-Integration coverage is split by source type. The repository README includes the exact environment variables and commands for MySQL, SQLite, and MSSQL runs.
-
 ## Next step
 
 Move to [Quick Start](/get-started/quick-start/) to create a minimal config and run your first migration.
