@@ -4,10 +4,11 @@ Migrate MySQL, SQLite, or MSSQL databases to PostgreSQL with one config file and
 
 Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy — and real migrations always do — you get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
-- One binary, one config file, no runtime dependencies or extra tooling to install
+- No runtime dependencies or extra tooling to install
+- Interactive `pgferry wizard` that can generate, plan, and start a migration in one flow
 - Fast parallel `COPY` loads with range-based chunking for large tables
 - Clear stage and row-copy progress logs, so long runs don’t look frozen
-- Preflight checks that catch unsupported schema issues before PostgreSQL is touched
+- Preflight `plan` command reports views, routines, triggers, generated columns, skipped indexes, required extensions, and collation warnings before PostgreSQL is touched
 - Resumable chunked migrations, so failures don’t send you back to zero
 - Consistent-snapshot mode for migrating live source databases safely
 - Built for messy real-world schemas with hooks, orphan cleanup, generated-column reporting, and unsupported-index warnings
@@ -34,48 +35,28 @@ go build -o build/pgferry .
 
 ## Quick Start
 
-Create `migration.toml` manually or via `pgferry wizard`. In an interactive terminal, running plain `pgferry` also opens the wizard.
+For a first run, start with the wizard:
 
-**MySQL -> PostgreSQL**
+```bash
+pgferry wizard
+```
+
+In an interactive terminal start, plain `pgferry` also opens the wizard. It walks you through source and target DSNs, the target schema, migration mode, and the most important type-mapping options. At the end, you can save the generated `migration.toml`, run `plan`, start the migration immediately, or do both.
+
+If you prefer to create the config yourself, the minimum shape looks like this:
 
 ```toml
 schema = "app"
 
 [source]
-type = "mysql"
+type = "mysql" # or "sqlite" / "mssql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
-**SQLite -> PostgreSQL**
-
-```toml
-schema = "app"
-
-[source]
-type = "sqlite"
-dsn = "/path/to/database.db"
-
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
-```
-
-**MSSQL -> PostgreSQL**
-
-```toml
-schema = "app"
-
-[source]
-type = "mssql"
-dsn = "sqlserver://sa:YourStrong!Pass@127.0.0.1:1433?database=source_db"
-
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
-```
-
-Run the migration:
+Then run:
 
 ```bash
 pgferry migrate migration.toml
@@ -83,16 +64,7 @@ pgferry migrate migration.toml
 
 `pgferry migration.toml` remains supported as a shorthand.
 
-## Check First, Migrate Second
-
-Inspect the source before touching PostgreSQL:
-
-```bash
-pgferry plan migration.toml
-pgferry plan migration.toml --output-dir hooks --format json
-```
-
-`plan` reports objects that need manual attention, including views, routines, triggers, generated columns, unsupported indexes, required extensions, and collation warnings. With `--output-dir`, it also generates SQL hook skeletons you can fill in.
+Need source-specific DSN examples? See [Configuration](docs/configuration.md) or the source-specific configs in [examples/](examples/).
 
 ## Examples
 
