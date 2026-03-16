@@ -533,7 +533,7 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	if len(typeMappingLines) > 0 {
 		writeSection("type_mapping")
 		for _, line := range typeMappingLines {
-			writeLine(line)
+			writeLine("%s", line)
 		}
 	}
 	if len(cfg.TypeMapping.CollationMap) > 0 {

@@ -152,8 +152,16 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 	if !gotCfg.TypeMapping.JSONAsJSONB {
 		t.Fatalf("TypeMapping.JSONAsJSONB = %t, want true", gotCfg.TypeMapping.JSONAsJSONB)
 	}
-	if gotCfg.configDir != dir {
-		t.Fatalf("configDir = %q, want %q", gotCfg.configDir, dir)
+	wantDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		wantDir = dir
+	}
+	gotDir, err := filepath.EvalSymlinks(gotCfg.configDir)
+	if err != nil {
+		gotDir = gotCfg.configDir
+	}
+	if gotDir != wantDir {
+		t.Fatalf("configDir = %q (resolved %q), want %q (resolved %q)", gotCfg.configDir, gotDir, dir, wantDir)
 	}
 	output := out.String()
 	if !strings.Contains(output, "If target schema already exists (default: error)\n  error: Safest default. Stops instead of touching an existing schema.\n  recreate: Drops and recreates the target schema. Fast for clean reruns, but destructive.\nChoice [error/recreate] [error]: ") {
