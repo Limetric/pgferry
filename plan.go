@@ -39,12 +39,13 @@ func init() {
 
 // PlanReport holds all findings from the plan analysis.
 type PlanReport struct {
-	RequiredExtensions []PlanRequiredExtension `json:"required_extensions"`
-	SourceObjects      PlanSourceObjects       `json:"source_objects"`
-	UnsupportedColumns []PlanUnsupportedColumn `json:"unsupported_columns"`
-	GeneratedColumns   []PlanGeneratedColumn   `json:"generated_columns"`
-	SkippedIndexes     []PlanSkippedIndex      `json:"skipped_indexes"`
-	CollationWarnings  []string                `json:"collation_warnings"`
+	RequiredExtensions      []PlanRequiredExtension      `json:"required_extensions"`
+	SourceObjects           PlanSourceObjects            `json:"source_objects"`
+	UnsupportedColumns      []PlanUnsupportedColumn      `json:"unsupported_columns"`
+	GeneratedColumns        []PlanGeneratedColumn        `json:"generated_columns"`
+	SkippedIndexes          []PlanSkippedIndex           `json:"skipped_indexes"`
+	OrphanCleanupCandidates []PlanOrphanCleanupCandidate `json:"orphan_cleanup_candidates"`
+	CollationWarnings       []string                     `json:"collation_warnings"`
 }
 
 type PlanRequiredExtension struct {
@@ -79,6 +80,15 @@ type PlanSkippedIndex struct {
 	Table  string `json:"table"`
 	Index  string `json:"index"`
 	Reason string `json:"reason"`
+}
+
+type PlanOrphanCleanupCandidate struct {
+	Table      string   `json:"table"`
+	ForeignKey string   `json:"foreign_key"`
+	Columns    []string `json:"columns"`
+	RefTable   string   `json:"ref_table"`
+	RefColumns []string `json:"ref_columns"`
+	Action     string   `json:"action"`
 }
 
 func runPlan(cmd *cobra.Command, args []string) error {
@@ -169,11 +179,12 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 
 func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
-		RequiredExtensions: []PlanRequiredExtension{},
-		UnsupportedColumns: []PlanUnsupportedColumn{},
-		GeneratedColumns:   []PlanGeneratedColumn{},
-		SkippedIndexes:     []PlanSkippedIndex{},
-		CollationWarnings:  []string{},
+		RequiredExtensions:      []PlanRequiredExtension{},
+		UnsupportedColumns:      []PlanUnsupportedColumn{},
+		GeneratedColumns:        []PlanGeneratedColumn{},
+		SkippedIndexes:          []PlanSkippedIndex{},
+		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{},
+		CollationWarnings:       []string{},
 	}
 
 	for _, req := range collectRequiredExtensions(schema, src, cfg, typeMap) {
@@ -240,6 +251,21 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 					Table:  t.PGName,
 					Index:  idx.Name,
 					Reason: reason,
+				})
+			}
+		}
+	}
+
+	if cfg.CleanOrphans {
+		for _, t := range schema.Tables {
+			for _, fk := range t.ForeignKeys {
+				report.OrphanCleanupCandidates = append(report.OrphanCleanupCandidates, PlanOrphanCleanupCandidate{
+					Table:      t.PGName,
+					ForeignKey: fk.Name,
+					Columns:    append([]string(nil), fk.Columns...),
+					RefTable:   fk.RefPGTable,
+					RefColumns: append([]string(nil), fk.RefColumns...),
+					Action:     orphanCleanupAction(fk),
 				})
 			}
 		}
@@ -341,6 +367,23 @@ func writePlanText(w io.Writer, report *PlanReport) {
 			fmt.Fprintf(w, "  - %s.%s: %s\n", si.Table, si.Index, si.Reason)
 		}
 		fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
+	}
+
+	if len(report.OrphanCleanupCandidates) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Orphan Cleanup Candidates (%d)\n\n", len(report.OrphanCleanupCandidates))
+		fmt.Fprintf(w, "These foreign keys are eligible for automatic orphan cleanup inspection before PostgreSQL foreign keys are created.\n")
+		fmt.Fprintf(w, "Actions are based on each FK's ON DELETE rule. Row counts are determined during migration runtime.\n\n")
+		for _, risk := range report.OrphanCleanupCandidates {
+			fmt.Fprintf(w, "  - %s.%s (%s) -> %s (%s): %s\n",
+				risk.Table,
+				risk.ForeignKey,
+				strings.Join(risk.Columns, ", "),
+				risk.RefTable,
+				strings.Join(risk.RefColumns, ", "),
+				orphanCleanupActionLabel(risk.Action))
+		}
+		fmt.Fprintln(w)
 	}
 
 	// Collation warnings

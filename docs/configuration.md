@@ -74,6 +74,18 @@ add_unsigned_checks = false
 # Default: true
 clean_orphans = true
 
+# Orphan cleanup mode:
+#   "apply"  — count and then apply DELETE / SET NULL actions before FK creation (default)
+#   "report" — count and log affected rows, then abort before mutating data or creating FKs
+# Ignored when clean_orphans = false
+clean_orphans_mode = "apply"
+
+# Optional safety rail for orphan cleanup.
+# When > 0, pgferry aborts before mutation if the total affected orphan rows exceed this threshold.
+# Default: 0 (disabled)
+# Ignored when clean_orphans = false
+clean_orphans_max_rows = 0
+
 # Emulate MySQL ON UPDATE CURRENT_TIMESTAMP via PG triggers
 # Default: false
 replicate_on_update_current_timestamp = false
@@ -308,6 +320,8 @@ Fields omitted from the TOML file use these defaults:
 | `preserve_defaults` | `true` |
 | `add_unsigned_checks` | `false` |
 | `clean_orphans` | `true` |
+| `clean_orphans_mode` | `"apply"` |
+| `clean_orphans_max_rows` | `0` |
 | `replicate_on_update_current_timestamp` | `false` |
 | `workers` | `min(NumCPU, 8)` |
 | `chunk_size` | `100000` |

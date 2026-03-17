@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -55,8 +57,8 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 
 	// orphan cleanup: opt-in via clean_orphans, skipped in schema_only (no data to clean)
 	if cfg.CleanOrphans && !cfg.SchemaOnly {
-		log.Printf("  orphan cleanup...")
-		if err := cleanOrphans(ctx, pool, schema, pgSchema); err != nil {
+		log.Printf("  orphan cleanup (%s)...", cfg.CleanOrphansMode)
+		if err := cleanOrphans(ctx, pool, schema, pgSchema, cfg.CleanOrphansMode, cfg.CleanOrphansMaxRows); err != nil {
 			return fmt.Errorf("orphan cleanup: %w", err)
 		}
 	} else if !cfg.SchemaOnly {
@@ -479,41 +481,145 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 //
 // PostgreSQL uses MATCH SIMPLE semantics by default, so rows with any NULL
 // component in a composite foreign key are not violations and must be skipped.
-func cleanOrphans(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
-	for _, t := range schema.Tables {
-		for _, fk := range t.ForeignKeys {
-			q := buildCleanOrphansSQL(pgSchema, t, fk)
+type orphanCleanupQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
 
-			tag, err := pool.Exec(ctx, q)
-			if err != nil {
-				return fmt.Errorf("clean orphans %s.%s → %s: %w\nSQL: %s",
-					t.PGName, fk.Name, fk.RefPGTable, err, q)
-			}
-			if tag.RowsAffected() > 0 {
-				action := "deleted"
-				if strings.EqualFold(fk.DeleteRule, "SET NULL") {
-					action = "nullified"
-				}
-				log.Printf("    %s %d orphaned rows in %s.%s (fk: %s → %s)",
-					action, tag.RowsAffected(), pgSchema, t.PGName, fk.Name, fk.RefPGTable)
-			}
+type orphanCleanupExecutor interface {
+	orphanCleanupQuerier
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+type orphanCleanupFinding struct {
+	Table        Table
+	ForeignKey   ForeignKey
+	Action       string
+	AffectedRows int64
+}
+
+func cleanOrphans(ctx context.Context, pool orphanCleanupExecutor, schema *Schema, pgSchema, mode string, maxRows int64) error {
+	findings, err := inspectOrphanCleanup(ctx, pool, schema, pgSchema)
+	if err != nil {
+		return err
+	}
+
+	logOrphanCleanupPreview(findings, mode, maxRows, pgSchema)
+	if err := checkOrphanCleanupThreshold(findings, maxRows); err != nil {
+		return err
+	}
+	if mode == "report" {
+		return fmt.Errorf("report mode completed orphan cleanup inspection: %d action(s), %d row(s); no rows were modified and foreign keys were not created",
+			len(findings), totalOrphanCleanupRows(findings))
+	}
+	if len(findings) == 0 {
+		return nil
+	}
+
+	for _, finding := range findings {
+		q := buildCleanOrphansSQL(pgSchema, finding.Table, finding.ForeignKey)
+
+		tag, err := pool.Exec(ctx, q)
+		if err != nil {
+			return fmt.Errorf("clean orphans %s.%s → %s: %w\nSQL: %s",
+				finding.Table.PGName, finding.ForeignKey.Name, finding.ForeignKey.RefPGTable, err, q)
 		}
+		log.Printf("    action=%s applied=%d rows table=%s.%s fk=%s ref=%s",
+			orphanCleanupActionLabel(finding.Action), tag.RowsAffected(), pgSchema, finding.Table.PGName, finding.ForeignKey.Name, finding.ForeignKey.RefPGTable)
 	}
 	return nil
 }
 
+func inspectOrphanCleanup(ctx context.Context, pool orphanCleanupQuerier, schema *Schema, pgSchema string) ([]orphanCleanupFinding, error) {
+	var findings []orphanCleanupFinding
+	for _, t := range schema.Tables {
+		for _, fk := range t.ForeignKeys {
+			q := buildCleanOrphansCountSQL(pgSchema, t, fk)
+
+			var count int64
+			if err := pool.QueryRow(ctx, q).Scan(&count); err != nil {
+				return nil, fmt.Errorf("count orphan cleanup rows %s.%s → %s: %w\nSQL: %s",
+					t.PGName, fk.Name, fk.RefPGTable, err, q)
+			}
+			if count > 0 {
+				findings = append(findings, orphanCleanupFinding{
+					Table:        t,
+					ForeignKey:   fk,
+					Action:       orphanCleanupAction(fk),
+					AffectedRows: count,
+				})
+			}
+		}
+	}
+	return findings, nil
+}
+
+func logOrphanCleanupPreview(findings []orphanCleanupFinding, mode string, maxRows int64, pgSchema string) {
+	if len(findings) == 0 {
+		log.Printf("    no orphaned rows detected")
+		return
+	}
+
+	log.Printf("    identified %d orphan-cleanup action(s) affecting %d row(s) before FK creation (mode=%s)",
+		len(findings), totalOrphanCleanupRows(findings), mode)
+	if maxRows > 0 {
+		log.Printf("    clean_orphans_max_rows=%d", maxRows)
+	}
+	for _, finding := range findings {
+		log.Printf("    action=%s rows=%d table=%s.%s fk=%s ref=%s",
+			orphanCleanupActionLabel(finding.Action), finding.AffectedRows, pgSchema, finding.Table.PGName, finding.ForeignKey.Name, finding.ForeignKey.RefPGTable)
+	}
+}
+
+func checkOrphanCleanupThreshold(findings []orphanCleanupFinding, maxRows int64) error {
+	if maxRows <= 0 {
+		return nil
+	}
+	total := totalOrphanCleanupRows(findings)
+	if total > maxRows {
+		return fmt.Errorf("orphan cleanup would affect %d row(s), exceeding clean_orphans_max_rows=%d", total, maxRows)
+	}
+	return nil
+}
+
+func totalOrphanCleanupRows(findings []orphanCleanupFinding) int64 {
+	var total int64
+	for _, finding := range findings {
+		total += finding.AffectedRows
+	}
+	return total
+}
+
+func orphanCleanupAction(fk ForeignKey) string {
+	if strings.EqualFold(fk.DeleteRule, "SET NULL") {
+		return "set_null"
+	}
+	return "delete"
+}
+
+func orphanCleanupActionLabel(action string) string {
+	if action == "set_null" {
+		return "SET NULL"
+	}
+	return "DELETE"
+}
+
+func orphanCleanupCandidateCounts(schema *Schema) (total, deleteCount, setNullCount int) {
+	for _, t := range schema.Tables {
+		for _, fk := range t.ForeignKeys {
+			total++
+			if orphanCleanupAction(fk) == "set_null" {
+				setNullCount++
+			} else {
+				deleteCount++
+			}
+		}
+	}
+	return total, deleteCount, setNullCount
+}
+
 func buildCleanOrphansSQL(pgSchema string, t Table, fk ForeignKey) string {
 	child := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
-	parent := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(fk.RefPGTable))
-
-	var joinConds []string
-	for i, col := range fk.Columns {
-		joinConds = append(joinConds,
-			fmt.Sprintf("p.%s = c.%s", pgIdent(fk.RefColumns[i]), pgIdent(col)))
-	}
-	notExists := fmt.Sprintf("NOT EXISTS (SELECT 1 FROM %s p WHERE %s)",
-		parent, strings.Join(joinConds, " AND "))
-
+	notExists := orphanMissingParentPredicate(pgSchema, fk)
 	whereAllNotNull := foreignKeyAllNotNullPredicate(fk.Columns)
 
 	if strings.EqualFold(fk.DeleteRule, "SET NULL") {
@@ -527,6 +633,26 @@ func buildCleanOrphansSQL(pgSchema string, t Table, fk ForeignKey) string {
 
 	return fmt.Sprintf("DELETE FROM %s c WHERE (%s) AND %s",
 		child, whereAllNotNull, notExists)
+}
+
+func buildCleanOrphansCountSQL(pgSchema string, t Table, fk ForeignKey) string {
+	child := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
+	return fmt.Sprintf("SELECT COUNT(*) FROM %s c WHERE (%s) AND %s",
+		child, foreignKeyAllNotNullPredicate(fk.Columns), orphanMissingParentPredicate(pgSchema, fk))
+}
+
+func orphanMissingParentPredicate(pgSchema string, fk ForeignKey) string {
+	parent := fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(fk.RefPGTable))
+	return fmt.Sprintf("NOT EXISTS (SELECT 1 FROM %s p WHERE %s)",
+		parent, strings.Join(orphanJoinPredicates(fk), " AND "))
+}
+
+func orphanJoinPredicates(fk ForeignKey) []string {
+	joinConds := make([]string, len(fk.Columns))
+	for i, col := range fk.Columns {
+		joinConds[i] = fmt.Sprintf("p.%s = c.%s", pgIdent(fk.RefColumns[i]), pgIdent(col))
+	}
+	return joinConds
 }
 
 func foreignKeyAllNotNullPredicate(cols []string) string {

@@ -133,6 +133,12 @@ dsn = "postgres://u:p@h:5432/db"
 	if !cfg.CleanOrphans {
 		t.Errorf("default CleanOrphans = %t, want true", cfg.CleanOrphans)
 	}
+	if cfg.CleanOrphansMode != "apply" {
+		t.Errorf("default CleanOrphansMode = %q, want %q", cfg.CleanOrphansMode, "apply")
+	}
+	if cfg.CleanOrphansMaxRows != 0 {
+		t.Errorf("default CleanOrphansMaxRows = %d, want 0", cfg.CleanOrphansMaxRows)
+	}
 	if !cfg.SnakeCaseIdentifiers {
 		t.Errorf("default SnakeCaseIdentifiers = %t, want true", cfg.SnakeCaseIdentifiers)
 	}
@@ -1390,6 +1396,8 @@ unlogged_tables = false
 chunk_size = 50000
 resume = true
 validation = "row_count"
+clean_orphans_mode = "report"
+clean_orphans_max_rows = 12
 
 [source]
 type = "mysql"
@@ -1415,6 +1423,12 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.Validation != "row_count" {
 		t.Errorf("Validation = %q, want %q", cfg.Validation, "row_count")
+	}
+	if cfg.CleanOrphansMode != "report" {
+		t.Errorf("CleanOrphansMode = %q, want %q", cfg.CleanOrphansMode, "report")
+	}
+	if cfg.CleanOrphansMaxRows != 12 {
+		t.Errorf("CleanOrphansMaxRows = %d, want 12", cfg.CleanOrphansMaxRows)
 	}
 }
 
@@ -1471,6 +1485,98 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.Validation != "sampled_hash" {
 		t.Fatalf("Validation = %q, want %q", cfg.Validation, "sampled_hash")
+	}
+}
+
+func TestLoadConfig_InvalidCleanOrphansMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_orphan_mode.toml")
+
+	content := `
+schema = "target"
+clean_orphans_mode = "warn"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for invalid clean_orphans_mode")
+	}
+	if !strings.Contains(err.Error(), "clean_orphans_mode") {
+		t.Fatalf("error should mention clean_orphans_mode, got: %v", err)
+	}
+}
+
+func TestLoadConfig_InvalidCleanOrphansMaxRows(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "bad_orphan_max_rows.toml")
+
+	content := `
+schema = "target"
+clean_orphans_max_rows = -1
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for negative clean_orphans_max_rows")
+	}
+	if !strings.Contains(err.Error(), "clean_orphans_max_rows") {
+		t.Fatalf("error should mention clean_orphans_max_rows, got: %v", err)
+	}
+}
+
+func TestLoadConfig_CleanOrphansDisabledAllowsModeAndMaxRows(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "clean_orphans_disabled.toml")
+
+	content := `
+schema = "target"
+clean_orphans = false
+clean_orphans_mode = "report"
+clean_orphans_max_rows = 25
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.CleanOrphans {
+		t.Fatalf("CleanOrphans = %t, want false", cfg.CleanOrphans)
+	}
+	if cfg.CleanOrphansMode != "report" {
+		t.Fatalf("CleanOrphansMode = %q, want %q", cfg.CleanOrphansMode, "report")
+	}
+	if cfg.CleanOrphansMaxRows != 25 {
+		t.Fatalf("CleanOrphansMaxRows = %d, want 25", cfg.CleanOrphansMaxRows)
 	}
 }
 
