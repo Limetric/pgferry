@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -41,7 +42,11 @@ func (f *fakeOrphanExec) QueryRow(_ context.Context, sql string, _ ...any) pgx.R
 	if f.queryErr != nil {
 		return fakeOrphanRow{err: f.queryErr}
 	}
-	return fakeOrphanRow{count: f.counts[sql]}
+	count, ok := f.counts[sql]
+	if !ok {
+		return fakeOrphanRow{err: fmt.Errorf("unexpected query: %s", sql)}
+	}
+	return fakeOrphanRow{count: count}
 }
 
 func (f *fakeOrphanExec) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
@@ -173,6 +178,28 @@ func TestCleanOrphans_ReportModeReturnsErrorWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestCleanOrphans_ReportModeReturnsErrorWithoutMutationWhenNoOrphansExist(t *testing.T) {
+	table, fk := orphanCleanupFixture("SET NULL")
+	schema := &Schema{Tables: []Table{table}}
+	countSQL := buildCleanOrphansCountSQL("app", table, fk)
+	exec := &fakeOrphanExec{
+		counts: map[string]int64{
+			countSQL: 0,
+		},
+	}
+
+	err := cleanOrphans(context.Background(), exec, schema, "app", "report", 0)
+	if err == nil {
+		t.Fatal("expected report mode to abort even when no orphan rows are detected")
+	}
+	if !strings.Contains(err.Error(), "report mode found 0 orphan-cleanup action(s) affecting 0 row(s)") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(exec.execCalls) != 0 {
+		t.Fatalf("expected no mutation in report mode, got %d exec call(s)", len(exec.execCalls))
+	}
+}
+
 func TestCleanOrphans_ApplyModeExecutesMutation(t *testing.T) {
 	table, fk := orphanCleanupFixture("CASCADE")
 	schema := &Schema{Tables: []Table{table}}
@@ -214,5 +241,47 @@ func TestCleanOrphans_ThresholdExceededAbortsBeforeMutation(t *testing.T) {
 	}
 	if len(exec.execCalls) != 0 {
 		t.Fatalf("expected no mutation when threshold is exceeded, got %d exec call(s)", len(exec.execCalls))
+	}
+}
+
+func TestCleanOrphans_ThresholdEqualityAllowsMutation(t *testing.T) {
+	table, fk := orphanCleanupFixture("CASCADE")
+	schema := &Schema{Tables: []Table{table}}
+	countSQL := buildCleanOrphansCountSQL("app", table, fk)
+	applySQL := buildCleanOrphansSQL("app", table, fk)
+	exec := &fakeOrphanExec{
+		counts: map[string]int64{
+			countSQL: 11,
+		},
+	}
+
+	if err := cleanOrphans(context.Background(), exec, schema, "app", "apply", 11); err != nil {
+		t.Fatalf("cleanOrphans() error: %v", err)
+	}
+	if len(exec.execCalls) != 1 || exec.execCalls[0] != applySQL {
+		t.Fatalf("expected one mutation with matching SQL, got %v", exec.execCalls)
+	}
+}
+
+func TestCleanOrphans_ApplyModeExecError(t *testing.T) {
+	table, fk := orphanCleanupFixture("CASCADE")
+	schema := &Schema{Tables: []Table{table}}
+	countSQL := buildCleanOrphansCountSQL("app", table, fk)
+	applySQL := buildCleanOrphansSQL("app", table, fk)
+	exec := &fakeOrphanExec{
+		counts: map[string]int64{
+			countSQL: 3,
+		},
+		execErrBySQL: map[string]error{
+			applySQL: errors.New("write failed"),
+		},
+	}
+
+	err := cleanOrphans(context.Background(), exec, schema, "app", "apply", 0)
+	if err == nil {
+		t.Fatal("expected apply mode exec error")
+	}
+	if !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

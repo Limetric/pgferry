@@ -507,12 +507,12 @@ func cleanOrphans(ctx context.Context, pool orphanCleanupExecutor, schema *Schem
 	if err := checkOrphanCleanupThreshold(findings, maxRows); err != nil {
 		return err
 	}
-	if len(findings) == 0 {
-		return nil
-	}
 	if mode == "report" {
 		return fmt.Errorf("report mode found %d orphan-cleanup action(s) affecting %d row(s); no rows were modified and foreign keys were not created",
 			len(findings), totalOrphanCleanupRows(findings))
+	}
+	if len(findings) == 0 {
+		return nil
 	}
 
 	for _, finding := range findings {
