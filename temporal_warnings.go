@@ -35,13 +35,13 @@ func collectMySQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 			switch col.DataType {
 			case "time":
 				timeCols = append(timeCols, ref)
-			case "date", "datetime", "timestamp":
+			case "date":
 				dateLikeCols = append(dateLikeCols, ref)
-			}
-			switch col.DataType {
 			case "datetime":
+				dateLikeCols = append(dateLikeCols, ref)
 				datetimeCols = append(datetimeCols, ref)
 			case "timestamp":
+				dateLikeCols = append(dateLikeCols, ref)
 				timestampCols = append(timestampCols, ref)
 			}
 		}
@@ -85,13 +85,21 @@ func collectMySQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 			`Use type_mapping.datetime_as_timestamptz = true when those values represent real instants instead of local wall-clock timestamps.`,
 		))
 	}
+	if typeMap.DatetimeAsTimestamptz && len(datetimeCols) > 0 {
+		warnings = append(warnings, newTemporalWarning(
+			"mysql_datetime_to_timestamptz",
+			datetimeCols,
+			fmt.Sprintf("%d MySQL datetime column(s) will map to PostgreSQL timestamptz; confirm these values represent real instants rather than local wall-clock timestamps.", len(datetimeCols)),
+			`If these values should stay timezone-naive wall-clock timestamps, keep type_mapping.datetime_as_timestamptz = false instead.`,
+		))
+	}
 
 	if len(timestampCols) > 0 {
 		warnings = append(warnings, newTemporalWarning(
 			"mysql_timestamp_to_timestamptz",
 			timestampCols,
 			fmt.Sprintf("%d MySQL timestamp column(s) will map to PostgreSQL timestamptz; review application and session timezone assumptions in the target stack.", len(timestampCols)),
-			`Verify client time zone settings and downstream queries before cutover if those columns drive user-visible timestamps.`,
+			`No alternate mapping exists for MySQL timestamp; verify client time zone settings if these columns drive user-visible timestamps, and ignore this warning if that behavior is intentional.`,
 		))
 	}
 
@@ -148,7 +156,7 @@ func newTemporalWarning(category string, refs []string, summary, remediation str
 		Category:    category,
 		Summary:     summary,
 		Columns:     len(refs),
-		Examples:    append([]string(nil), examples...),
+		Examples:    examples,
 		Remediation: remediation,
 	}
 }

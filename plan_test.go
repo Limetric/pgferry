@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -487,7 +488,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQL(t *testing.T) {
 		"mysql_datetime_without_timezone",
 		"mysql_timestamp_to_timestamptz",
 	} {
-		if !containsString(gotCategories, want) {
+		if !slices.Contains(gotCategories, want) {
 			t.Fatalf("missing temporal warning category %q in %v", want, gotCategories)
 		}
 	}
@@ -524,6 +525,62 @@ func TestBuildPlanReport_TemporalWarnings_MySQLIntervalMode(t *testing.T) {
 	}
 }
 
+func TestBuildPlanReport_TemporalWarnings_MySQLTextModeSuppressesTimeWarning(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mysql"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	cfg.TypeMapping.TimeMode = "text"
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{PGName: "duration", DataType: "time"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.TemporalWarnings) != 0 {
+		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))
+	}
+}
+
+func TestBuildPlanReport_TemporalWarnings_MySQLDatetimeAsTimestamptz(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mysql"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	cfg.TypeMapping.DatetimeAsTimestamptz = true
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{PGName: "opened_at", DataType: "datetime"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.TemporalWarnings) != 2 {
+		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
+	}
+	if report.TemporalWarnings[0].Category != "mysql_zero_date_mode_null" {
+		t.Fatalf("first warning category = %q", report.TemporalWarnings[0].Category)
+	}
+	if report.TemporalWarnings[1].Category != "mysql_datetime_to_timestamptz" {
+		t.Fatalf("second warning category = %q", report.TemporalWarnings[1].Category)
+	}
+}
+
 func TestBuildPlanReport_TemporalWarnings_MSSQL(t *testing.T) {
 	cfg := &MigrationConfig{
 		Source:      SourceConfig{Type: "mssql"},
@@ -554,11 +611,54 @@ func TestBuildPlanReport_TemporalWarnings_MSSQL(t *testing.T) {
 	}
 }
 
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
+func TestBuildPlanReport_TemporalWarnings_MSSQLDatetimeAsTimestamptz(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mssql"},
+		TypeMapping: defaultTypeMappingConfig(),
 	}
-	return false
+	cfg.TypeMapping.DatetimeAsTimestamptz = true
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "audit_log",
+				Columns: []Column{
+					{PGName: "created_at", DataType: "datetime2"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.TemporalWarnings) != 1 {
+		t.Fatalf("temporal warnings = %d, want 1", len(report.TemporalWarnings))
+	}
+	if report.TemporalWarnings[0].Category != "mssql_datetime_to_timestamptz" {
+		t.Fatalf("warning category = %q", report.TemporalWarnings[0].Category)
+	}
+}
+
+func TestBuildPlanReport_TemporalWarnings_SQLiteNone(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "sqlite"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{PGName: "duration", DataType: "TIME"},
+					{PGName: "opened_at", DataType: "DATETIME"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.TemporalWarnings) != 0 {
+		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))
+	}
 }

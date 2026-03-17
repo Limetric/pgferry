@@ -306,6 +306,10 @@ Current warning categories include:
   `datetime_as_timestamptz` setting
 - MSSQL `datetimeoffset` columns, which always map to PostgreSQL `timestamptz`
 
+The MySQL `timestamp` warning is informational: there is no alternate mapping
+for that source type. It exists to prompt an explicit review of target-side
+timezone assumptions before cutover.
+
 Each warning calls out the active mapping and the relevant mitigation option so
 operators can review it before cutover:
 
