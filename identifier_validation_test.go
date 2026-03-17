@@ -100,6 +100,62 @@ func TestValidateGeneratedIdentifiers_GeneratedIndexCollisionAfterTruncation(t *
 	}
 }
 
+func TestValidateGeneratedIdentifiers_PrimaryKeyRelationCollidesWithTable(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "orders",
+				PGName:     "orders",
+				PrimaryKey: &Index{
+					Name:       "PRIMARY",
+					SourceName: "PRIMARY",
+					IsPrimary:  true,
+					Unique:     true,
+					Type:       "BTREE",
+					Columns:    []string{"id"},
+				},
+			},
+			{
+				SourceName: "orders_pkey",
+				PGName:     "orders_pkey",
+			},
+		},
+	}
+
+	err := validateGeneratedIdentifiers(schema, &MigrationConfig{}, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), `schema relation names: final name "orders_pkey"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateGeneratedIdentifiers_SequenceCollidesWithIndexRelation(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "id", PGName: "id", Extra: "auto_increment"},
+				},
+				Indexes: []Index{
+					{SourceName: "orders_id_seq", Name: "id_seq", Type: "BTREE", Columns: []string{"id"}},
+				},
+			},
+		},
+	}
+
+	err := validateGeneratedIdentifiers(schema, &MigrationConfig{}, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), `schema relation names: final name "orders_id_seq"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidateGeneratedIdentifiers_ReportsGeneratedSequenceAndTriggerCollisions(t *testing.T) {
 	longColName := "very_long_updated_at_column_name_that_requires_truncation_for_identifier_checks"
 	schema := &Schema{

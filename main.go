@@ -234,7 +234,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			b.WriteByte('\n')
 		}
 		b.WriteString("Hint: set [type_mapping].unknown_as_text = true to coerce unknown types to text.")
-		return fmt.Errorf("%s", b.String())
+		return errors.New(b.String())
 	}
 	if err := validateGeneratedIdentifiers(schema, cfg, typeMap); err != nil {
 		return fmt.Errorf("validate generated identifiers: %w", err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -46,6 +47,8 @@ func (c *identifierCollector) add(scopeKey, label, name, origin, key, class stri
 			entries: make(map[string][]identifierEntry),
 		}
 		c.namespaces[scopeKey] = ns
+	} else if ns.label != label || ns.options != opts {
+		panic(fmt.Sprintf("identifier namespace %q registered with inconsistent metadata", scopeKey))
 	}
 	ns.entries[name] = append(ns.entries[name], identifierEntry{
 		origin: origin,
@@ -141,6 +144,7 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 	}
 
 	collector := newIdentifierCollector()
+	trackSchemaTypes := !cfg.DataOnly && typeMap.EnumMode == "native"
 	tableTypeOrigins := make(map[string][]identifierEntry)
 
 	for _, table := range schema.Tables {
@@ -154,11 +158,15 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 			"table",
 			identifierNamespaceOptions{},
 		)
-		tableTypeOrigins[table.PGName] = append(tableTypeOrigins[table.PGName], identifierEntry{
-			origin: describeTableRowTypeOrigin(table),
-			key:    table.PGName,
-			class:  "table-row-type",
-		})
+		if trackSchemaTypes {
+			// PostgreSQL table row types live in the same schema-level type namespace
+			// as native ENUM types, so enum/type validation must consider both.
+			tableTypeOrigins[table.PGName] = append(tableTypeOrigins[table.PGName], identifierEntry{
+				origin: describeTableRowTypeOrigin(table),
+				key:    table.PGName,
+				class:  "table-row-type",
+			})
+		}
 
 		columnScopeKey := "table-columns:" + table.PGName
 		columnScopeLabel := fmt.Sprintf("column names on table %q", table.PGName)
@@ -265,6 +273,8 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 				"constraint",
 				identifierNamespaceOptions{},
 			)
+			// PostgreSQL also creates a backing index for the PRIMARY KEY using
+			// the same identifier, so validate the relation namespace too.
 			collector.add(
 				"schema-relations",
 				"schema relation names",
@@ -306,7 +316,7 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 		}
 	}
 
-	if !cfg.DataOnly && typeMap.EnumMode == "native" {
+	if trackSchemaTypes {
 		for typeName, entries := range tableTypeOrigins {
 			for _, entry := range entries {
 				collector.add(
@@ -340,7 +350,7 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 	}
 	b.WriteString("Hint: rename the conflicting source objects, disable snake_case_identifiers if normalization caused the collision, or migrate the conflicting objects manually with hooks.")
 
-	return fmt.Errorf("%s", b.String())
+	return errors.New(b.String())
 }
 
 func enumTypeIdentity(col Column) ([]string, string, error) {
@@ -379,7 +389,7 @@ func describeIndexOrigin(table Table, idx Index) string {
 }
 
 func describeForeignKeyOrigin(table Table, fk ForeignKey) string {
-	return fmt.Sprintf("foreign key %q on table %q", sourceLabel(fk.Name, fk.Name), sourceLabel(table.SourceName, table.PGName))
+	return fmt.Sprintf("foreign key %q on table %q", fk.Name, sourceLabel(table.SourceName, table.PGName))
 }
 
 func describeSequenceOrigin(table Table, col Column) string {
