@@ -22,6 +22,18 @@ pgferry plan migration.toml --output-dir hooks --format json
 
 With `--output-dir`, pgferry also writes hook skeletons you can fill in before the main run.
 
+If you want to iterate on a smaller slice first, scope the run to selected
+source tables:
+
+```toml
+include_tables = ["orders", "order_items"]
+exclude_tables = ["audit_log"]
+```
+
+Matching uses source table names, not transformed PostgreSQL names. pgferry
+applies the filter once after introspection, then validation and post-migration
+steps operate on that same filtered schema.
+
 ## Use validation during the real run
 
 ```toml

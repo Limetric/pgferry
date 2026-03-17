@@ -268,6 +268,123 @@ unknown_as_text = true
 	}
 }
 
+func TestLoadConfig_TableFilters(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+include_tables = [" Orders ", "order_items"]
+exclude_tables = ["audit_log"]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if got := strings.Join(cfg.IncludeTables, ","); got != "Orders,order_items" {
+		t.Fatalf("IncludeTables = %q, want Orders,order_items", got)
+	}
+	if got := strings.Join(cfg.ExcludeTables, ","); got != "audit_log" {
+		t.Fatalf("ExcludeTables = %q, want audit_log", got)
+	}
+}
+
+func TestLoadConfig_TableFiltersRejectDuplicateAfterNormalization(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+include_tables = ["Orders", " orders "]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "duplicate table name") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfig_TableFiltersRejectGlobPatterns(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+exclude_tables = ["tmp_*"]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "glob patterns are not supported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfig_TableFiltersRejectEmptyEntries(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+include_tables = ["   "]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "entries must be non-empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadConfig_SchemaOnly(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "schema_only.toml")
