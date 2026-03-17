@@ -1,6 +1,15 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+)
 
 func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 	table := Table{
@@ -129,4 +138,243 @@ func TestBuildSourceSelectQuery_MySQLPostGISLegacyExport(t *testing.T) {
 	if got != want {
 		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
 	}
+}
+
+type fakeMigrationCheckpointManager struct {
+	doneTables map[string]bool
+	doneChunks map[string]map[int]bool
+
+	mu            sync.Mutex
+	recordedFull  []string
+	recordedChunk []string
+}
+
+func (m *fakeMigrationCheckpointManager) IsTableDone(tableName string) bool {
+	return m.doneTables[tableName]
+}
+
+func (m *fakeMigrationCheckpointManager) IsChunkCompleted(tableName string, chunkIndex int) bool {
+	if chunks, ok := m.doneChunks[tableName]; ok {
+		return chunks[chunkIndex]
+	}
+	return false
+}
+
+func (m *fakeMigrationCheckpointManager) RecordFullTable(tableName string, _ int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recordedFull = append(m.recordedFull, tableName)
+}
+
+func (m *fakeMigrationCheckpointManager) RecordChunk(tableName string, chunkIndex int, _ int64, _ int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recordedChunk = append(m.recordedChunk, tableName+":"+itoa(chunkIndex))
+}
+
+func (m *fakeMigrationCheckpointManager) Flush() error   { return nil }
+func (m *fakeMigrationCheckpointManager) Cleanup() error { return nil }
+
+type fakeMigrationWorkerSource struct {
+	id          int
+	closeMu     *sync.Mutex
+	closeCounts map[int]int
+}
+
+func (s *fakeMigrationWorkerSource) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, errors.New("unexpected query")
+}
+
+func (s *fakeMigrationWorkerSource) Close() error {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	s.closeCounts[s.id]++
+	return nil
+}
+
+func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.T) {
+	chunkKey := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
+	plans := []ChunkPlan{
+		{Table: Table{SourceName: "users"}},
+		{
+			Table:    Table{SourceName: "orders"},
+			ChunkKey: chunkKey,
+			Chunks: []Chunk{
+				{Index: 0},
+				{Index: 1},
+				{Index: 2},
+			},
+		},
+		{
+			Table:    Table{SourceName: "items"},
+			ChunkKey: chunkKey,
+			Chunks: []Chunk{
+				{Index: 0},
+				{Index: 1},
+			},
+		},
+	}
+	mgr := &fakeMigrationCheckpointManager{
+		doneTables: map[string]bool{"users": true},
+		doneChunks: map[string]map[int]bool{"orders": {1: true}},
+	}
+
+	got := buildParallelMigrationWorkItems(plans, mgr)
+	if len(got) != 4 {
+		t.Fatalf("work item count = %d, want 4", len(got))
+	}
+
+	summaries := []string{
+		got[0].Table.SourceName + ":" + itoa(got[0].Chunk.Index),
+		got[1].Table.SourceName + ":" + itoa(got[1].Chunk.Index),
+		got[2].Table.SourceName + ":" + itoa(got[2].Chunk.Index),
+		got[3].Table.SourceName + ":" + itoa(got[3].Chunk.Index),
+	}
+	want := []string{"orders:0", "orders:2", "items:0", "items:1"}
+	if !slices.Equal(summaries, want) {
+		t.Fatalf("work items = %v, want %v", summaries, want)
+	}
+	for _, item := range got {
+		if item.ChunkKey == nil {
+			t.Fatalf("item %+v missing chunk key", item)
+		}
+		if item.ChunkCount != len(findPlanByTable(plans, item.Table.SourceName).Chunks) {
+			t.Fatalf("chunk count for %s = %d, want %d", item.Table.SourceName, item.ChunkCount, len(findPlanByTable(plans, item.Table.SourceName).Chunks))
+		}
+	}
+}
+
+func TestRunParallelMigrationWorkers_ReusesSourceAcrossItems(t *testing.T) {
+	workItems := []migrationWorkItem{
+		{Table: Table{SourceName: "a"}},
+		{Table: Table{SourceName: "b"}},
+		{Table: Table{SourceName: "c"}},
+		{Table: Table{SourceName: "d"}},
+	}
+	mgr := &fakeMigrationCheckpointManager{}
+
+	var mu sync.Mutex
+	openCalls := 0
+	closeCounts := map[int]int{}
+	seenSources := map[int]int{}
+	execCalls := 0
+	started := make(chan struct{}, 2)
+	release := make(chan struct{})
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runParallelMigrationWorkers(
+			context.Background(),
+			2,
+			func() (migrationWorkerSource, error) {
+				mu.Lock()
+				defer mu.Unlock()
+				openCalls++
+				return &fakeMigrationWorkerSource{id: openCalls, closeMu: &mu, closeCounts: closeCounts}, nil
+			},
+			workItems,
+			mgr,
+			func(ctx context.Context, source dbQuerier, item migrationWorkItem) (int64, error) {
+				t.Helper()
+				src, ok := source.(*fakeMigrationWorkerSource)
+				if !ok {
+					t.Fatalf("source type = %T, want *fakeMigrationWorkerSource", source)
+				}
+
+				mu.Lock()
+				execCalls++
+				callNumber := execCalls
+				seenSources[src.id]++
+				mu.Unlock()
+
+				if callNumber <= 2 {
+					started <- struct{}{}
+					<-release
+				}
+				return 1, nil
+			},
+		)
+	}()
+
+	<-started
+	<-started
+	close(release)
+
+	err := <-errCh
+	if err != nil {
+		t.Fatalf("runParallelMigrationWorkers() error: %v", err)
+	}
+
+	if openCalls != 2 {
+		t.Fatalf("openSource calls = %d, want 2", openCalls)
+	}
+	if execCalls != 4 {
+		t.Fatalf("execute calls = %d, want 4", execCalls)
+	}
+	if len(seenSources) != 2 {
+		t.Fatalf("distinct worker sources = %d, want 2", len(seenSources))
+	}
+	if closeCounts[1] != 1 || closeCounts[2] != 1 {
+		t.Fatalf("close counts = %v, want each worker source closed once", closeCounts)
+	}
+	recorded := slices.Clone(mgr.recordedFull)
+	slices.Sort(recorded)
+	if !slices.Equal(recorded, []string{"a", "b", "c", "d"}) {
+		t.Fatalf("recorded full tables = %v, want %v", recorded, []string{"a", "b", "c", "d"})
+	}
+}
+
+func TestRunParallelMigrationWorkers_CancelsRemainingWorkOnFailure(t *testing.T) {
+	workItems := []migrationWorkItem{
+		{Table: Table{SourceName: "fail"}},
+		{Table: Table{SourceName: "other-1"}},
+		{Table: Table{SourceName: "other-2"}},
+		{Table: Table{SourceName: "other-3"}},
+		{Table: Table{SourceName: "other-4"}},
+	}
+
+	var mu sync.Mutex
+	processed := []string{}
+	err := runParallelMigrationWorkers(
+		context.Background(),
+		2,
+		func() (migrationWorkerSource, error) {
+			return &fakeMigrationWorkerSource{id: 1, closeMu: &mu, closeCounts: map[int]int{}}, nil
+		},
+		workItems,
+		&fakeMigrationCheckpointManager{},
+		func(ctx context.Context, _ dbQuerier, item migrationWorkItem) (int64, error) {
+			mu.Lock()
+			processed = append(processed, item.Table.SourceName)
+			mu.Unlock()
+
+			if item.Table.SourceName == "fail" {
+				return 0, errors.New("boom")
+			}
+			<-ctx.Done()
+			return 0, ctx.Err()
+		},
+	)
+	if err == nil {
+		t.Fatal("expected worker pool error")
+	}
+	if got := err.Error(); !strings.Contains(got, "table fail: boom") {
+		t.Fatalf("error = %q, want substring %q", got, "table fail: boom")
+	}
+	if len(processed) >= len(workItems) {
+		t.Fatalf("processed = %v, want cancellation before all work items were executed", processed)
+	}
+}
+
+func findPlanByTable(plans []ChunkPlan, tableName string) ChunkPlan {
+	for _, plan := range plans {
+		if plan.Table.SourceName == tableName {
+			return plan
+		}
+	}
+	return ChunkPlan{}
+}
+
+func itoa(v int) string {
+	return strconv.Itoa(v)
 }

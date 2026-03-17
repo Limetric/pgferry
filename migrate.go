@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -62,80 +63,27 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 		mgr = &noopCheckpointManager{path: cpPath}
 	}
 
-	sem := make(chan struct{}, cfg.Workers)
-	var wg sync.WaitGroup
-
-	// Count total work items for error channel sizing
-	totalWork := 0
-	for _, plan := range plans {
-		if plan.ChunkKey != nil {
-			totalWork += len(plan.Chunks)
-		} else {
-			totalWork++
-		}
-	}
-	errCh := make(chan error, totalWork)
-
-	for _, plan := range plans {
-		if plan.ChunkKey == nil {
-			// Non-chunkable: fall back to full-table copy
-			if mgr.IsTableDone(plan.Table.SourceName) {
-				log.Printf("  [%s] skipping (completed in previous run)", plan.Table.SourceName)
-				continue
+	workItems := buildParallelMigrationWorkItems(plans, mgr)
+	if err := runParallelMigrationWorkers(
+		ctx,
+		cfg.Workers,
+		func() (migrationWorkerSource, error) {
+			return openMigrationSourceDB(cfg.Src, cfg.SrcDSN)
+		},
+		workItems,
+		mgr,
+		func(ctx context.Context, source dbQuerier, item migrationWorkItem) (int64, error) {
+			if item.ChunkKey == nil {
+				return migrateTableFromSourceFull(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap)
 			}
-			wg.Add(1)
-			go func(t Table) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-
-				count, copyErr := migrateTableFull(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap)
-				if copyErr != nil {
-					errCh <- fmt.Errorf("table %s: %w", t.SourceName, copyErr)
-					return
-				}
-				mgr.RecordFullTable(t.SourceName, count)
-			}(plan.Table)
-		} else {
-			// Chunkable: dispatch each chunk
-			for _, chunk := range plan.Chunks {
-				if mgr.IsChunkCompleted(plan.Table.SourceName, chunk.Index) {
-					continue
-				}
-				wg.Add(1)
-				go func(t Table, key ChunkKey, c Chunk, chunkCount int) {
-					defer wg.Done()
-					sem <- struct{}{}
-					defer func() { <-sem }()
-
-					count, copyErr := migrateChunk(ctx, cfg.Src, cfg.SrcDSN, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, key, c)
-					if copyErr != nil {
-						errCh <- fmt.Errorf("table %s chunk %d: %w", t.SourceName, c.Index, copyErr)
-						return
-					}
-					mgr.RecordChunk(t.SourceName, c.Index, count, chunkCount)
-				}(plan.Table, *plan.ChunkKey, chunk, len(plan.Chunks))
-			}
-		}
-	}
-
-	wg.Wait()
-	close(errCh)
-
-	var errs []error
-	for err := range errCh {
-		errs = append(errs, err)
-	}
-
-	if len(errs) > 0 {
+			return migrateChunkFromSource(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, *item.ChunkKey, item.Chunk)
+		},
+	); err != nil {
 		// Flush partial progress so a resumed run can skip completed work.
 		if flushErr := mgr.Flush(); flushErr != nil {
 			log.Printf("WARN: failed to save checkpoint: %v", flushErr)
 		}
-		for _, e := range errs {
-			log.Printf("ERROR: %v", e)
-		}
-		return fmt.Errorf("%d chunk(s)/table(s) failed migration", len(errs))
+		return err
 	}
 
 	// All succeeded — remove checkpoint file (no flush needed; there is
@@ -144,6 +92,150 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 		log.Printf("WARN: failed to delete checkpoint: %v", err)
 	}
 	return nil
+}
+
+type migrationWorkItem struct {
+	Table      Table
+	ChunkKey   *ChunkKey
+	Chunk      Chunk
+	ChunkCount int
+}
+
+type migrationWorkerSource interface {
+	dbQuerier
+	Close() error
+}
+
+type migrationWorkExecutor func(context.Context, dbQuerier, migrationWorkItem) (int64, error)
+
+func buildParallelMigrationWorkItems(plans []ChunkPlan, mgr checkpointManager) []migrationWorkItem {
+	workItems := make([]migrationWorkItem, 0, len(plans))
+	for _, plan := range plans {
+		if plan.ChunkKey == nil {
+			if mgr.IsTableDone(plan.Table.SourceName) {
+				log.Printf("  [%s] skipping (completed in previous run)", plan.Table.SourceName)
+				continue
+			}
+			workItems = append(workItems, migrationWorkItem{Table: plan.Table})
+			continue
+		}
+
+		for _, chunk := range plan.Chunks {
+			if mgr.IsChunkCompleted(plan.Table.SourceName, chunk.Index) {
+				continue
+			}
+			workItems = append(workItems, migrationWorkItem{
+				Table:      plan.Table,
+				ChunkKey:   plan.ChunkKey,
+				Chunk:      chunk,
+				ChunkCount: len(plan.Chunks),
+			})
+		}
+	}
+	return workItems
+}
+
+func runParallelMigrationWorkers(ctx context.Context, workers int, openSource func() (migrationWorkerSource, error), workItems []migrationWorkItem, mgr checkpointManager, execute migrationWorkExecutor) error {
+	if len(workItems) == 0 {
+		return nil
+	}
+	if workers < 1 {
+		workers = 1
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workCh := make(chan migrationWorkItem)
+	var wg sync.WaitGroup
+
+	var firstErr error
+	var errOnce sync.Once
+	recordErr := func(err error) {
+		errOnce.Do(func() {
+			firstErr = err
+			cancel()
+		})
+	}
+
+	for workerID := 0; workerID < workers; workerID++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var source migrationWorkerSource
+			defer func() {
+				if source != nil {
+					source.Close()
+				}
+			}()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case item, ok := <-workCh:
+					if !ok {
+						return
+					}
+
+					if source == nil {
+						var err error
+						source, err = openSource()
+						if err != nil {
+							recordErr(fmt.Errorf("open source worker: %w", err))
+							return
+						}
+					}
+
+					count, err := execute(ctx, source, item)
+					if err != nil {
+						if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+							return
+						}
+						recordErr(formatMigrationWorkError(item, err))
+						return
+					}
+					recordMigrationWorkResult(mgr, item, count)
+				}
+			}
+		}()
+	}
+
+enqueue:
+	for _, item := range workItems {
+		select {
+		case <-ctx.Done():
+			break enqueue
+		case workCh <- item:
+		}
+	}
+	close(workCh)
+	wg.Wait()
+
+	if firstErr != nil {
+		log.Printf("ERROR: %v", firstErr)
+		return firstErr
+	}
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return nil
+}
+
+func formatMigrationWorkError(item migrationWorkItem, err error) error {
+	if item.ChunkKey == nil {
+		return fmt.Errorf("table %s: %w", item.Table.SourceName, err)
+	}
+	return fmt.Errorf("table %s chunk %d: %w", item.Table.SourceName, item.Chunk.Index, err)
+}
+
+func recordMigrationWorkResult(mgr checkpointManager, item migrationWorkItem, count int64) {
+	if item.ChunkKey == nil {
+		mgr.RecordFullTable(item.Table.SourceName, count)
+		return
+	}
+	mgr.RecordChunk(item.Table.SourceName, item.Chunk.Index, count, item.ChunkCount)
 }
 
 func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
@@ -258,17 +350,14 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 	return nil
 }
 
-// migrateTableFull streams one table from source to PG via COPY protocol using its own connection.
-func migrateTableFull(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig) (int64, error) {
+func openMigrationSourceDB(src SourceDB, srcDSN string) (*sql.DB, error) {
 	srcDB, err := src.OpenDB(srcDSN)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	defer srcDB.Close()
 	srcDB.SetMaxOpenConns(1)
 	srcDB.SetMaxIdleConns(1)
-
-	return migrateTableFromSourceFull(ctx, src, srcDB, pool, table, pgSchema, typeMap)
+	return srcDB, nil
 }
 
 type dbQuerier interface {
@@ -286,19 +375,6 @@ func migrateTableFromSourceFull(ctx context.Context, src SourceDB, source dbQuer
 
 	log.Printf("  [%s] done (%d rows copied)", table.SourceName, count)
 	return count, nil
-}
-
-// migrateChunk copies a single chunk of a table using its own source connection.
-func migrateChunk(ctx context.Context, src SourceDB, srcDSN string, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, key ChunkKey, chunk Chunk) (int64, error) {
-	srcDB, err := src.OpenDB(srcDSN)
-	if err != nil {
-		return 0, err
-	}
-	defer srcDB.Close()
-	srcDB.SetMaxOpenConns(1)
-	srcDB.SetMaxIdleConns(1)
-
-	return migrateChunkFromSource(ctx, src, srcDB, pool, table, pgSchema, typeMap, key, chunk)
 }
 
 // migrateChunkFromSource copies a single chunk using an existing source querier.
@@ -350,13 +426,11 @@ func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, t
 
 // buildChunkPlans creates chunk plans for all tables by querying MIN/MAX on chunkable tables.
 func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64) ([]ChunkPlan, error) {
-	srcDB, err := src.OpenDB(srcDSN)
+	srcDB, err := openMigrationSourceDB(src, srcDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open source for chunk planning: %w", err)
 	}
 	defer srcDB.Close()
-	srcDB.SetMaxOpenConns(1)
-	srcDB.SetMaxIdleConns(1)
 
 	var plans []ChunkPlan
 	var chunkable, nonChunkable int

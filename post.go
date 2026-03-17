@@ -333,7 +333,7 @@ func addIndexes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchem
 
 // execIndexJobs runs index creation jobs with bounded parallelism.
 // The exec callback is invoked for each job. When workers <= 1, jobs run
-// sequentially; otherwise they run in parallel with a semaphore.
+// sequentially; otherwise they run through a fixed worker pool.
 func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(ctx context.Context, j indexJob) error) error {
 	if workers <= 1 {
 		for _, job := range jobs {
@@ -348,7 +348,7 @@ func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	sem := make(chan struct{}, workers)
+	jobCh := make(chan indexJob)
 	var wg sync.WaitGroup
 	var firstErr error
 	var errOnce sync.Once
@@ -358,22 +358,37 @@ func execIndexJobs(ctx context.Context, jobs []indexJob, workers int, exec func(
 		cancel()
 	}
 
-	for _, job := range jobs {
+	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func(j indexJob) {
+		go func() {
 			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-sem }()
 
-			if err := exec(ctx, j); err != nil {
-				setErr(err)
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case job, ok := <-jobCh:
+					if !ok {
+						return
+					}
+					if err := exec(ctx, job); err != nil {
+						setErr(err)
+						return
+					}
+				}
 			}
-		}(job)
+		}()
 	}
+
+enqueue:
+	for _, job := range jobs {
+		select {
+		case <-ctx.Done():
+			break enqueue
+		case jobCh <- job:
+		}
+	}
+	close(jobCh)
 
 	wg.Wait()
 	// If no job failed but the parent context was cancelled (e.g. Ctrl+C),
