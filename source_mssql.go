@@ -481,6 +481,7 @@ func introspectMSSQLForeignKeysByTable(db *sql.DB, schema string, identName func
 			}
 			fk = &ForeignKey{
 				Name:       identName(fkName),
+				RefSchema:  refSchema,
 				RefTable:   refTable,
 				RefPGTable: refPGTable,
 				UpdateRule: strings.ReplaceAll(updateAction, "_", " "),

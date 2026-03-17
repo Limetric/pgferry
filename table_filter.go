@@ -10,6 +10,7 @@ type schemaFilterReport struct {
 	TotalTables        int
 	SelectedTables     []string
 	SkippedTables      []string
+	OverlappingTables  []string
 	SkippedForeignKeys []skippedForeignKey
 }
 
@@ -31,11 +32,7 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 
 	report.TotalTables = len(schema.Tables)
 	if !hasTableFilters(cfg) {
-		cloned := cloneSchema(schema)
-		for _, table := range cloned.Tables {
-			report.SelectedTables = append(report.SelectedTables, table.SourceName)
-		}
-		return cloned, report, nil
+		return schema, report, nil
 	}
 
 	tableKeys := make(map[string]string, len(schema.Tables))
@@ -55,13 +52,21 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 	}
 
 	selected := make(map[string]bool, len(schema.Tables))
+	excluded := make(map[string]string, len(cfg.ExcludeTables))
+	for _, name := range cfg.ExcludeTables {
+		excluded[normalizeTableFilterKey(name)] = name
+	}
 	if len(cfg.IncludeTables) == 0 {
 		for key := range tableKeys {
 			selected[key] = true
 		}
 	} else {
 		for _, name := range cfg.IncludeTables {
-			selected[normalizeTableFilterKey(name)] = true
+			key := normalizeTableFilterKey(name)
+			selected[key] = true
+			if excludeName, ok := excluded[key]; ok {
+				report.OverlappingTables = append(report.OverlappingTables, fmt.Sprintf("%s (excluded by %q)", name, excludeName))
+			}
 		}
 	}
 	for _, name := range cfg.ExcludeTables {
@@ -81,9 +86,9 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 		}
 
 		cloned := cloneTable(table)
-		cloned.ForeignKeys = cloned.ForeignKeys[:0]
+		cloned.ForeignKeys = nil
 		for _, fk := range table.ForeignKeys {
-			if selected[normalizeTableFilterKey(fk.RefTable)] {
+			if shouldKeepFilteredForeignKey(fk, cfg, selected) {
 				cloned.ForeignKeys = append(cloned.ForeignKeys, cloneForeignKey(fk))
 				continue
 			}
@@ -101,6 +106,13 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 	return filtered, report, nil
 }
 
+func shouldKeepFilteredForeignKey(fk ForeignKey, cfg *MigrationConfig, selected map[string]bool) bool {
+	if fk.RefSchema != "" && !strings.EqualFold(strings.TrimSpace(fk.RefSchema), strings.TrimSpace(cfg.Source.SourceSchema)) {
+		return false
+	}
+	return selected[normalizeTableFilterKey(fk.RefTable)]
+}
+
 func missingTableFilterEntries(entries []string, tableKeys map[string]string) []string {
 	if len(entries) == 0 {
 		return nil
@@ -113,18 +125,6 @@ func missingTableFilterEntries(entries []string, tableKeys map[string]string) []
 		}
 	}
 	return missing
-}
-
-func cloneSchema(schema *Schema) *Schema {
-	if schema == nil {
-		return nil
-	}
-
-	cloned := &Schema{Tables: make([]Table, 0, len(schema.Tables))}
-	for _, table := range schema.Tables {
-		cloned.Tables = append(cloned.Tables, cloneTable(table))
-	}
-	return cloned
 }
 
 func cloneTable(table Table) Table {
@@ -165,6 +165,9 @@ func cloneForeignKey(fk ForeignKey) ForeignKey {
 
 func logTableFilterReport(report schemaFilterReport) {
 	log.Printf("table filter: selected %d of %d table(s)", len(report.SelectedTables), report.TotalTables)
+	for _, overlap := range report.OverlappingTables {
+		log.Printf("  WARN: table filter overlap: %s appears in both include_tables and exclude_tables; exclude_tables wins", overlap)
+	}
 	if len(report.SkippedTables) > 0 {
 		log.Printf("table filter: skipped %d table(s): %s", len(report.SkippedTables), strings.Join(report.SkippedTables, ", "))
 	}

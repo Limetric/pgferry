@@ -189,12 +189,12 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	if err != nil {
 		return fmt.Errorf("introspect schema: %w", err)
 	}
+	filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("filter schema tables: %w", err)
+	}
+	schema = filteredSchema
 	if hasTableFilters(cfg) {
-		filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
-		if err != nil {
-			return fmt.Errorf("filter schema tables: %w", err)
-		}
-		schema = filteredSchema
 		logTableFilterReport(filterReport)
 	}
 	log.Printf("found %d tables", len(schema.Tables))

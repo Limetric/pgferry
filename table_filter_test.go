@@ -35,6 +35,9 @@ func TestFilterSchemaTables_UsesSourceNamesAndExcludeWins(t *testing.T) {
 	if got := strings.Join(report.SkippedTables, ","); got != "Accounts,AuditLog" {
 		t.Fatalf("skipped tables = %q, want Accounts,AuditLog", got)
 	}
+	if got := strings.Join(report.OverlappingTables, ","); got != "accounts (excluded by \"Accounts\")" {
+		t.Fatalf("overlapping tables = %q, want accounts (excluded by \"Accounts\")", got)
+	}
 }
 
 func TestFilterSchemaTables_PrunesForeignKeysToExcludedTables(t *testing.T) {
@@ -104,6 +107,25 @@ func TestFilterSchemaTables_RejectsUnknownTableName(t *testing.T) {
 	}
 }
 
+func TestFilterSchemaTables_RejectsUnknownExcludeTableName(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "OrderItems", PGName: "order_items"},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeTables: []string{"audit_log"},
+	}
+
+	_, _, err := filterSchemaTables(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exclude_tables entries did not match any source table") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestFilterSchemaTables_RejectsEmptyResult(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
@@ -141,5 +163,47 @@ func TestFilterSchemaTables_RejectsAmbiguousCaseInsensitiveSourceNames(t *testin
 	}
 	if !strings.Contains(err.Error(), "ambiguous table names") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFilterSchemaTables_PrunesCrossSchemaMSSQLForeignKeys(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "Users", PGName: "users"},
+			{
+				SourceName: "AuditLog",
+				PGName:     "audit_log",
+				ForeignKeys: []ForeignKey{
+					{
+						Name:       "fk_audit_users",
+						RefSchema:  "archive",
+						RefTable:   "Users",
+						RefPGTable: "users",
+					},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		Source: SourceConfig{
+			Type:         "mssql",
+			SourceSchema: "dbo",
+		},
+		IncludeTables: []string{"Users", "AuditLog"},
+	}
+
+	filtered, report, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+
+	if got := len(filtered.Tables[1].ForeignKeys); got != 0 {
+		t.Fatalf("cross-schema foreign key count = %d, want 0", got)
+	}
+	if got := len(report.SkippedForeignKeys); got != 1 {
+		t.Fatalf("skipped foreign key count = %d, want 1", got)
+	}
+	if got := report.SkippedForeignKeys[0].RefTable; got != "Users" {
+		t.Fatalf("skipped foreign key ref table = %q, want Users", got)
 	}
 }
