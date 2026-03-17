@@ -142,6 +142,9 @@ func runParallelMigrationWorkers(ctx context.Context, workers int, openSource fu
 	if workers < 1 {
 		workers = 1
 	}
+	if workers > len(workItems) {
+		workers = len(workItems)
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -217,7 +220,7 @@ enqueue:
 		log.Printf("ERROR: %v", firstErr)
 		return firstErr
 	}
-	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return nil

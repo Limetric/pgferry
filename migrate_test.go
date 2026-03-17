@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -169,7 +169,7 @@ func (m *fakeMigrationCheckpointManager) RecordFullTable(tableName string, _ int
 func (m *fakeMigrationCheckpointManager) RecordChunk(tableName string, chunkIndex int, _ int64, _ int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.recordedChunk = append(m.recordedChunk, tableName+":"+itoa(chunkIndex))
+	m.recordedChunk = append(m.recordedChunk, tableName+":"+fmt.Sprint(chunkIndex))
 }
 
 func (m *fakeMigrationCheckpointManager) Flush() error   { return nil }
@@ -225,10 +225,10 @@ func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.
 	}
 
 	summaries := []string{
-		got[0].Table.SourceName + ":" + itoa(got[0].Chunk.Index),
-		got[1].Table.SourceName + ":" + itoa(got[1].Chunk.Index),
-		got[2].Table.SourceName + ":" + itoa(got[2].Chunk.Index),
-		got[3].Table.SourceName + ":" + itoa(got[3].Chunk.Index),
+		got[0].Table.SourceName + ":" + fmt.Sprint(got[0].Chunk.Index),
+		got[1].Table.SourceName + ":" + fmt.Sprint(got[1].Chunk.Index),
+		got[2].Table.SourceName + ":" + fmt.Sprint(got[2].Chunk.Index),
+		got[3].Table.SourceName + ":" + fmt.Sprint(got[3].Chunk.Index),
 	}
 	want := []string{"orders:0", "orders:2", "items:0", "items:1"}
 	if !slices.Equal(summaries, want) {
@@ -275,10 +275,9 @@ func TestRunParallelMigrationWorkers_ReusesSourceAcrossItems(t *testing.T) {
 			workItems,
 			mgr,
 			func(ctx context.Context, source dbQuerier, item migrationWorkItem) (int64, error) {
-				t.Helper()
 				src, ok := source.(*fakeMigrationWorkerSource)
 				if !ok {
-					t.Fatalf("source type = %T, want *fakeMigrationWorkerSource", source)
+					return 0, fmt.Errorf("source type = %T, want *fakeMigrationWorkerSource", source)
 				}
 
 				mu.Lock()
@@ -366,6 +365,27 @@ func TestRunParallelMigrationWorkers_CancelsRemainingWorkOnFailure(t *testing.T)
 	}
 }
 
+func TestRunParallelMigrationWorkers_PropagatesParentCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := runParallelMigrationWorkers(
+		ctx,
+		2,
+		func() (migrationWorkerSource, error) {
+			return &fakeMigrationWorkerSource{id: 1, closeMu: &sync.Mutex{}, closeCounts: map[int]int{}}, nil
+		},
+		[]migrationWorkItem{{Table: Table{SourceName: "users"}}},
+		&fakeMigrationCheckpointManager{},
+		func(context.Context, dbQuerier, migrationWorkItem) (int64, error) {
+			return 0, errors.New("execute should not run when parent context is already canceled")
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want %v", err, context.Canceled)
+	}
+}
+
 func findPlanByTable(plans []ChunkPlan, tableName string) ChunkPlan {
 	for _, plan := range plans {
 		if plan.Table.SourceName == tableName {
@@ -373,8 +393,4 @@ func findPlanByTable(plans []ChunkPlan, tableName string) ChunkPlan {
 		}
 	}
 	return ChunkPlan{}
-}
-
-func itoa(v int) string {
-	return strconv.Itoa(v)
 }
