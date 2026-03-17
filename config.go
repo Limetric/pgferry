@@ -24,6 +24,8 @@ type MigrationConfig struct {
 	PreserveDefaults                  bool              `toml:"preserve_defaults"`
 	AddUnsignedChecks                 bool              `toml:"add_unsigned_checks"`
 	CleanOrphans                      bool              `toml:"clean_orphans"`
+	CleanOrphansMode                  string            `toml:"clean_orphans_mode"`     // apply|report
+	CleanOrphansMaxRows               int64             `toml:"clean_orphans_max_rows"` // 0 disables threshold
 	SnakeCaseIdentifiers              bool              `toml:"snake_case_identifiers"`
 	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
 	Workers                           int               `toml:"workers"`
@@ -129,6 +131,7 @@ func defaultMigrationConfig() MigrationConfig {
 		UnloggedTables:       true,
 		PreserveDefaults:     true,
 		CleanOrphans:         true,
+		CleanOrphansMode:     "apply",
 		SnakeCaseIdentifiers: true,
 		TypeMapping:          defaultTypeMappingConfig(),
 	}
@@ -153,6 +156,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 	if cfg.Validation == "" {
 		cfg.Validation = "none"
+	}
+	if cfg.CleanOrphansMode == "" {
+		cfg.CleanOrphansMode = "apply"
 	}
 	if cfg.Source.Type == "" {
 		return fmt.Errorf("source.type is required (must be mysql, sqlite, or mssql)")
@@ -240,6 +246,14 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	case validationModeNone, validationModeRowCount, validationModeSampledHash:
 	default:
 		return fmt.Errorf("validation must be one of: none, row_count, sampled_hash")
+	}
+	switch cfg.CleanOrphansMode {
+	case "apply", "report":
+	default:
+		return fmt.Errorf("clean_orphans_mode must be one of: apply, report")
+	}
+	if cfg.CleanOrphansMaxRows < 0 {
+		return fmt.Errorf("clean_orphans_max_rows must be >= 0")
 	}
 
 	if cfg.SchemaOnly && cfg.DataOnly {

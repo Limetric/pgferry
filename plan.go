@@ -44,6 +44,7 @@ type PlanReport struct {
 	UnsupportedColumns []PlanUnsupportedColumn `json:"unsupported_columns"`
 	GeneratedColumns   []PlanGeneratedColumn   `json:"generated_columns"`
 	SkippedIndexes     []PlanSkippedIndex      `json:"skipped_indexes"`
+	OrphanRisks        []PlanOrphanRisk        `json:"orphan_risks"`
 	CollationWarnings  []string                `json:"collation_warnings"`
 }
 
@@ -79,6 +80,15 @@ type PlanSkippedIndex struct {
 	Table  string `json:"table"`
 	Index  string `json:"index"`
 	Reason string `json:"reason"`
+}
+
+type PlanOrphanRisk struct {
+	Table      string   `json:"table"`
+	ForeignKey string   `json:"foreign_key"`
+	Columns    []string `json:"columns"`
+	RefTable   string   `json:"ref_table"`
+	RefColumns []string `json:"ref_columns"`
+	Action     string   `json:"action"`
 }
 
 func runPlan(cmd *cobra.Command, args []string) error {
@@ -173,6 +183,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 		UnsupportedColumns: []PlanUnsupportedColumn{},
 		GeneratedColumns:   []PlanGeneratedColumn{},
 		SkippedIndexes:     []PlanSkippedIndex{},
+		OrphanRisks:        []PlanOrphanRisk{},
 		CollationWarnings:  []string{},
 	}
 
@@ -240,6 +251,21 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 					Table:  t.PGName,
 					Index:  idx.Name,
 					Reason: reason,
+				})
+			}
+		}
+	}
+
+	if cfg.CleanOrphans {
+		for _, t := range schema.Tables {
+			for _, fk := range t.ForeignKeys {
+				report.OrphanRisks = append(report.OrphanRisks, PlanOrphanRisk{
+					Table:      t.PGName,
+					ForeignKey: fk.Name,
+					Columns:    append([]string(nil), fk.Columns...),
+					RefTable:   fk.RefPGTable,
+					RefColumns: append([]string(nil), fk.RefColumns...),
+					Action:     orphanCleanupAction(fk),
 				})
 			}
 		}
@@ -341,6 +367,23 @@ func writePlanText(w io.Writer, report *PlanReport) {
 			fmt.Fprintf(w, "  - %s.%s: %s\n", si.Table, si.Index, si.Reason)
 		}
 		fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
+	}
+
+	if len(report.OrphanRisks) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Orphan Cleanup Risks (%d)\n\n", len(report.OrphanRisks))
+		fmt.Fprintf(w, "These foreign keys can trigger automatic orphan cleanup before PostgreSQL foreign keys are created.\n")
+		fmt.Fprintf(w, "Actions are based on each FK's ON DELETE rule. Row counts are determined during migration runtime.\n\n")
+		for _, risk := range report.OrphanRisks {
+			fmt.Fprintf(w, "  - %s.%s (%s) -> %s (%s): %s\n",
+				risk.Table,
+				risk.ForeignKey,
+				strings.Join(risk.Columns, ", "),
+				risk.RefTable,
+				strings.Join(risk.RefColumns, ", "),
+				orphanCleanupActionLabel(risk.Action))
+		}
+		fmt.Fprintln(w)
 	}
 
 	// Collation warnings

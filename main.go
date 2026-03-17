@@ -145,7 +145,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d resume=%t validation=%s",
+		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d resume=%t validation=%s",
 		mode,
 		cfg.Workers,
 		cfg.IndexWorkers,
@@ -155,6 +155,9 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		cfg.UnloggedTables,
 		cfg.PreserveDefaults,
 		cfg.AddUnsignedChecks,
+		cfg.CleanOrphans,
+		cfg.CleanOrphansMode,
+		cfg.CleanOrphansMaxRows,
 		cfg.SnakeCaseIdentifiers,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 		cfg.ChunkSize,
@@ -198,6 +201,15 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		for _, w := range warnings {
 			log.Printf("  WARN: %s", w)
 		}
+	}
+	if cfg.CleanOrphans && !cfg.SchemaOnly {
+		totalFKs, deleteFKs, setNullFKs := orphanCleanupCandidateCounts(schema)
+		threshold := "disabled"
+		if cfg.CleanOrphansMaxRows > 0 {
+			threshold = fmt.Sprintf("%d", cfg.CleanOrphansMaxRows)
+		}
+		log.Printf("orphan cleanup plan: mode=%s max_rows=%s candidate_fks=%d (DELETE=%d SET NULL=%d)",
+			cfg.CleanOrphansMode, threshold, totalFKs, deleteFKs, setNullFKs)
 	}
 	typeMap := effectiveTypeMapping(cfg)
 	var resumeCompatibility checkpointCompatibility

@@ -18,7 +18,7 @@ migration mode (`schema_only` or `data_only`).
 | 8 | **Primary keys** | Yes | Yes | &mdash; |
 | 9 | **Indexes** &mdash; unsupported index types (MySQL FULLTEXT, prefix, expression; SQLite partial, expression) are reported and skipped. MySQL `SPATIAL` indexes are recreated as `USING GIST` when `[postgis].enabled = true`; otherwise they remain skipped. | Yes | Yes | &mdash; |
 | 10 | **`before_fk` hooks** | Yes | Yes | &mdash; |
-| 11 | **Orphan cleanup** &mdash; auto-detect and remove/nullify rows that would violate FK constraints (when `clean_orphans = true`) | Yes | &mdash; | &mdash; |
+| 11 | **Orphan cleanup** &mdash; count orphaned rows, then either apply `DELETE`/`SET NULL` or stop in report-only mode before FK creation (when `clean_orphans = true`) | Yes | &mdash; | &mdash; |
 | 12 | **Foreign keys** | Yes | Yes | &mdash; |
 | 13 | **Sequences** &mdash; create auto-increment sequences and set to `max(col) + 1` | Yes | Yes | Yes |
 | 14 | **Unsigned checks** &mdash; add CHECK constraints for unsigned ranges (when `add_unsigned_checks = true`) | Yes | Yes | &mdash; |

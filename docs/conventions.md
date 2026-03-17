@@ -49,9 +49,22 @@ rows before creating foreign keys. The cleanup action depends on the FK's
 - **`SET NULL`** &rarr; the FK columns on orphaned rows are set to `NULL`
 - **All other rules** (`CASCADE`, `RESTRICT`, `NO ACTION`) &rarr; orphaned rows are deleted
 
-For each FK, pgferry checks for child rows where at least one FK column is
-non-null and the referenced parent row does not exist. Affected row counts are
-logged.
+For each FK, pgferry checks for child rows where all FK columns are non-null
+and the referenced parent row does not exist. Affected row counts are logged
+before any mutation happens.
+
+`clean_orphans_mode` controls whether pgferry only reports or also applies the
+cleanup:
+
+- **`apply`** (default) &rarr; count affected rows, log the exact action per FK, then apply the cleanup before FK creation
+- **`report`** &rarr; count affected rows, log the exact action per FK, then abort before mutating rows or creating foreign keys
+
+`clean_orphans_max_rows` adds an optional guardrail. When set to a value greater
+than zero, pgferry aborts before mutation if the total orphan cleanup impact
+would exceed that threshold.
+
+The `pgferry plan` report lists every FK that can trigger orphan cleanup and
+whether the action would be `DELETE` or `SET NULL`.
 
 Orphan cleanup is **enabled by default** (`clean_orphans = true`). Set
 `clean_orphans = false` to disable it &mdash; FK creation will fail if orphaned
