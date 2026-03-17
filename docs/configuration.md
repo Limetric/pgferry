@@ -98,6 +98,7 @@ resume = false
 # Post-load validation mode:
 #   "none"      — no validation (default)
 #   "row_count" — compare source and target row counts per table after data load
+#   "sampled_hash" — row_count plus bounded content fingerprints on deterministic PK-addressable row samples
 validation = "none"
 
 # Source database configuration (required)
@@ -282,7 +283,7 @@ pgferry validates the config at load time and reports errors before connecting t
 | `type_mapping.collation_mode` | Must be `"none"` or `"auto"` |
 | `source.charset` | MySQL-only; config error for SQLite/MSSQL if not `"utf8mb4"` |
 | `source.source_schema` | MSSQL-only; defaults to `"dbo"` |
-| `validation` | Must be `"none"` or `"row_count"` |
+| `validation` | Must be `"none"`, `"row_count"`, or `"sampled_hash"` |
 | `chunk_size` | Defaults to `100000` if &le; 0 |
 | `resume` + `on_schema_exists=recreate` | Incompatible &mdash; recreate would destroy data to resume into |
 | `resume` + `schema_only` | Incompatible &mdash; no data to resume |

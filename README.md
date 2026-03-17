@@ -14,6 +14,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - Built for messy real-world schemas with hooks, orphan cleanup, generated-column reporting, and unsupported-index warnings
 - `schema_only` and `data_only` runs when you need tighter control
 - Extension-backed features like `citext` and PostGIS, with validation and optional auto-create
+- Post-load validation modes that range from fast `row_count` checks to stronger bounded `sampled_hash` content checks
 
 CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation, MSSQL 2017 through 2025, and SQLite against the latest PostgreSQL release on every commit.
 

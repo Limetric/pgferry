@@ -30,7 +30,7 @@ type MigrationConfig struct {
 	IndexWorkers                      int               `toml:"index_workers"`
 	ChunkSize                         int64             `toml:"chunk_size"`
 	Resume                            bool              `toml:"resume"`
-	Validation                        string            `toml:"validation"` // none|row_count
+	Validation                        string            `toml:"validation"` // none|row_count|sampled_hash
 	Hooks                             HooksConfig       `toml:"hooks"`
 	TypeMapping                       TypeMappingConfig `toml:"type_mapping"`
 
@@ -237,9 +237,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 
 	switch cfg.Validation {
-	case "none", "row_count":
+	case validationModeNone, validationModeRowCount, validationModeSampledHash:
 	default:
-		return fmt.Errorf("validation must be one of: none, row_count")
+		return fmt.Errorf("validation must be one of: none, row_count, sampled_hash")
 	}
 
 	if cfg.SchemaOnly && cfg.DataOnly {

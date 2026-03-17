@@ -26,17 +26,21 @@ With `--output-dir`, pgferry also writes hook skeletons you can fill in before t
 
 ```toml
 unlogged_tables = false
-validation = "row_count"
+validation = "sampled_hash"
 resume = true
 chunk_size = 100000
 ```
 
 These settings are a strong default for long-running operational migrations:
 
-- `validation = "row_count"` checks source and target table counts after load.
+- `validation = "sampled_hash"` checks row counts and a bounded deterministic content sample on primary-key-addressable rows.
 - `resume = true` keeps progress in `pgferry_checkpoint.json`.
 - `unlogged_tables = false` keeps checkpoints aligned with durable target data.
 - `chunk_size` makes range-based retries cheaper on large tables.
+
+`sampled_hash` is still not a proof of full correctness. It runs after
+`after_data` hooks, and it re-reads the current source state rather than the
+earlier COPY snapshot.
 
 ## Snapshot strategy
 
@@ -52,7 +56,7 @@ SQLite always uses `none`.
 Before the final cutover, verify:
 
 1. `plan` output is understood and any hook SQL is written.
-2. Row counts are acceptable for the tables you care about most.
+2. Validation mode and its caveats match the confidence level you actually need.
 3. Extension-backed features are installed or configured to auto-create.
 4. Unsupported indexes or generated-column semantics have explicit follow-up notes.
 

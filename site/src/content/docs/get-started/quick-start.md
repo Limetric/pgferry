@@ -77,7 +77,8 @@ Add more configuration when you need:
 
 - `source_snapshot_mode = "single_tx"` for a consistent source snapshot on MySQL or MSSQL.
 - `resume = true` plus `unlogged_tables = false` for chunk checkpoint reuse.
-- `validation = "row_count"` for a post-load sanity check.
+- `validation = "row_count"` for a fast cardinality check.
+- `validation = "sampled_hash"` when you want stronger but still bounded post-load verification.
 - Hook files for views, routines, cleanup SQL, or foreign-key sequencing.
 - Source-specific type mapping, including PostGIS-backed MySQL spatial migration.
 

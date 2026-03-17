@@ -13,7 +13,7 @@ migration mode (`schema_only` or `data_only`).
 | 4 | **`before_data` hooks** | Yes | &mdash; | Yes |
 | 5 | **Stream data** &mdash; tables with a single-column numeric PK are split into range-based chunks; other tables use full-table COPY. Chunks/tables run in parallel (or sequentially with `source_snapshot_mode = "single_tx"`). SQLite always uses 1 worker. Checkpoint state is saved after each chunk for resumability. In `data_only` mode, triggers are disabled before COPY and re-enabled after. Opt-in PostGIS spatial columns stay on the COPY path and are converted to EWKB during streaming. | Yes | &mdash; | Yes |
 | 6 | **`after_data` hooks** | Yes | &mdash; | Yes |
-| 6b | **Validation** &mdash; compare source and target row counts per table (when `validation = "row_count"`). Fails the migration if any mismatch is found. | Yes | &mdash; | Yes |
+| 6b | **Validation** &mdash; optionally compare source and target row counts (`row_count`) or add bounded deterministic sampled content fingerprints (`sampled_hash`). Fails the migration if any mismatch is found. | Yes | &mdash; | Yes |
 | 7 | **SET LOGGED** &mdash; convert `UNLOGGED` tables back to `LOGGED` | Yes | &mdash; | &mdash; |
 | 8 | **Primary keys** | Yes | Yes | &mdash; |
 | 9 | **Indexes** &mdash; unsupported index types (MySQL FULLTEXT, prefix, expression; SQLite partial, expression) are reported and skipped. MySQL `SPATIAL` indexes are recreated as `USING GIST` when `[postgis].enabled = true`; otherwise they remain skipped. | Yes | Yes | &mdash; |
@@ -208,11 +208,10 @@ eliminating all checkpoint-related I/O from the data copy hot path.
 
 ## Post-load validation
 
-pgferry can optionally verify the migration by comparing source and target row
-counts after data streaming completes.
+pgferry can optionally verify the migration after data streaming completes.
 
 ```toml
-validation = "row_count"
+validation = "sampled_hash"
 ```
 
 ### `row_count` mode
@@ -221,8 +220,33 @@ For each table, pgferry runs `SELECT COUNT(*)` on both the source and target
 databases and compares the results. If any table has a mismatch, the migration
 fails with a clear error listing the affected tables.
 
+`row_count` verifies only table cardinality. It does **not** compare per-row
+content, transformed values, or application-level semantics.
+
+### `sampled_hash` mode
+
+`sampled_hash` runs the same row-count check, then selects up to 16
+deterministic rows per table by primary-key order and compares canonicalized
+content fingerprints for the columns pgferry knows how to normalize safely.
+
+This is intentionally stronger than `row_count`, but still bounded:
+
+- it requires a primary key whose mapped PostgreSQL types can be fingerprinted
+- it skips columns with unsupported canonicalization rules instead of trying to
+  hash every source-specific type
+- tables that do not meet those requirements fall back to `row_count` only
+
+### Caveats
+
 Validation runs after the `after_data` hooks and before post-migration steps
-(SET LOGGED, PKs, indexes, FKs, etc.).
+(SET LOGGED, PKs, indexes, FKs, etc.), so hook-driven target changes are part
+of what gets validated.
+
+Validation also re-reads the source after the COPY phase. If the source changes
+during or after the load, validation may compare against a newer source state
+than the rows that were actually copied. `source_snapshot_mode = "single_tx"`
+does not change that: it protects the COPY phase snapshot, not the later
+validation queries.
 
 ### `none` (default)
 
