@@ -126,7 +126,7 @@ func TestValidateSampledHashTable_DetectsContentMismatchWithMatchingCounts(t *te
 		{Column: table.Columns[1], Kind: validationKindText, PGType: "text"},
 	}
 
-	backend := sampledHashBackendStub{
+	backend := &sampledHashBackendStub{
 		sourceCountValue: 3,
 		targetCountValue: 3,
 		keys: []validationKey{
@@ -148,6 +148,45 @@ func TestValidateSampledHashTable_DetectsContentMismatchWithMatchingCounts(t *te
 	}
 	if !strings.Contains(got.SampleMismatch, "column name") {
 		t.Fatalf("SampleMismatch = %q, want column detail", got.SampleMismatch)
+	}
+}
+
+func TestValidateSampledHashTableWithColumns_MatchDoesNotDoubleCount(t *testing.T) {
+	table := Table{
+		SourceName: "users",
+		PGName:     "users",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id"},
+			{SourceName: "name", PGName: "name"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+
+	keyCols := []validationColumn{{Column: table.Columns[0], Kind: validationKindNumericText, PGType: "integer"}}
+	compareCols := []validationColumn{
+		{Column: table.Columns[0], Kind: validationKindNumericText, PGType: "integer"},
+		{Column: table.Columns[1], Kind: validationKindText, PGType: "text"},
+	}
+
+	backend := &sampledHashBackendStub{
+		sourceCountValue: 2,
+		targetCountValue: 2,
+		keys: []validationKey{
+			{DisplayFragments: []string{"1"}},
+		},
+		sourceFragmentsValue: []string{"\"1\"", "\"alice\""},
+		targetFragmentsValue: []string{"\"1\"", "\"alice\""},
+	}
+
+	got, err := validateSampledHashTableWithColumns(context.Background(), backend, table, keyCols, compareCols)
+	if err != nil {
+		t.Fatalf("validateSampledHashTableWithColumns() error: %v", err)
+	}
+	if !got.SampleMatch || got.SampleMismatch != "" {
+		t.Fatalf("got mismatch result: %+v", got)
+	}
+	if backend.sourceCountCalls != 1 || backend.targetCountCalls != 1 {
+		t.Fatalf("count calls = source:%d target:%d, want 1 each", backend.sourceCountCalls, backend.targetCountCalls)
 	}
 }
 
@@ -189,24 +228,28 @@ type sampledHashBackendStub struct {
 	keys                 []validationKey
 	sourceFragmentsValue []string
 	targetFragmentsValue []string
+	sourceCountCalls     int
+	targetCountCalls     int
 }
 
-func (s sampledHashBackendStub) sourceCount(context.Context, Table) (int64, error) {
+func (s *sampledHashBackendStub) sourceCount(context.Context, Table) (int64, error) {
+	s.sourceCountCalls++
 	return s.sourceCountValue, nil
 }
 
-func (s sampledHashBackendStub) targetCount(context.Context, Table) (int64, error) {
+func (s *sampledHashBackendStub) targetCount(context.Context, Table) (int64, error) {
+	s.targetCountCalls++
 	return s.targetCountValue, nil
 }
 
-func (s sampledHashBackendStub) sampleKeys(context.Context, Table, []validationColumn, []int64) ([]validationKey, error) {
+func (s *sampledHashBackendStub) sampleKeys(context.Context, Table, []validationColumn, []int64) ([]validationKey, error) {
 	return s.keys, nil
 }
 
-func (s sampledHashBackendStub) sourceFragments(context.Context, Table, []validationColumn, validationKey) ([]string, error) {
+func (s *sampledHashBackendStub) sourceFragments(context.Context, Table, []validationColumn, validationKey) ([]string, error) {
 	return s.sourceFragmentsValue, nil
 }
 
-func (s sampledHashBackendStub) targetFragments(context.Context, Table, []validationColumn, []validationColumn, validationKey) ([]string, error) {
+func (s *sampledHashBackendStub) targetFragments(context.Context, Table, []validationColumn, []validationColumn, validationKey) ([]string, error) {
 	return s.targetFragmentsValue, nil
 }

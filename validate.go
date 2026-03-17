@@ -22,6 +22,8 @@ const (
 	validationModeRowCount    = "row_count"
 	validationModeSampledHash = "sampled_hash"
 
+	// validationSampleRows keeps sampled_hash bounded so validation stays
+	// meaningfully stronger than row_count without becoming a second full scan.
 	validationSampleRows = 16
 )
 
@@ -346,8 +348,11 @@ func validateMigration(ctx context.Context, src SourceDB, srcDSN string, pool *p
 			}
 		}
 
-		if mode == validationModeSampledHash && sampledHashMismatches > 0 {
+		if mode == validationModeSampledHash && sampledHashMismatches > 0 && rowCountMismatches > 0 {
 			return results, fmt.Errorf("validation failed: %d row count mismatch(es) and %d sampled_hash mismatch(es): %s", rowCountMismatches, sampledHashMismatches, strings.Join(names, ", "))
+		}
+		if mode == validationModeSampledHash && sampledHashMismatches > 0 {
+			return results, fmt.Errorf("validation failed: %d sampled_hash mismatch(es): %s", sampledHashMismatches, strings.Join(names, ", "))
 		}
 		return results, fmt.Errorf("validation failed: row count mismatch on %d table(s): %s", rowCountMismatches, strings.Join(names, ", "))
 	}
@@ -409,7 +414,7 @@ func validateSampledHashTable(ctx context.Context, backend sampledHashBackend, s
 		return result, nil
 	}
 
-	return validateSampledHashTableWithColumns(ctx, backend, table, keyCols, compareCols)
+	return runSampledHashComparisons(ctx, backend, table, keyCols, compareCols, result)
 }
 
 func validateSampledHashTableWithColumns(ctx context.Context, backend sampledHashBackend, table Table, keyCols []validationColumn, compareCols []validationColumn) (ValidationResult, error) {
@@ -432,6 +437,10 @@ func validateSampledHashTableWithColumns(ctx context.Context, backend sampledHas
 		return result, nil
 	}
 
+	return runSampledHashComparisons(ctx, backend, table, keyCols, compareCols, result)
+}
+
+func runSampledHashComparisons(ctx context.Context, backend sampledHashBackend, table Table, keyCols []validationColumn, compareCols []validationColumn, result ValidationResult) (ValidationResult, error) {
 	offsets := validationSampleOffsets(result.SourceCount, validationSampleRows)
 	keys, err := backend.sampleKeys(ctx, table, keyCols, offsets)
 	if err != nil {
@@ -457,7 +466,15 @@ func validateSampledHashTableWithColumns(ctx context.Context, backend sampledHas
 				continue
 			}
 			result.SampleMatch = false
-			result.SampleMismatch = fmt.Sprintf("sampled_hash mismatch at key %s on column %s (source_hash=%s target_hash=%s)", formatValidationKey(table, key), compareCols[i].Column.SourceName, hashValidationFragments(compareCols, sourceFragments), hashValidationFragments(compareCols, targetFragments))
+			result.SampleMismatch = fmt.Sprintf(
+				"sampled_hash mismatch at key %s on column %s (source=%s target=%s, row_source_hash=%s row_target_hash=%s)",
+				formatValidationKey(table, key),
+				compareCols[i].Column.SourceName,
+				sourceFragments[i],
+				targetFragments[i],
+				hashValidationFragments(compareCols, sourceFragments),
+				hashValidationFragments(compareCols, targetFragments),
+			)
 			return result, nil
 		}
 	}
@@ -518,6 +535,8 @@ func validationKindForPGType(pgType string) (string, bool) {
 		strings.HasPrefix(normalized, "numeric("), normalized == "numeric":
 		return validationKindNumericText, true
 	case normalized == "text", normalized == "citext",
+		strings.HasPrefix(normalized, "char("), normalized == "char",
+		strings.HasPrefix(normalized, "character("), normalized == "character",
 		strings.HasPrefix(normalized, "varchar("), normalized == "varchar",
 		strings.HasPrefix(normalized, "character varying("), normalized == "character varying":
 		return validationKindText, true
