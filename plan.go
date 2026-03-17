@@ -45,6 +45,7 @@ type PlanReport struct {
 	GeneratedColumns        []PlanGeneratedColumn        `json:"generated_columns"`
 	SkippedIndexes          []PlanSkippedIndex           `json:"skipped_indexes"`
 	OrphanCleanupCandidates []PlanOrphanCleanupCandidate `json:"orphan_cleanup_candidates"`
+	TemporalWarnings        []PlanTemporalWarning        `json:"temporal_warnings"`
 	CollationWarnings       []string                     `json:"collation_warnings"`
 }
 
@@ -89,6 +90,14 @@ type PlanOrphanCleanupCandidate struct {
 	RefTable   string   `json:"ref_table"`
 	RefColumns []string `json:"ref_columns"`
 	Action     string   `json:"action"`
+}
+
+type PlanTemporalWarning struct {
+	Category    string   `json:"category"`
+	Summary     string   `json:"summary"`
+	Columns     int      `json:"columns"`
+	Examples    []string `json:"examples"`
+	Remediation string   `json:"remediation"`
 }
 
 func runPlan(cmd *cobra.Command, args []string) error {
@@ -184,6 +193,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 		GeneratedColumns:        []PlanGeneratedColumn{},
 		SkippedIndexes:          []PlanSkippedIndex{},
 		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{},
+		TemporalWarnings:        []PlanTemporalWarning{},
 		CollationWarnings:       []string{},
 	}
 
@@ -270,6 +280,11 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 			}
 		}
 	}
+	sourceType := ""
+	if cfg != nil {
+		sourceType = cfg.Source.Type
+	}
+	report.TemporalWarnings = collectTemporalWarnings(schema, sourceType, typeMap)
 
 	// Collation warnings
 	if warnings := collectCollationWarnings(schema, typeMap); len(warnings) > 0 {
@@ -382,6 +397,22 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				risk.RefTable,
 				strings.Join(risk.RefColumns, ", "),
 				orphanCleanupActionLabel(risk.Action))
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(report.TemporalWarnings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Temporal Warnings (%d)\n\n", len(report.TemporalWarnings))
+		fmt.Fprintf(w, "These mappings are valid, but they can change application-visible time or timezone semantics. They are advisory and do not block execution.\n\n")
+		for _, tw := range report.TemporalWarnings {
+			fmt.Fprintf(w, "  - %s\n", tw.Summary)
+			if len(tw.Examples) > 0 {
+				fmt.Fprintf(w, "    Examples: %s\n", strings.Join(tw.Examples, ", "))
+			}
+			if tw.Remediation != "" {
+				fmt.Fprintf(w, "    Review: %s\n", tw.Remediation)
+			}
 		}
 		fmt.Fprintln(w)
 	}

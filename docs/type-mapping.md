@@ -290,6 +290,37 @@ PostgreSQL does not. The `zero_date_mode` setting controls handling:
 - **`null`** (default) &mdash; converts zero dates to `NULL` during data streaming.
 - **`error`** &mdash; aborts the migration with an error when a zero date is encountered.
 
+### Temporal warning report
+
+`pgferry plan` and normal migration startup now emit temporal warning summaries
+when the introspected schema uses time-related types with configuration choices
+that can change application-visible semantics.
+
+Current warning categories include:
+
+- MySQL `TIME` columns with `time_mode = "time"` or `time_mode = "interval"`
+- MySQL date-like columns with `zero_date_mode = "null"`
+- MySQL `datetime` columns with `datetime_as_timestamptz = false`
+- MySQL `timestamp` columns, which always map to PostgreSQL `timestamptz`
+- MSSQL `datetime` / `datetime2` / `smalldatetime` columns under the active
+  `datetime_as_timestamptz` setting
+- MSSQL `datetimeoffset` columns, which always map to PostgreSQL `timestamptz`
+
+The MySQL `timestamp` warning is informational: there is no alternate mapping
+for that source type. It exists to prompt an explicit review of target-side
+timezone assumptions before cutover.
+
+Each warning calls out the active mapping and the relevant mitigation option so
+operators can review it before cutover:
+
+- `type_mapping.time_mode` for MySQL `TIME`
+- `type_mapping.zero_date_mode` for MySQL zero dates
+- `type_mapping.datetime_as_timestamptz` for MySQL and MSSQL datetime-like columns
+
+These warnings are heuristic by design. They do not inspect source values
+exhaustively or infer business intent; they exist to make timezone and temporal
+drift risks visible before data copy begins.
+
 ### JSON vs JSONB
 
 `json_as_jsonb = true` by default. Use `jsonb` when you want PostgreSQL's

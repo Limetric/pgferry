@@ -258,6 +258,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	if err := validateGeneratedIdentifiers(schema, cfg, typeMap); err != nil {
 		return err
 	}
+	logTemporalWarnings(collectTemporalWarnings(schema, cfg.Source.Type, typeMap))
 
 	// Close introspection connection — data migration opens its own connections
 	sourceDB.Close()
@@ -419,6 +420,22 @@ func runDataMigrationPhase(
 		return fmt.Errorf("after_data hooks: %w", err)
 	}
 	return nil
+}
+
+func logTemporalWarnings(warnings []PlanTemporalWarning) {
+	if len(warnings) == 0 {
+		return
+	}
+
+	totalColumns := 0
+	for _, warning := range warnings {
+		totalColumns += warning.Columns
+	}
+
+	log.Printf("temporal semantics report: %d warning category(s) across %d column(s)", len(warnings), totalColumns)
+	for _, warning := range warnings {
+		log.Printf("WARN: %s", warning.Summary)
+	}
 }
 
 // extractMySQLDBName pulls the database name from a MySQL DSN.
