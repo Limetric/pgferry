@@ -64,12 +64,14 @@ than zero, pgferry aborts before mutation if the total orphan cleanup impact
 would exceed that threshold.
 
 The `pgferry plan` report lists every FK that can trigger orphan cleanup and
-whether the action would be `DELETE` or `SET NULL`.
+whether the action would be `DELETE` or `SET NULL`. These are reported as
+cleanup candidates, not proof that orphaned rows currently exist.
 
 Orphan cleanup is **enabled by default** (`clean_orphans = true`). Set
 `clean_orphans = false` to disable it &mdash; FK creation will fail if orphaned
 rows exist, which is useful when you want to investigate data integrity issues
-or handle cleanup manually via `before_fk` hooks.
+or handle cleanup manually via `before_fk` hooks. When cleanup is disabled,
+`clean_orphans_mode` and `clean_orphans_max_rows` are ignored.
 
 Orphan cleanup runs only in `full` mode (skipped in `schema_only` and `data_only`).
 

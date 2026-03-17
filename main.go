@@ -208,8 +208,15 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		if cfg.CleanOrphansMaxRows > 0 {
 			threshold = fmt.Sprintf("%d", cfg.CleanOrphansMaxRows)
 		}
-		log.Printf("orphan cleanup plan: mode=%s max_rows=%s candidate_fks=%d (DELETE=%d SET NULL=%d)",
+		log.Printf("orphan cleanup plan: mode=%s max_rows=%s eligible_fks=%d (DELETE=%d SET NULL=%d)",
 			cfg.CleanOrphansMode, threshold, totalFKs, deleteFKs, setNullFKs)
+	} else if !cfg.SchemaOnly && (cfg.CleanOrphansMode != "apply" || cfg.CleanOrphansMaxRows > 0) {
+		threshold := "disabled"
+		if cfg.CleanOrphansMaxRows > 0 {
+			threshold = fmt.Sprintf("%d", cfg.CleanOrphansMaxRows)
+		}
+		log.Printf("orphan cleanup disabled: clean_orphans_mode=%s and clean_orphans_max_rows=%s are ignored because clean_orphans=false",
+			cfg.CleanOrphansMode, threshold)
 	}
 	typeMap := effectiveTypeMapping(cfg)
 	var resumeCompatibility checkpointCompatibility

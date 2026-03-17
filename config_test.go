@@ -1544,6 +1544,42 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_CleanOrphansDisabledAllowsModeAndMaxRows(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "clean_orphans_disabled.toml")
+
+	content := `
+schema = "target"
+clean_orphans = false
+clean_orphans_mode = "report"
+clean_orphans_max_rows = 25
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.CleanOrphans {
+		t.Fatalf("CleanOrphans = %t, want false", cfg.CleanOrphans)
+	}
+	if cfg.CleanOrphansMode != "report" {
+		t.Fatalf("CleanOrphansMode = %q, want %q", cfg.CleanOrphansMode, "report")
+	}
+	if cfg.CleanOrphansMaxRows != 25 {
+		t.Fatalf("CleanOrphansMaxRows = %d, want 25", cfg.CleanOrphansMaxRows)
+	}
+}
+
 func TestLoadConfig_ResumeWithRecreateConflict(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "resume_recreate.toml")

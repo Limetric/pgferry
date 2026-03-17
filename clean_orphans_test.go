@@ -170,7 +170,7 @@ func TestCleanOrphans_ReportModeReturnsErrorWithoutMutation(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected report mode to abort when orphan rows are detected")
 	}
-	if !strings.Contains(err.Error(), "report mode found 1 orphan-cleanup action(s) affecting 2 row(s)") {
+	if !strings.Contains(err.Error(), "report mode completed orphan cleanup inspection: 1 action(s), 2 row(s)") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(exec.execCalls) != 0 {
@@ -192,7 +192,7 @@ func TestCleanOrphans_ReportModeReturnsErrorWithoutMutationWhenNoOrphansExist(t 
 	if err == nil {
 		t.Fatal("expected report mode to abort even when no orphan rows are detected")
 	}
-	if !strings.Contains(err.Error(), "report mode found 0 orphan-cleanup action(s) affecting 0 row(s)") {
+	if !strings.Contains(err.Error(), "report mode completed orphan cleanup inspection: 0 action(s), 0 row(s)") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(exec.execCalls) != 0 {

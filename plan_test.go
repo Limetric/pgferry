@@ -24,8 +24,8 @@ func TestBuildPlanReport_Empty(t *testing.T) {
 	if len(report.SkippedIndexes) != 0 {
 		t.Errorf("skipped indexes = %d, want 0", len(report.SkippedIndexes))
 	}
-	if len(report.OrphanRisks) != 0 {
-		t.Errorf("orphan risks = %d, want 0", len(report.OrphanRisks))
+	if len(report.OrphanCleanupCandidates) != 0 {
+		t.Errorf("orphan cleanup candidates = %d, want 0", len(report.OrphanCleanupCandidates))
 	}
 }
 
@@ -83,11 +83,11 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	if report.SkippedIndexes[0].Index != "idx_ft" {
 		t.Errorf("skipped index = %+v", report.SkippedIndexes[0])
 	}
-	if len(report.OrphanRisks) != 1 {
-		t.Fatalf("orphan risks = %d, want 1", len(report.OrphanRisks))
+	if len(report.OrphanCleanupCandidates) != 1 {
+		t.Fatalf("orphan cleanup candidates = %d, want 1", len(report.OrphanCleanupCandidates))
 	}
-	if report.OrphanRisks[0].Action != "set_null" {
-		t.Errorf("orphan risk action = %q, want %q", report.OrphanRisks[0].Action, "set_null")
+	if report.OrphanCleanupCandidates[0].Action != "set_null" {
+		t.Errorf("orphan cleanup candidate action = %q, want %q", report.OrphanCleanupCandidates[0].Action, "set_null")
 	}
 }
 
@@ -119,7 +119,7 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		SkippedIndexes: []PlanSkippedIndex{
 			{Table: "products", Index: "idx_ft_name", Reason: "index type \"FULLTEXT\" is not supported"},
 		},
-		OrphanRisks: []PlanOrphanRisk{
+		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
 			{Table: "orders", ForeignKey: "fk_orders_customer", Columns: []string{"customer_id"}, RefTable: "customers", RefColumns: []string{"id"}, Action: "delete"},
 		},
 	}
@@ -142,7 +142,7 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		"after_data",
 		"## Skipped Indexes (1)",
 		"products.idx_ft_name",
-		"## Orphan Cleanup Risks (1)",
+		"## Orphan Cleanup Candidates (1)",
 		"orders.fk_orders_customer",
 		"DELETE",
 	} {
@@ -167,7 +167,7 @@ func TestWritePlanJSON(t *testing.T) {
 		SkippedIndexes: []PlanSkippedIndex{
 			{Table: "t2", Index: "idx_x", Reason: "prefix indexes (SUB_PART) are not currently supported"},
 		},
-		OrphanRisks: []PlanOrphanRisk{
+		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
 			{Table: "child", ForeignKey: "fk_child_parent", Columns: []string{"parent_id"}, RefTable: "parent", RefColumns: []string{"id"}, Action: "delete"},
 		},
 		CollationWarnings: []string{"some warning"},
@@ -195,8 +195,8 @@ func TestWritePlanJSON(t *testing.T) {
 	if len(decoded.SkippedIndexes) != 1 {
 		t.Errorf("skipped indexes = %d", len(decoded.SkippedIndexes))
 	}
-	if len(decoded.OrphanRisks) != 1 {
-		t.Errorf("orphan risks = %d", len(decoded.OrphanRisks))
+	if len(decoded.OrphanCleanupCandidates) != 1 {
+		t.Errorf("orphan cleanup candidates = %d", len(decoded.OrphanCleanupCandidates))
 	}
 	if len(decoded.CollationWarnings) != 1 {
 		t.Errorf("collation warnings = %d", len(decoded.CollationWarnings))

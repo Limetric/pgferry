@@ -77,11 +77,13 @@ clean_orphans = true
 # Orphan cleanup mode:
 #   "apply"  — count and then apply DELETE / SET NULL actions before FK creation (default)
 #   "report" — count and log affected rows, then abort before mutating data or creating FKs
+# Ignored when clean_orphans = false
 clean_orphans_mode = "apply"
 
 # Optional safety rail for orphan cleanup.
 # When > 0, pgferry aborts before mutation if the total affected orphan rows exceed this threshold.
 # Default: 0 (disabled)
+# Ignored when clean_orphans = false
 clean_orphans_max_rows = 0
 
 # Emulate MySQL ON UPDATE CURRENT_TIMESTAMP via PG triggers
