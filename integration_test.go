@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1736,7 +1737,42 @@ func requireMSSQLAndPostgresDSNs(t *testing.T) (string, string) {
 	if mssqlDSN == "" || pgDSN == "" {
 		t.Skip("MSSQL_DSN and POSTGRES_DSN env vars required")
 	}
-	return mssqlDSN, pgDSN
+	return normalizeIntegrationMSSQLDSN(mssqlDSN), pgDSN
+}
+
+func normalizeIntegrationMSSQLDSN(dsn string) string {
+	if strings.HasPrefix(dsn, "sqlserver://") {
+		u, err := url.Parse(dsn)
+		if err != nil {
+			return dsn
+		}
+		q := u.Query()
+		if q.Get("encrypt") == "" && q.Get("trustservercertificate") == "" {
+			// The CI SQL Server container uses a self-signed certificate that
+			// newer Go/x509 rejects during TLS parsing. Keep the integration DSN
+			// working by disabling TLS only when the test DSN did not already
+			// choose an encryption mode explicitly.
+			q.Set("encrypt", "disable")
+			u.RawQuery = q.Encode()
+		}
+		return u.String()
+	}
+
+	parts := strings.Split(dsn, ";")
+	for _, part := range parts {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(kv[0]))
+		if key == "encrypt" || key == "trustservercertificate" {
+			return dsn
+		}
+	}
+	if strings.HasSuffix(dsn, ";") || dsn == "" {
+		return dsn + "encrypt=disable"
+	}
+	return dsn + ";encrypt=disable"
 }
 
 func openIntegrationPGPool(t *testing.T, pgDSN string) *pgxpool.Pool {
