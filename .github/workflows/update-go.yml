@@ -1,0 +1,87 @@
+name: Update Go
+
+on:
+  schedule:
+    - cron: "23 4 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-go
+  cancel-in-progress: false
+
+jobs:
+  update-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Determine latest stable Go
+        id: version
+        run: |
+          set -euo pipefail
+
+          latest="$(curl -fsSL https://go.dev/dl/?mode=json | jq -r '[.[] | select(.stable == true)][0].version')"
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "Failed to resolve latest stable Go version" >&2
+            exit 1
+          fi
+
+          latest="${latest#go}"
+          current="$(awk '/^go / {print $2; exit}' go.mod)"
+
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+
+          if [ "$current" = "$latest" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@v6
+        if: steps.version.outputs.changed == 'true'
+        with:
+          go-version: ${{ steps.version.outputs.latest }}
+          cache: true
+
+      - name: Update go.mod
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          go mod edit -go=${{ steps.version.outputs.latest }}
+
+          if grep -q '^toolchain ' go.mod; then
+            go mod edit -toolchain=go${{ steps.version.outputs.latest }}
+          fi
+
+      - name: Verify with updated Go
+        if: steps.version.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+
+          go vet ./...
+          go test ./... -count=1
+
+      - name: Create pull request
+        if: steps.version.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/update-go-${{ steps.version.outputs.latest }}
+          delete-branch: true
+          commit-message: "chore: bump Go to ${{ steps.version.outputs.latest }}"
+          title: "chore: bump Go to ${{ steps.version.outputs.latest }}"
+          body: |
+            Updates the Go toolchain in `go.mod` to the latest stable release from `go.dev`.
+
+            - Current: `${{ steps.version.outputs.current }}`
+            - Latest stable: `${{ steps.version.outputs.latest }}`
+
+            Validation run in this workflow:
+            - `go vet ./...`
+            - `go test ./... -count=1`
