@@ -162,6 +162,10 @@ func unsignedConstraintName(table, col string) string {
 	return truncateGeneratedIdentifierWithSuffix(base, "_unsigned")
 }
 
+func generatedPrimaryKeyName(t Table) string {
+	return truncateGeneratedIdentifierWithSuffix(t.PGName, "_pkey")
+}
+
 func generatedIndexName(t Table, idx Index) string {
 	return truncateGeneratedIdentifier(fmt.Sprintf("%s_%s", t.PGName, idx.Name))
 }
@@ -227,13 +231,14 @@ func addPrimaryKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 		if t.PrimaryKey == nil {
 			continue
 		}
+		pkName := generatedPrimaryKeyName(t)
 		cols := quotedColumnList(t.PrimaryKey.Columns)
-		q := fmt.Sprintf("ALTER TABLE %s.%s ADD PRIMARY KEY (%s)",
-			pgIdent(pgSchema), pgIdent(t.PGName), cols)
-		if err := execSQL(ctx, pool, t.PGName+" PK", q); err != nil {
+		q := fmt.Sprintf("ALTER TABLE %s.%s ADD CONSTRAINT %s PRIMARY KEY (%s)",
+			pgIdent(pgSchema), pgIdent(t.PGName), pgIdent(pkName), cols)
+		if err := execSQL(ctx, pool, pkName, q); err != nil {
 			return err
 		}
-		log.Printf("    pk %s on %s.%s", cols, pgSchema, t.PGName)
+		log.Printf("    pk %s on %s.%s (%s)", pkName, pgSchema, t.PGName, cols)
 	}
 	return nil
 }

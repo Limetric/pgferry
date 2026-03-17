@@ -236,6 +236,9 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		b.WriteString("Hint: set [type_mapping].unknown_as_text = true to coerce unknown types to text.")
 		return fmt.Errorf("%s", b.String())
 	}
+	if err := validateGeneratedIdentifiers(schema, cfg, typeMap); err != nil {
+		return fmt.Errorf("validate generated identifiers: %w", err)
+	}
 
 	// Close introspection connection — data migration opens its own connections
 	sourceDB.Close()
