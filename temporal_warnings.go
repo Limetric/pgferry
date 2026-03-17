@@ -1,9 +1,6 @@
 package main
 
-import (
-	"fmt"
-	"log"
-)
+import "fmt"
 
 const temporalExamplesLimit = 3
 
@@ -124,11 +121,11 @@ func collectMSSQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 	}
 
 	if len(datetimeLikeCols) > 0 {
-		summary := fmt.Sprintf("%d MSSQL datetime/datetime2/smalldatetime column(s) will map to PostgreSQL timestamp without timezone semantics; review whether type_mapping.datetime_as_timestamptz = true is more appropriate.", len(datetimeLikeCols))
+		summary := fmt.Sprintf("%d MSSQL datetime/datetime2/smalldatetime column(s) will map to PostgreSQL timestamp without timezone semantics; review whether type_mapping.datetime_as_timestamptz = true is more appropriate. Note: smalldatetime is only precise to the minute.", len(datetimeLikeCols))
 		remediation := `Use type_mapping.datetime_as_timestamptz = true when those values represent real instants instead of local wall-clock timestamps.`
 		category := "mssql_datetime_without_timezone"
 		if typeMap.DatetimeAsTimestamptz {
-			summary = fmt.Sprintf("%d MSSQL datetime/datetime2/smalldatetime column(s) will map to PostgreSQL timestamptz; confirm these values represent real instants rather than local wall-clock timestamps.", len(datetimeLikeCols))
+			summary = fmt.Sprintf("%d MSSQL datetime/datetime2/smalldatetime column(s) will map to PostgreSQL timestamptz; confirm these values represent real instants rather than local wall-clock timestamps. Note: smalldatetime is only precise to the minute.", len(datetimeLikeCols))
 			remediation = `If these values should stay timezone-naive wall-clock timestamps, keep type_mapping.datetime_as_timestamptz = false instead.`
 			category = "mssql_datetime_to_timestamptz"
 		}
@@ -148,10 +145,12 @@ func collectMSSQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 }
 
 func newTemporalWarning(category string, refs []string, summary, remediation string) PlanTemporalWarning {
-	examples := refs
-	if len(examples) > temporalExamplesLimit {
-		examples = examples[:temporalExamplesLimit]
+	n := len(refs)
+	if n > temporalExamplesLimit {
+		n = temporalExamplesLimit
 	}
+	examples := make([]string, n)
+	copy(examples, refs[:n])
 	return PlanTemporalWarning{
 		Category:    category,
 		Summary:     summary,
@@ -163,20 +162,4 @@ func newTemporalWarning(category string, refs []string, summary, remediation str
 
 func temporalColumnRef(table Table, col Column) string {
 	return table.PGName + "." + col.PGName
-}
-
-func logTemporalWarnings(warnings []PlanTemporalWarning) {
-	if len(warnings) == 0 {
-		return
-	}
-
-	totalColumns := 0
-	for _, warning := range warnings {
-		totalColumns += warning.Columns
-	}
-
-	log.Printf("temporal semantics report: %d warning category(s) across %d column(s)", len(warnings), totalColumns)
-	for _, warning := range warnings {
-		log.Printf("  WARN: %s", warning.Summary)
-	}
 }

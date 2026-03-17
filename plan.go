@@ -395,27 +395,27 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				risk.ForeignKey,
 				strings.Join(risk.Columns, ", "),
 				risk.RefTable,
-					strings.Join(risk.RefColumns, ", "),
-					orphanCleanupActionLabel(risk.Action))
-			}
-			fmt.Fprintln(w)
+				strings.Join(risk.RefColumns, ", "),
+				orphanCleanupActionLabel(risk.Action))
 		}
+		fmt.Fprintln(w)
+	}
 
-		if len(report.TemporalWarnings) > 0 {
-			hasContent = true
-			fmt.Fprintf(w, "## Temporal Warnings (%d)\n\n", len(report.TemporalWarnings))
-			fmt.Fprintf(w, "These mappings are valid, but they can change application-visible time or timezone semantics. They are advisory and do not block execution.\n\n")
-			for _, tw := range report.TemporalWarnings {
-				fmt.Fprintf(w, "  - %s\n", tw.Summary)
-				if len(tw.Examples) > 0 {
-					fmt.Fprintf(w, "    Examples: %s\n", strings.Join(tw.Examples, ", "))
-				}
-				if tw.Remediation != "" {
-					fmt.Fprintf(w, "    Review: %s\n", tw.Remediation)
-				}
+	if len(report.TemporalWarnings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Temporal Warnings (%d)\n\n", len(report.TemporalWarnings))
+		fmt.Fprintf(w, "These mappings are valid, but they can change application-visible time or timezone semantics. They are advisory and do not block execution.\n\n")
+		for _, tw := range report.TemporalWarnings {
+			fmt.Fprintf(w, "  - %s\n", tw.Summary)
+			if len(tw.Examples) > 0 {
+				fmt.Fprintf(w, "    Examples: %s\n", strings.Join(tw.Examples, ", "))
 			}
-			fmt.Fprintln(w)
+			if tw.Remediation != "" {
+				fmt.Fprintf(w, "    Review: %s\n", tw.Remediation)
+			}
 		}
+		fmt.Fprintln(w)
+	}
 
 	// Collation warnings
 	if len(report.CollationWarnings) > 0 {

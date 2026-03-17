@@ -114,24 +114,24 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		UnsupportedColumns: []PlanUnsupportedColumn{
 			{Table: "mystery", Column: "payload", SourceType: "geometry", Reason: "unsupported MySQL type \"geometry\""},
 		},
-	GeneratedColumns: []PlanGeneratedColumn{
-		{Table: "orders", Column: "total", Expression: "VIRTUAL GENERATED"},
-	},
-	SkippedIndexes: []PlanSkippedIndex{
-		{Table: "products", Index: "idx_ft_name", Reason: "index type \"FULLTEXT\" is not supported"},
-	},
-	OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
-		{Table: "orders", ForeignKey: "fk_orders_customer", Columns: []string{"customer_id"}, RefTable: "customers", RefColumns: []string{"id"}, Action: "delete"},
-	},
-	TemporalWarnings: []PlanTemporalWarning{
-		{
-			Category:    "mysql_datetime_without_timezone",
-			Summary:     "2 MySQL datetime column(s) will map to PostgreSQL timestamp without timezone semantics; review whether type_mapping.datetime_as_timestamptz = true is more appropriate.",
-			Columns:     2,
-			Examples:    []string{"orders.created_at", "orders.updated_at"},
-			Remediation: `Use type_mapping.datetime_as_timestamptz = true when those values represent real instants instead of local wall-clock timestamps.`,
+		GeneratedColumns: []PlanGeneratedColumn{
+			{Table: "orders", Column: "total", Expression: "VIRTUAL GENERATED"},
 		},
-	},
+		SkippedIndexes: []PlanSkippedIndex{
+			{Table: "products", Index: "idx_ft_name", Reason: "index type \"FULLTEXT\" is not supported"},
+		},
+		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
+			{Table: "orders", ForeignKey: "fk_orders_customer", Columns: []string{"customer_id"}, RefTable: "customers", RefColumns: []string{"id"}, Action: "delete"},
+		},
+		TemporalWarnings: []PlanTemporalWarning{
+			{
+				Category:    "mysql_datetime_without_timezone",
+				Summary:     "2 MySQL datetime column(s) will map to PostgreSQL timestamp without timezone semantics; review whether type_mapping.datetime_as_timestamptz = true is more appropriate.",
+				Columns:     2,
+				Examples:    []string{"orders.created_at", "orders.updated_at"},
+				Remediation: `Use type_mapping.datetime_as_timestamptz = true when those values represent real instants instead of local wall-clock timestamps.`,
+			},
+		},
 	}
 
 	var buf bytes.Buffer
@@ -174,25 +174,25 @@ func TestWritePlanJSON(t *testing.T) {
 			Views:    []string{"v_users"},
 			Routines: []string{"FUNCTION foo"},
 		},
-	GeneratedColumns: []PlanGeneratedColumn{
-		{Table: "t1", Column: "c1", Expression: "STORED GENERATED"},
-	},
-	SkippedIndexes: []PlanSkippedIndex{
-		{Table: "t2", Index: "idx_x", Reason: "prefix indexes (SUB_PART) are not currently supported"},
-	},
-	OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
-		{Table: "child", ForeignKey: "fk_child_parent", Columns: []string{"parent_id"}, RefTable: "parent", RefColumns: []string{"id"}, Action: "delete"},
-	},
-	TemporalWarnings: []PlanTemporalWarning{
-		{
-			Category:    "mysql_time_mode_time",
-			Summary:     "1 MySQL TIME column(s) will map to PostgreSQL time; negative durations or values outside 00:00:00-23:59:59 can fail or drift semantically.",
-			Columns:     1,
-			Examples:    []string{"sessions.elapsed"},
-			Remediation: `Use type_mapping.time_mode = "interval" for durations or "text" to preserve source literals exactly.`,
+		GeneratedColumns: []PlanGeneratedColumn{
+			{Table: "t1", Column: "c1", Expression: "STORED GENERATED"},
 		},
-	},
-	CollationWarnings: []string{"some warning"},
+		SkippedIndexes: []PlanSkippedIndex{
+			{Table: "t2", Index: "idx_x", Reason: "prefix indexes (SUB_PART) are not currently supported"},
+		},
+		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
+			{Table: "child", ForeignKey: "fk_child_parent", Columns: []string{"parent_id"}, RefTable: "parent", RefColumns: []string{"id"}, Action: "delete"},
+		},
+		TemporalWarnings: []PlanTemporalWarning{
+			{
+				Category:    "mysql_time_mode_time",
+				Summary:     "1 MySQL TIME column(s) will map to PostgreSQL time; negative durations or values outside 00:00:00-23:59:59 can fail or drift semantically.",
+				Columns:     1,
+				Examples:    []string{"sessions.elapsed"},
+				Remediation: `Use type_mapping.time_mode = "interval" for durations or "text" to preserve source literals exactly.`,
+			},
+		},
+		CollationWarnings: []string{"some warning"},
 	}
 
 	var buf bytes.Buffer
@@ -573,11 +573,14 @@ func TestBuildPlanReport_TemporalWarnings_MySQLDatetimeAsTimestamptz(t *testing.
 	if len(report.TemporalWarnings) != 2 {
 		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
 	}
-	if report.TemporalWarnings[0].Category != "mysql_zero_date_mode_null" {
-		t.Fatalf("first warning category = %q", report.TemporalWarnings[0].Category)
+	gotCategories := make([]string, 0, len(report.TemporalWarnings))
+	for _, warning := range report.TemporalWarnings {
+		gotCategories = append(gotCategories, warning.Category)
 	}
-	if report.TemporalWarnings[1].Category != "mysql_datetime_to_timestamptz" {
-		t.Fatalf("second warning category = %q", report.TemporalWarnings[1].Category)
+	for _, want := range []string{"mysql_zero_date_mode_null", "mysql_datetime_to_timestamptz"} {
+		if !slices.Contains(gotCategories, want) {
+			t.Fatalf("missing temporal warning category %q in %v", want, gotCategories)
+		}
 	}
 }
 
@@ -603,11 +606,14 @@ func TestBuildPlanReport_TemporalWarnings_MSSQL(t *testing.T) {
 	if len(report.TemporalWarnings) != 2 {
 		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
 	}
-	if report.TemporalWarnings[0].Category != "mssql_datetime_without_timezone" {
-		t.Fatalf("first warning category = %q", report.TemporalWarnings[0].Category)
+	gotCategories := make([]string, 0, len(report.TemporalWarnings))
+	for _, warning := range report.TemporalWarnings {
+		gotCategories = append(gotCategories, warning.Category)
 	}
-	if report.TemporalWarnings[1].Category != "mssql_datetimeoffset_to_timestamptz" {
-		t.Fatalf("second warning category = %q", report.TemporalWarnings[1].Category)
+	for _, want := range []string{"mssql_datetime_without_timezone", "mssql_datetimeoffset_to_timestamptz"} {
+		if !slices.Contains(gotCategories, want) {
+			t.Fatalf("missing temporal warning category %q in %v", want, gotCategories)
+		}
 	}
 }
 

@@ -419,6 +419,22 @@ func runDataMigrationPhase(
 	return nil
 }
 
+func logTemporalWarnings(warnings []PlanTemporalWarning) {
+	if len(warnings) == 0 {
+		return
+	}
+
+	totalColumns := 0
+	for _, warning := range warnings {
+		totalColumns += warning.Columns
+	}
+
+	log.Printf("temporal semantics report: %d warning category(s) across %d column(s)", len(warnings), totalColumns)
+	for _, warning := range warnings {
+		log.Printf("WARN: %s", warning.Summary)
+	}
+}
+
 // extractMySQLDBName pulls the database name from a MySQL DSN.
 // Expects format: user:pass@tcp(host:port)/dbname or user:pass@host:port/dbname
 func extractMySQLDBName(dsn string) (string, error) {
