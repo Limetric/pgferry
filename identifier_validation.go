@@ -187,7 +187,7 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 				identifierNamespaceOptions{},
 			)
 
-			if strings.Contains(strings.ToLower(col.Extra), "auto_increment") {
+			if hasAutoIncrementExtra(col) {
 				seqName := generatedSequenceName(table, col)
 				collector.add(
 					"schema-relations",
@@ -216,7 +216,7 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 			}
 
 			if !cfg.DataOnly && cfg.ReplicateOnUpdateCurrentTimestamp &&
-				strings.Contains(strings.ToLower(col.Extra), "on update current_timestamp") {
+				hasOnUpdateCurrentTimestampExtra(col) {
 				funcName := generatedTriggerFunctionName(col)
 				collector.add(
 					"schema-trigger-functions",
@@ -354,6 +354,8 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 }
 
 func enumTypeIdentity(col Column) ([]string, string, error) {
+	// Native ENUM mode is MySQL-only today, so enum ColumnType values use MySQL
+	// syntax (for example enum('draft','published')) and can reuse this parser.
 	values, err := parseMySQLEnumSetValues(col.ColumnType)
 	if err != nil {
 		return nil, "", err
