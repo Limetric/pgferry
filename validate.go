@@ -28,6 +28,7 @@ const (
 )
 
 const (
+	validationKindBool        = "bool"
 	validationKindText        = "text"
 	validationKindNumericText = "numeric_text"
 	validationKindJSON        = "json"
@@ -529,7 +530,7 @@ func validationKindForPGType(pgType string) (string, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(pgType))
 	switch {
 	case normalized == "boolean":
-		return validationKindText, true
+		return validationKindBool, true
 	case normalized == "smallint", normalized == "integer", normalized == "bigint",
 		normalized == "real", normalized == "double precision",
 		strings.HasPrefix(normalized, "numeric("), normalized == "numeric":
@@ -666,6 +667,8 @@ func sourcePlaceholder(src SourceDB, index int) string {
 func targetValidationExpr(col validationColumn) string {
 	quoted := pgIdent(col.Column.PGName)
 	switch col.Kind {
+	case validationKindBool:
+		return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE to_json(%s)::text END", quoted, quoted)
 	case validationKindText:
 		return fmt.Sprintf("CASE WHEN %s IS NULL THEN NULL ELSE to_json(%s)::text END", quoted, quoted)
 	case validationKindNumericText:
@@ -760,6 +763,8 @@ func canonicalizeValidationFragment(val any, kind string) (string, error) {
 	}
 
 	switch kind {
+	case validationKindBool:
+		return canonicalizeBoolFragment(val)
 	case validationKindText, validationKindNumericText:
 		s, err := renderValidationText(val, kind)
 		if err != nil {
@@ -800,6 +805,8 @@ func renderValidationDisplay(val any, kind string) (string, error) {
 		return "NULL", nil
 	}
 	switch kind {
+	case validationKindBool:
+		return renderBoolText(val)
 	case validationKindJSON:
 		fragment, err := canonicalizeJSONFragment(val)
 		if err != nil {
@@ -813,6 +820,8 @@ func renderValidationDisplay(val any, kind string) (string, error) {
 
 func renderValidationText(val any, kind string) (string, error) {
 	switch kind {
+	case validationKindBool:
+		return renderBoolText(val)
 	case validationKindText:
 		switch v := val.(type) {
 		case string:
@@ -875,6 +884,57 @@ func renderNumericText(val any) (string, error) {
 	default:
 		return fmt.Sprint(v), nil
 	}
+}
+
+func renderBoolText(val any) (string, error) {
+	switch v := val.(type) {
+	case bool:
+		if v {
+			return "true", nil
+		}
+		return "false", nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "1":
+			return "true", nil
+		case "false", "0":
+			return "false", nil
+		}
+	case []byte:
+		return renderBoolText(string(v))
+	case int:
+		return renderBoolText(v != 0)
+	case int8:
+		return renderBoolText(v != 0)
+	case int16:
+		return renderBoolText(v != 0)
+	case int32:
+		return renderBoolText(v != 0)
+	case int64:
+		return renderBoolText(v != 0)
+	case uint:
+		return renderBoolText(v != 0)
+	case uint8:
+		return renderBoolText(v != 0)
+	case uint16:
+		return renderBoolText(v != 0)
+	case uint32:
+		return renderBoolText(v != 0)
+	case uint64:
+		return renderBoolText(v != 0)
+	}
+	return "", fmt.Errorf("unsupported bool value %T", val)
+}
+
+func canonicalizeBoolFragment(val any) (string, error) {
+	text, err := renderBoolText(val)
+	if err != nil {
+		return "", err
+	}
+	if text == "true" {
+		return "true", nil
+	}
+	return "false", nil
 }
 
 func renderDateText(val any) (string, error) {

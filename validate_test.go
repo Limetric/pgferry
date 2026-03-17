@@ -212,6 +212,16 @@ func TestValidationPlanLogs_Caveats(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeValidationFragment_Bool(t *testing.T) {
+	got, err := canonicalizeValidationFragment(true, validationKindBool)
+	if err != nil {
+		t.Fatalf("canonicalizeValidationFragment(true, bool) error: %v", err)
+	}
+	if got != "true" {
+		t.Fatalf("canonicalizeValidationFragment(true, bool) = %q, want %q", got, "true")
+	}
+}
+
 // stubSourceDB is a minimal SourceDB stub for unit tests.
 // Embeds the interface so only the methods under test need implementing;
 // calling any other method panics, signalling unintended use.
