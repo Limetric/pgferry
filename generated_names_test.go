@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGeneratedIndexNameFitsPostgresLimit(t *testing.T) {
 	name := generatedIndexName(
@@ -9,6 +12,18 @@ func TestGeneratedIndexNameFitsPostgresLimit(t *testing.T) {
 	)
 	if len(name) > 63 {
 		t.Fatalf("index name length = %d, want <= 63", len(name))
+	}
+}
+
+func TestGeneratedPrimaryKeyNameFitsPostgresLimit(t *testing.T) {
+	name := generatedPrimaryKeyName(
+		Table{PGName: "very_long_table_name_that_needs_truncation_for_postgres_identifiers"},
+	)
+	if len(name) > 63 {
+		t.Fatalf("primary key name length = %d, want <= 63", len(name))
+	}
+	if !strings.Contains(name, "_pkey") {
+		t.Fatalf("primary key name should preserve the _pkey marker: %q", name)
 	}
 }
 

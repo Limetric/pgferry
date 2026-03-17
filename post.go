@@ -159,9 +159,25 @@ func unsignedCheckExpr(col Column, typeMap TypeMappingConfig) (string, bool) {
 	}
 }
 
+func hasAutoIncrementExtra(col Column) bool {
+	// Source introspection normalizes identity/auto-increment metadata onto the
+	// shared "auto_increment" marker for all backends.
+	return strings.Contains(col.Extra, "auto_increment")
+}
+
+func hasOnUpdateCurrentTimestampExtra(col Column) bool {
+	// MySQL introspection lowercases the source EXTRA value, but keep this check
+	// case-insensitive because the feature flag is source-agnostic at this layer.
+	return strings.Contains(strings.ToLower(col.Extra), "on update current_timestamp")
+}
+
 func unsignedConstraintName(table, col string) string {
 	base := fmt.Sprintf("ck_%s_%s", table, col)
 	return truncateGeneratedIdentifierWithSuffix(base, "_unsigned")
+}
+
+func generatedPrimaryKeyName(t Table) string {
+	return truncateGeneratedIdentifierWithSuffix(t.PGName, "_pkey")
 }
 
 func generatedIndexName(t Table, idx Index) string {
@@ -229,13 +245,14 @@ func addPrimaryKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 		if t.PrimaryKey == nil {
 			continue
 		}
+		pkName := generatedPrimaryKeyName(t)
 		cols := quotedColumnList(t.PrimaryKey.Columns)
-		q := fmt.Sprintf("ALTER TABLE %s.%s ADD PRIMARY KEY (%s)",
-			pgIdent(pgSchema), pgIdent(t.PGName), cols)
-		if err := execSQL(ctx, pool, t.PGName+" PK", q); err != nil {
+		q := fmt.Sprintf("ALTER TABLE %s.%s ADD CONSTRAINT %s PRIMARY KEY (%s)",
+			pgIdent(pgSchema), pgIdent(t.PGName), pgIdent(pkName), cols)
+		if err := execSQL(ctx, pool, pkName, q); err != nil {
 			return err
 		}
-		log.Printf("    pk %s on %s.%s", cols, pgSchema, t.PGName)
+		log.Printf("    pk %s on %s.%s (%s)", pkName, pgSchema, t.PGName, cols)
 	}
 	return nil
 }
@@ -397,7 +414,7 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
 	for _, t := range schema.Tables {
 		for _, col := range t.Columns {
-			if !strings.Contains(col.Extra, "auto_increment") {
+			if !hasAutoIncrementExtra(col) {
 				continue
 			}
 			seqName := generatedSequenceName(t, col)
@@ -442,7 +459,7 @@ func createTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 
 	for _, t := range schema.Tables {
 		for _, col := range t.Columns {
-			if !strings.Contains(strings.ToLower(col.Extra), "on update current_timestamp") {
+			if !hasOnUpdateCurrentTimestampExtra(col) {
 				continue
 			}
 
