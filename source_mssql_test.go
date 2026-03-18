@@ -233,6 +233,23 @@ func TestMSSQLTransformValue(t *testing.T) {
 		t.Errorf("money float64 transform = %q, want %q", got, "19.9900")
 	}
 
+	// decimal/numeric values must stay exact and never pass through float conversion.
+	got, err = mssqlTransformValue([]byte("19942031.0000"), Column{DataType: "numeric"}, tm)
+	if err != nil {
+		t.Fatalf("numeric transform error: %v", err)
+	}
+	if gotBytes, ok := got.([]byte); !ok || string(gotBytes) != "19942031.0000" {
+		t.Fatalf("numeric transform = %#v, want exact []byte value", got)
+	}
+
+	got, err = mssqlTransformValue([]byte("-67723280.0928298500000"), Column{DataType: "decimal"}, tm)
+	if err != nil {
+		t.Fatalf("decimal transform error: %v", err)
+	}
+	if gotBytes, ok := got.([]byte); !ok || string(gotBytes) != "-67723280.0928298500000" {
+		t.Fatalf("decimal transform = %#v, want exact []byte value", got)
+	}
+
 	// bit passthrough
 	got, err = mssqlTransformValue(true, Column{DataType: "bit"}, tm)
 	if err != nil || got != true {

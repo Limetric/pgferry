@@ -788,13 +788,17 @@ dsn = %q
 
 	assertRowCount(t, pgPool, pgSchema, "users", 3)
 	assertRowCount(t, pgPool, pgSchema, "orders", 3)
+	assertRowCount(t, pgPool, pgSchema, "exact_numerics", 1)
 	assertPKExists(t, pgPool, pgSchema, "users")
 	assertPKExists(t, pgPool, pgSchema, "orders")
+	assertPKExists(t, pgPool, pgSchema, "exact_numerics")
 	assertFKExists(t, pgPool, pgSchema, "orders", "users")
 	assertColumnType(t, pgPool, pgSchema, "users", "external_id", "uuid")
 	assertColumnType(t, pgPool, pgSchema, "users", "is_active", "boolean")
 	assertColumnType(t, pgPool, pgSchema, "users", "version_token", "bytea")
 	assertColumnType(t, pgPool, pgSchema, "orders", "total", "numeric")
+	assertColumnType(t, pgPool, pgSchema, "exact_numerics", "rounded_example", "numeric")
+	assertColumnType(t, pgPool, pgSchema, "exact_numerics", "truncated_example", "numeric")
 
 	var (
 		displayNameUpper string
@@ -830,6 +834,25 @@ dsn = %q
 	}
 	if totalWithTax != "18.0000" {
 		t.Fatalf("total_with_tax = %q, want 18.0000", totalWithTax)
+	}
+
+	var (
+		roundedExample   string
+		truncatedExample string
+	)
+	err = pgPool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT rounded_example::text, truncated_example::text
+		FROM %s.exact_numerics
+		WHERE numeric_id = 1
+	`, pgIdent(pgSchema))).Scan(&roundedExample, &truncatedExample)
+	if err != nil {
+		t.Fatalf("query migrated MSSQL exact numerics: %v", err)
+	}
+	if roundedExample != "19942031.0000" {
+		t.Fatalf("rounded_example = %q, want 19942031.0000", roundedExample)
+	}
+	if truncatedExample != "-67723280.0928298500000" {
+		t.Fatalf("truncated_example = %q, want -67723280.0928298500000", truncatedExample)
 	}
 
 	var insertedID int64
@@ -1100,6 +1123,7 @@ func seedMSSQL(t *testing.T, db *sql.DB) {
 
 	stmts := []string{
 		`IF SCHEMA_ID(N'sales') IS NULL EXEC(N'CREATE SCHEMA sales')`,
+		`DROP TABLE IF EXISTS [sales].[ExactNumerics]`,
 		`DROP TABLE IF EXISTS [sales].[Orders]`,
 		`DROP TABLE IF EXISTS [sales].[Users]`,
 		`DROP TABLE IF EXISTS [dbo].[IgnoredUsers]`,
@@ -1127,6 +1151,11 @@ func seedMSSQL(t *testing.T, db *sql.DB) {
 			[TotalWithTax] AS CONVERT(DECIMAL(19,4), [Total] * 1.2),
 			CONSTRAINT [FK_sales_orders_users] FOREIGN KEY ([UserID]) REFERENCES [sales].[Users]([UserID])
 		)`,
+		`CREATE TABLE [sales].[ExactNumerics] (
+			[NumericID] INT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+			[RoundedExample] NUMERIC(18,4) NOT NULL,
+			[TruncatedExample] DECIMAL(28,13) NOT NULL
+		)`,
 		`INSERT INTO [sales].[Users] ([ExternalID], [DisplayName], [Email], [IsActive], [CreatedAt]) VALUES
 			('6F9619FF-8B86-D011-B42D-00C04FC964FF', N'Alice', N'alice@example.com', 1, '2024-01-02T03:04:05'),
 			('7C9E6679-7425-40DE-944B-E07FC1F90AE7', N'Bob', NULL, 0, '2024-01-03T04:05:06'),
@@ -1135,6 +1164,8 @@ func seedMSSQL(t *testing.T, db *sql.DB) {
 			(1, 12.34, N'First order', '2024-02-01T10:00:00'),
 			(1, 15.00, N'Second order', '2024-02-02T11:00:00'),
 			(2, 3.50, NULL, '2024-02-03T12:00:00')`,
+		`INSERT INTO [sales].[ExactNumerics] ([RoundedExample], [TruncatedExample]) VALUES
+			(19942031.0000, -67723280.0928298500000)`,
 	}
 
 	for _, stmt := range stmts {
