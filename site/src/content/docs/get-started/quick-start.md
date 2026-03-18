@@ -9,6 +9,28 @@ pgferry is meant to be easy to use for the first run. You should not need to mem
 
 The fastest path is simple: let the wizard generate the config, run `plan` to see what needs attention, then run `migrate`.
 
+## Prerequisites
+
+All you need are two connection strings: one for the source database you're migrating from, and one for the target PostgreSQL database you're migrating into.
+
+**Source DSN** — depends on your source type:
+
+| Source | Format | Example |
+| --- | --- | --- |
+| MySQL | `user:pass@tcp(host:port)/dbname` | `root:root@tcp(127.0.0.1:3306)/source_db` |
+| SQLite | File path or `file:` URI | `/path/to/database.db` |
+| MSSQL | `sqlserver://` URI | `sqlserver://sa:Pass@127.0.0.1:1433?database=source_db` |
+
+**Target DSN** — always a PostgreSQL connection string:
+
+```text
+postgres://user:pass@host:port/dbname?sslmode=disable
+```
+
+Any `sslmode` works (`disable`, `require`, `verify-ca`, `verify-full`, etc.) — the example uses `disable` for brevity.
+
+The wizard will prompt you for both of these, so you don't need to get the format perfect from memory.
+
 ## 1. Run the wizard
 
 ```bash
@@ -33,18 +55,25 @@ pgferry plan migration.toml
 
 `plan` is the part where pgferry tells you the truth before PostgreSQL gets involved. If there are views, routines, generated columns, skipped indexes, or required extensions, this is where you find out.
 
+This step is technically optional — the same way riding your bike without checking the weather is technically optional. You can skip it, but don't be surprised when it rains.
+
 ## 3. Run migrate
 
 ```bash
 pgferry migrate migration.toml
 ```
 
-That runs the actual migration:
+If you ran `plan` first, this step shouldn't have any surprises — you've already seen what's coming.
 
-1. introspect the source
+The migrate command runs the full pipeline:
+
+1. introspect the source schema
 2. create PostgreSQL tables
-3. stream data with `COPY`
-4. add keys, indexes, sequences, and other post-load objects
+3. run before_data hooks (if configured)
+4. stream data with `COPY` (chunked and parallelized where possible)
+5. run after_data hooks and validation (if configured)
+6. add primary keys, indexes, foreign keys, and sequences
+7. run remaining hooks and finalize
 
 ## Next step
 
