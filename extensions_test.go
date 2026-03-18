@@ -37,6 +37,7 @@ func TestCollectRequiredExtensions_Citext(t *testing.T) {
 
 func TestCollectRequiredExtensions_PostGIS(t *testing.T) {
 	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mysql"},
 		TypeMapping: defaultTypeMappingConfig(),
 		PostGIS:     PostGISConfig{Enabled: true, CreateExtension: true},
 	}
@@ -59,6 +60,28 @@ func TestCollectRequiredExtensions_PostGIS(t *testing.T) {
 	}
 	if !reqs[0].CreateIfMissing {
 		t.Fatal("postgis should allow creation when configured")
+	}
+}
+
+func TestCollectRequiredExtensions_PostGISIgnoredForMariaDB(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mariadb"},
+		TypeMapping: defaultTypeMappingConfig(),
+		PostGIS:     PostGISConfig{Enabled: true, CreateExtension: true},
+	}
+	schema := &Schema{
+		Tables: []Table{
+			{
+				Columns: []Column{
+					{SourceName: "shape", PGName: "shape", DataType: "polygon", ColumnType: "polygon"},
+				},
+			},
+		},
+	}
+
+	reqs := collectRequiredExtensions(schema, &mariadbSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	if len(reqs) != 0 {
+		t.Fatalf("required extensions = %d, want 0", len(reqs))
 	}
 }
 

@@ -18,7 +18,7 @@ Use the reference section when you already understand the basic flow and need ex
 | Question | Start here |
 | --- | --- |
 | Which flags matter for a first production run? | [Configuration](/reference/configuration/#recommended-starting-points) |
-| Which options only apply to MySQL or MSSQL? | [Configuration](/reference/configuration/#source-specific-constraints) and [Type Mapping](/reference/type-mapping/) |
+| Which options only apply to MySQL-family or MSSQL sources? | [Configuration](/reference/configuration/#source-specific-constraints) and [Type Mapping](/reference/type-mapping/) |
 | What happens in `schema_only` or `data_only` mode? | [Migration Pipeline](/reference/migration-pipeline/#modes) |
 | When do hook files run? | [Hooks](/reference/hooks/#phases) |
 | What does pgferry report but not migrate automatically? | [Conventions & limitations](/reference/conventions-and-limitations/#unsupported-objects-and-features) |

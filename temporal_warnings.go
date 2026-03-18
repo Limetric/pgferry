@@ -11,7 +11,9 @@ func collectTemporalWarnings(schema *Schema, sourceType string, typeMap TypeMapp
 
 	switch sourceType {
 	case "mysql":
-		return collectMySQLTemporalWarnings(schema, typeMap)
+		return collectMySQLFamilyTemporalWarnings(schema, typeMap, "mysql", "MySQL")
+	case "mariadb":
+		return collectMySQLFamilyTemporalWarnings(schema, typeMap, "mariadb", "MariaDB")
 	case "mssql":
 		return collectMSSQLTemporalWarnings(schema, typeMap)
 	default:
@@ -19,7 +21,7 @@ func collectTemporalWarnings(schema *Schema, sourceType string, typeMap TypeMapp
 	}
 }
 
-func collectMySQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []PlanTemporalWarning {
+func collectMySQLFamilyTemporalWarnings(schema *Schema, typeMap TypeMappingConfig, categoryPrefix, sourceLabel string) []PlanTemporalWarning {
 	var warnings []PlanTemporalWarning
 	var timeCols []string
 	var dateLikeCols []string
@@ -48,18 +50,18 @@ func collectMySQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 	case "time":
 		if len(timeCols) > 0 {
 			warnings = append(warnings, newTemporalWarning(
-				"mysql_time_mode_time",
+				categoryPrefix+"_time_mode_time",
 				timeCols,
-				fmt.Sprintf("%d MySQL TIME column(s) will map to PostgreSQL time; negative durations or values outside 00:00:00-23:59:59 can fail or drift semantically.", len(timeCols)),
+				fmt.Sprintf("%d %s TIME column(s) will map to PostgreSQL time; negative durations or values outside 00:00:00-23:59:59 can fail or drift semantically.", len(timeCols), sourceLabel),
 				`Use type_mapping.time_mode = "interval" for durations or "text" to preserve source literals exactly.`,
 			))
 		}
 	case "interval":
 		if len(timeCols) > 0 {
 			warnings = append(warnings, newTemporalWarning(
-				"mysql_time_mode_interval",
+				categoryPrefix+"_time_mode_interval",
 				timeCols,
-				fmt.Sprintf("%d MySQL TIME column(s) will map to PostgreSQL interval; review whether these columns represent durations rather than wall-clock times.", len(timeCols)),
+				fmt.Sprintf("%d %s TIME column(s) will map to PostgreSQL interval; review whether these columns represent durations rather than wall-clock times.", len(timeCols), sourceLabel),
 				`Use type_mapping.time_mode = "time" for clock-time values or "text" to preserve the original representation.`,
 			))
 		}
@@ -67,36 +69,36 @@ func collectMySQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 
 	if typeMap.ZeroDateMode == "null" && len(dateLikeCols) > 0 {
 		warnings = append(warnings, newTemporalWarning(
-			"mysql_zero_date_mode_null",
+			categoryPrefix+"_zero_date_mode_null",
 			dateLikeCols,
-			fmt.Sprintf("%d MySQL date/datetime/timestamp column(s) use zero_date_mode = \"null\"; any zero dates in source data will become NULL in PostgreSQL.", len(dateLikeCols)),
+			fmt.Sprintf("%d %s date/datetime/timestamp column(s) use zero_date_mode = \"null\"; any zero dates in source data will become NULL in PostgreSQL.", len(dateLikeCols), sourceLabel),
 			`Set type_mapping.zero_date_mode = "error" to fail fast on zero dates, or confirm that converting them to NULL is acceptable.`,
 		))
 	}
 
 	if !typeMap.DatetimeAsTimestamptz && len(datetimeCols) > 0 {
 		warnings = append(warnings, newTemporalWarning(
-			"mysql_datetime_without_timezone",
+			categoryPrefix+"_datetime_without_timezone",
 			datetimeCols,
-			fmt.Sprintf("%d MySQL datetime column(s) will map to PostgreSQL timestamp without timezone semantics; review whether type_mapping.datetime_as_timestamptz = true is more appropriate.", len(datetimeCols)),
+			fmt.Sprintf("%d %s datetime column(s) will map to PostgreSQL timestamp without timezone semantics; review whether type_mapping.datetime_as_timestamptz = true is more appropriate.", len(datetimeCols), sourceLabel),
 			`Use type_mapping.datetime_as_timestamptz = true when those values represent real instants instead of local wall-clock timestamps.`,
 		))
 	}
 	if typeMap.DatetimeAsTimestamptz && len(datetimeCols) > 0 {
 		warnings = append(warnings, newTemporalWarning(
-			"mysql_datetime_to_timestamptz",
+			categoryPrefix+"_datetime_to_timestamptz",
 			datetimeCols,
-			fmt.Sprintf("%d MySQL datetime column(s) will map to PostgreSQL timestamptz; confirm these values represent real instants rather than local wall-clock timestamps.", len(datetimeCols)),
+			fmt.Sprintf("%d %s datetime column(s) will map to PostgreSQL timestamptz; confirm these values represent real instants rather than local wall-clock timestamps.", len(datetimeCols), sourceLabel),
 			`If these values should stay timezone-naive wall-clock timestamps, keep type_mapping.datetime_as_timestamptz = false instead.`,
 		))
 	}
 
 	if len(timestampCols) > 0 {
 		warnings = append(warnings, newTemporalWarning(
-			"mysql_timestamp_to_timestamptz",
+			categoryPrefix+"_timestamp_to_timestamptz",
 			timestampCols,
-			fmt.Sprintf("%d MySQL timestamp column(s) will map to PostgreSQL timestamptz; review application and session timezone assumptions in the target stack.", len(timestampCols)),
-			`No alternate mapping exists for MySQL timestamp; verify client time zone settings if these columns drive user-visible timestamps, and ignore this warning if that behavior is intentional.`,
+			fmt.Sprintf("%d %s timestamp column(s) will map to PostgreSQL timestamptz; review application and session timezone assumptions in the target stack.", len(timestampCols), sourceLabel),
+			fmt.Sprintf(`No alternate mapping exists for %s timestamp; verify client time zone settings if these columns drive user-visible timestamps, and ignore this warning if that behavior is intentional.`, sourceLabel),
 		))
 	}
 

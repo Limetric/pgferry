@@ -25,39 +25,54 @@ func TestIntegration_MySQL(t *testing.T) {
 		t.Skip("MYSQL_DSN and POSTGRES_DSN env vars required")
 	}
 
+	runMySQLFamilyIntegrationFull(t, "mysql", mysqlDSN, pgDSN, &mysqlSourceDB{})
+}
+
+func TestIntegration_MariaDB(t *testing.T) {
+	mariaDSN := os.Getenv("MARIADB_DSN")
+	pgDSN := os.Getenv("POSTGRES_DSN")
+	if mariaDSN == "" || pgDSN == "" {
+		t.Skip("MARIADB_DSN and POSTGRES_DSN env vars required")
+	}
+
+	runMySQLFamilyIntegrationFull(t, "mariadb", mariaDSN, pgDSN, &mariadbSourceDB{})
+}
+
+func runMySQLFamilyIntegrationFull(t *testing.T, sourceType, sourceDSN, pgDSN string, src SourceDB) {
+	t.Helper()
+
 	ctx := context.Background()
 
-	// --- Seed MySQL ---
-	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	// --- Seed source ---
+	sourceDB, err := sql.Open("mysql", sourceDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
 	if err != nil {
-		t.Fatalf("open mysql: %v", err)
+		t.Fatalf("open %s: %v", sourceType, err)
 	}
-	defer mysqlDB.Close()
+	defer sourceDB.Close()
 
-	seedMySQL(t, mysqlDB)
+	seedMySQL(t, sourceDB)
 
 	// Close seeding connection; introspection needs its own
-	mysqlDB.Close()
+	sourceDB.Close()
 
 	// --- Introspect ---
-	src := &mysqlSourceDB{}
-	mysqlDB2, err := src.OpenDB(mysqlDSN)
+	sourceDB2, err := src.OpenDB(sourceDSN)
 	if err != nil {
-		t.Fatalf("open mysql for introspection: %v", err)
+		t.Fatalf("open %s for introspection: %v", sourceType, err)
 	}
-	defer mysqlDB2.Close()
-	mysqlDB2.SetMaxOpenConns(1)
+	defer sourceDB2.Close()
+	sourceDB2.SetMaxOpenConns(1)
 
-	dbName, err := src.ExtractDBName(mysqlDSN)
+	dbName, err := src.ExtractDBName(sourceDSN)
 	if err != nil {
 		t.Fatalf("extract db name: %v", err)
 	}
 
-	schema, err := src.IntrospectSchema(mysqlDB2, dbName)
+	schema, err := src.IntrospectSchema(sourceDB2, dbName)
 	if err != nil {
 		t.Fatalf("introspect: %v", err)
 	}
-	mysqlDB2.Close()
+	sourceDB2.Close()
 
 	if len(schema.Tables) != 3 {
 		t.Fatalf("expected 3 tables, got %d", len(schema.Tables))
@@ -96,7 +111,7 @@ func TestIntegration_MySQL(t *testing.T) {
 workers = 2
 
 [source]
-type = "mysql"
+type = %q
 dsn = %q
 
 [target]
@@ -107,7 +122,7 @@ before_data = []
 after_data = []
 before_fk = ["cleanup.sql"]
 after_all = []
-`, pgSchema, mysqlDSN, pgDSN)
+`, pgSchema, sourceType, sourceDSN, pgDSN)
 
 	cfgPath := filepath.Join(tmpDir, "migration.toml")
 	if err := os.WriteFile(cfgPath, []byte(tomlContent), 0644); err != nil {
@@ -129,7 +144,7 @@ after_all = []
 	}
 
 	if err := migrateData(ctx, migrateDataConfig{
-		Src: src, SrcDSN: mysqlDSN, Pool: pgPool, Schema: schema, PGSchema: pgSchema,
+		Src: src, SrcDSN: sourceDSN, Pool: pgPool, Schema: schema, PGSchema: pgSchema,
 		Workers: cfg.Workers, TypeMap: cfg.TypeMapping, SourceSnapshotMode: cfg.SourceSnapshotMode,
 		ChunkSize: cfg.ChunkSize, Resume: cfg.Resume, ConfigDir: cfg.configDir,
 	}); err != nil {

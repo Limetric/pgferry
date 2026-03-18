@@ -145,6 +145,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 
 	sourceType, err := w.promptChoice("Source type", []wizardOption{
 		{key: "mysql"},
+		{key: "mariadb"},
 		{key: "sqlite"},
 		{key: "mssql"},
 	}, "mysql")
@@ -195,7 +196,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 
 	switch sourceType {
-	case "mysql", "mssql":
+	case "mysql", "mariadb", "mssql":
 		cfg.SourceSnapshotMode, err = w.promptChoice("Source snapshot mode", []wizardOption{
 			{key: "none", help: "Fastest. Each worker reads independently, so source changes during the run can leak in."},
 			{key: "single_tx", help: "Uses one read-only transaction for a consistent snapshot. Safer, but longer-lived and less parallel-friendly."},
@@ -261,7 +262,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 
 	defaultWorkers := effectiveDefaultWorkers(sourceType)
-	if sourceType == "mysql" || sourceType == "mssql" {
+	if isMySQLFamilySourceType(sourceType) || sourceType == "mssql" {
 		cfg.Workers, err = w.promptIntGuided(
 			"Parallel workers",
 			defaultWorkers,
@@ -336,7 +337,8 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		}
 	}
 
-	if sourceType == "mysql" {
+	if isMySQLFamilySourceType(sourceType) {
+		mysqlFamilyLabel := mysqlFamilySourceDisplayName(sourceType)
 		cfg.TypeMapping.TinyInt1AsBoolean, err = w.promptBoolGuided(
 			"Map tinyint(1) to boolean",
 			cfg.TypeMapping.TinyInt1AsBoolean,
@@ -348,7 +350,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		cfg.TypeMapping.DatetimeAsTimestamptz, err = w.promptBoolGuided(
 			"Map datetime to timestamptz",
 			cfg.TypeMapping.DatetimeAsTimestamptz,
-			"Use this if MySQL datetime values should become timezone-aware instants. If turned off, datetime maps to timestamp instead.",
+			fmt.Sprintf("Use this if %s datetime values should become timezone-aware instants. If turned off, datetime maps to timestamp instead.", mysqlFamilyLabel),
 		)
 		if err != nil {
 			return nil, err
@@ -364,7 +366,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		if cfg.TypeMapping.Binary16AsUUID {
 			cfg.TypeMapping.Binary16UUIDMode, err = w.promptChoice("Binary UUID byte order", []wizardOption{
 				{key: "rfc4122", help: "Standard UUID byte order. Use for application-stored UUID bytes."},
-				{key: "mysql_uuid_to_bin_swap", help: "Use only if the source stored UUIDs with MySQL UUID_TO_BIN(..., 1) byte swapping."},
+				{key: "mysql_uuid_to_bin_swap", help: "Use only if the source stored UUIDs with UUID_TO_BIN(..., 1)-style byte swapping."},
 			}, cfg.TypeMapping.Binary16UUIDMode)
 			if err != nil {
 				return nil, err
@@ -428,7 +430,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		cfg.AddUnsignedChecks, err = w.promptBoolGuided(
 			"Add unsigned integer CHECK constraints",
 			cfg.AddUnsignedChecks,
-			"Preserves MySQL unsigned ranges in PostgreSQL. Better fidelity, but adds extra DDL and can fail if the loaded data already violates those ranges.",
+			fmt.Sprintf("Preserves %s unsigned ranges in PostgreSQL. Better fidelity, but adds extra DDL and can fail if the loaded data already violates those ranges.", mysqlFamilyLabel),
 		)
 		if err != nil {
 			return nil, err
@@ -436,7 +438,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		cfg.ReplicateOnUpdateCurrentTimestamp, err = w.promptBoolGuided(
 			"Emulate ON UPDATE CURRENT_TIMESTAMP",
 			cfg.ReplicateOnUpdateCurrentTimestamp,
-			"Adds PostgreSQL triggers to mimic MySQL auto-updated timestamp columns. Better compatibility, but more objects and some write overhead.",
+			fmt.Sprintf("Adds PostgreSQL triggers to mimic %s auto-updated timestamp columns. Better compatibility, but more objects and some write overhead.", mysqlFamilyLabel),
 		)
 		if err != nil {
 			return nil, err
@@ -519,7 +521,7 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	writeSection("source")
 	writeLine("type = %s", strconv.Quote(cfg.Source.Type))
 	writeLine("dsn = %s", strconv.Quote(cfg.Source.DSN))
-	if cfg.Source.Type == "mysql" && cfg.Source.Charset != "" && cfg.Source.Charset != "utf8mb4" {
+	if isMySQLFamilySourceType(cfg.Source.Type) && cfg.Source.Charset != "" && cfg.Source.Charset != "utf8mb4" {
 		writeLine("charset = %s", strconv.Quote(cfg.Source.Charset))
 	}
 	if cfg.Source.Type == "mssql" && cfg.Source.SourceSchema != "" && cfg.Source.SourceSchema != "dbo" {
@@ -602,7 +604,7 @@ func renderTypeMappingLines(cfg TypeMappingConfig, sourceType string) []string {
 		return lines
 	}
 
-	if sourceType != "mysql" {
+	if !isMySQLFamilySourceType(sourceType) {
 		return lines
 	}
 
@@ -774,6 +776,8 @@ func wizardSourceDSNPrompt(sourceType string) (string, string) {
 	switch sourceType {
 	case "mysql":
 		return "Source DSN", "root:root@tcp(127.0.0.1:3306)/source_db"
+	case "mariadb":
+		return "MariaDB DSN", "root:root@tcp(127.0.0.1:3306)/source_db"
 	case "sqlite":
 		return "SQLite path or file: URI", "/path/to/database.db"
 	case "mssql":
@@ -783,8 +787,19 @@ func wizardSourceDSNPrompt(sourceType string) (string, string) {
 	}
 }
 
-func wizardTargetDSNPrompt() (string, string) {
-	return "PostgreSQL DSN", "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+func mysqlFamilySourceDisplayName(sourceType string) string {
+	switch sourceType {
+	case "mysql":
+		return "MySQL"
+	case "mariadb":
+		return "MariaDB"
+	default:
+		return "MySQL/MariaDB"
+	}
+}
+
+func wizardTargetDSNPrompt() (string, string, string) {
+	return "PostgreSQL DSN", "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable", "Any PostgreSQL sslmode is supported. sslmode=disable is only shown here because it is a simple local-development example."
 }
 
 func validateWizardSourceDSN(sourceType, dsn string) error {
@@ -793,21 +808,23 @@ func validateWizardSourceDSN(sourceType, dsn string) error {
 		return err
 	}
 
-	switch sourceType {
-	case "mysql":
+	if isMySQLFamilySourceType(sourceType) {
 		if _, err := mysql.ParseDSN(dsn); err != nil {
-			return fmt.Errorf("invalid MySQL DSN: %w", err)
+			return fmt.Errorf("invalid %s DSN: %w", mysqlFamilySourceDisplayName(sourceType), err)
 		}
-	case "sqlite":
-		if _, err := sqliteReadOnlyURI(dsn); err != nil {
-			return fmt.Errorf("invalid SQLite DSN: %w", err)
+	} else {
+		switch sourceType {
+		case "sqlite":
+			if _, err := sqliteReadOnlyURI(dsn); err != nil {
+				return fmt.Errorf("invalid SQLite DSN: %w", err)
+			}
+		case "mssql":
+			if _, err := msdsn.Parse(dsn); err != nil {
+				return fmt.Errorf("invalid MSSQL DSN: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported source type %q", sourceType)
 		}
-	case "mssql":
-		if _, err := msdsn.Parse(dsn); err != nil {
-			return fmt.Errorf("invalid MSSQL DSN: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported source type %q", sourceType)
 	}
 
 	src, err := newSourceDB(sourceType)
@@ -840,33 +857,35 @@ func testWizardSourceConnection(sourceType, dsn string) error {
 		err error
 	)
 
-	switch sourceType {
-	case "mysql":
+	if isMySQLFamilySourceType(sourceType) {
 		normalizedDSN, err := normalizedMySQLDSN(dsn, "utf8mb4")
 		if err != nil {
 			return err
 		}
 		db, err = sql.Open("mysql", normalizedDSN)
 		if err != nil {
-			return fmt.Errorf("open mysql: %w", err)
+			return fmt.Errorf("open %s: %w", strings.ToLower(mysqlFamilySourceDisplayName(sourceType)), err)
 		}
-	case "sqlite":
-		uri, err := sqliteReadOnlyURI(dsn)
-		if err != nil {
-			return err
+	} else {
+		switch sourceType {
+		case "sqlite":
+			uri, err := sqliteReadOnlyURI(dsn)
+			if err != nil {
+				return err
+			}
+			db, err = sql.Open("sqlite", uri)
+			if err != nil {
+				return fmt.Errorf("open sqlite: %w", err)
+			}
+			db.SetMaxOpenConns(1)
+		case "mssql":
+			db, err = sql.Open("sqlserver", dsn)
+			if err != nil {
+				return fmt.Errorf("open mssql: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported source type %q", sourceType)
 		}
-		db, err = sql.Open("sqlite", uri)
-		if err != nil {
-			return fmt.Errorf("open sqlite: %w", err)
-		}
-		db.SetMaxOpenConns(1)
-	case "mssql":
-		db, err = sql.Open("sqlserver", dsn)
-		if err != nil {
-			return fmt.Errorf("open mssql: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported source type %q", sourceType)
 	}
 	defer db.Close()
 
@@ -960,6 +979,16 @@ func (w *wizardPrompter) promptStringWithExample(label, example, defaultValue st
 	return w.promptStringInline("Value", defaultValue, validate)
 }
 
+func (w *wizardPrompter) promptStringWithExampleAndGuide(label, example, guide, defaultValue string, validate func(string) error) (string, error) {
+	w.startBlock()
+	fmt.Fprintln(w.out, w.styles.header(label))
+	if example != "" {
+		fmt.Fprintf(w.out, "  %s\n", w.styles.muted("Example: "+example))
+	}
+	w.printGuide(guide)
+	return w.promptStringInline("Value", defaultValue, validate)
+}
+
 func (w *wizardPrompter) promptSourceDSN(sourceType string) (string, error) {
 	label, example := wizardSourceDSNPrompt(sourceType)
 	defaultValue := ""
@@ -992,10 +1021,10 @@ func (w *wizardPrompter) promptSourceDSN(sourceType string) (string, error) {
 }
 
 func (w *wizardPrompter) promptTargetDSN() (string, error) {
-	label, example := wizardTargetDSNPrompt()
+	label, example, guide := wizardTargetDSNPrompt()
 	defaultValue := ""
 	for {
-		dsn, err := w.promptStringWithExample(label, example, defaultValue, wizardTargetDSNValidator)
+		dsn, err := w.promptStringWithExampleAndGuide(label, example, guide, defaultValue, wizardTargetDSNValidator)
 		if err != nil {
 			return "", err
 		}

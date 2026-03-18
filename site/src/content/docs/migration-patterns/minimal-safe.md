@@ -22,5 +22,6 @@ Choose `minimal-safe` when you want the least surprising behavior, even if it co
 ## Start from these examples
 
 - [MySQL minimal-safe](/examples/mysql/minimal-safe/)
+- [MariaDB minimal-safe](/examples/mariadb/)
 - [SQLite minimal-safe](/examples/sqlite/minimal-safe/)
 - [MSSQL minimal-safe](/examples/mssql/minimal-safe/)

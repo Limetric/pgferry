@@ -30,7 +30,7 @@ func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSch
 // generateCreateTable produces a CREATE TABLE statement.
 func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaults bool, typeMap TypeMappingConfig, src SourceDB) (string, error) {
 	var b strings.Builder
-	typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
+	typeMap = effectiveTypeMappingForSource(typeMap, sourceTypeForDB(src))
 	tableKind := "TABLE"
 	if unlogged {
 		tableKind = "UNLOGGED TABLE"
@@ -65,7 +65,7 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 			}
 		}
 
-		checkClause, err := enumCheckClause(col, typeMap)
+		checkClause, err := enumCheckClause(col, typeMap, sourceTypeForDB(src))
 		if err != nil {
 			return "", fmt.Errorf("column %s enum check: %w", col.PGName, err)
 		}
@@ -74,7 +74,7 @@ func generateCreateTable(t Table, pgSchema string, unlogged bool, preserveDefaul
 			b.WriteString(checkClause)
 		}
 
-		setCheck, err := setArrayCheckClause(col, typeMap)
+		setCheck, err := setArrayCheckClause(col, typeMap, sourceTypeForDB(src))
 		if err != nil {
 			return "", fmt.Errorf("column %s set check: %w", col.PGName, err)
 		}
@@ -129,8 +129,8 @@ func pgEnumTypeName(values []string) string {
 
 // createEnumTypes creates PostgreSQL enum types for all enum columns in the schema.
 // Identical enum definitions (same value sets) share the same PG type.
-func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig) error {
-	typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
+func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig, sourceType string) error {
+	typeMap = effectiveTypeMappingForSource(typeMap, sourceType)
 	if typeMap.EnumMode != "native" {
 		return nil
 	}
@@ -174,8 +174,8 @@ func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pg
 	return nil
 }
 
-func enumCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
-	typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
+func enumCheckClause(col Column, typeMap TypeMappingConfig, sourceType string) (string, error) {
+	typeMap = effectiveTypeMappingForSource(typeMap, sourceType)
 	if col.DataType != "enum" || typeMap.EnumMode != "check" {
 		return "", nil
 	}
@@ -195,7 +195,8 @@ func enumCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
 
 // setArrayCheckClause generates a CHECK constraint ensuring every array element
 // is one of the allowed source SET members (text_array_check mode only).
-func setArrayCheckClause(col Column, typeMap TypeMappingConfig) (string, error) {
+func setArrayCheckClause(col Column, typeMap TypeMappingConfig, sourceType string) (string, error) {
+	typeMap = effectiveTypeMappingForSource(typeMap, sourceType)
 	if col.DataType != "set" || typeMap.SetMode != "text_array_check" {
 		return "", nil
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +39,57 @@ func TestMySQLIndexHasPrefix(t *testing.T) {
 				t.Fatalf("mysqlIndexHasPrefix(%q, %+v) = %t, want %t", tt.indexType, tt.subPart, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMariaDBJSONAliasColumnFromCheckClause(t *testing.T) {
+	tests := []struct {
+		clause string
+		want   string
+	}{
+		{"json_valid(`payload`)", "payload"},
+		{"CHECK (json_valid(payload))", "payload"},
+		{"check (json_valid((\"payload\")))", "payload"},
+		{"price > 0", ""},
+	}
+
+	for _, tt := range tests {
+		if got := mariaDBJSONAliasColumnFromCheckClause(tt.clause); got != tt.want {
+			t.Fatalf("mariaDBJSONAliasColumnFromCheckClause(%q) = %q, want %q", tt.clause, got, tt.want)
+		}
+	}
+}
+
+func TestAnnotateMariaDBJSONColumns(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "events",
+				Columns: []Column{
+					{SourceName: "payload", DataType: "longtext", ColumnType: "longtext"},
+					{SourceName: "note", DataType: "longtext", ColumnType: "longtext"},
+				},
+			},
+		},
+	}
+
+	annotateMariaDBJSONColumns(schema, map[string]map[string]bool{
+		"events": {"payload": true},
+	})
+
+	if got := schema.Tables[0].Columns[0].DataType; got != "json" {
+		t.Fatalf("payload DataType = %q, want json", got)
+	}
+	if got := schema.Tables[0].Columns[0].ColumnType; got != "json" {
+		t.Fatalf("payload ColumnType = %q, want json", got)
+	}
+	if got := schema.Tables[0].Columns[1].DataType; got != "longtext" {
+		t.Fatalf("note DataType = %q, want longtext", got)
+	}
+}
+
+func TestMySQLForeignKeysByTableQueryJoinsReferentialConstraintsOnTableName(t *testing.T) {
+	if !strings.Contains(mysqlForeignKeysByTableQuery, "AND kcu.TABLE_NAME = rc.TABLE_NAME") {
+		t.Fatalf("mysqlForeignKeysByTableQuery must join REFERENTIAL_CONSTRAINTS on TABLE_NAME to avoid duplicating same-named foreign keys across tables")
 	}
 }

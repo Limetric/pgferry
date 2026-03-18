@@ -66,6 +66,9 @@ func TestRunGenerateWizardWritesConfig(t *testing.T) {
 	if !strings.Contains(output, "Example: postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable") {
 		t.Fatalf("wizard output missing postgres DSN example, got:\n%s", output)
 	}
+	if !strings.Contains(output, "Any PostgreSQL sslmode is supported.") {
+		t.Fatalf("wizard output missing postgres sslmode guidance, got:\n%s", output)
+	}
 	if !strings.Contains(output, "Advanced options not covered by the wizard:") {
 		t.Fatalf("wizard output missing advanced options note, got:\n%s", output)
 	}
@@ -374,6 +377,28 @@ func TestRenderConfigTOMLIncludesOnlyConfiguredOverrides(t *testing.T) {
 	}
 }
 
+func TestRenderConfigTOML_MariaDBUsesMySQLFamilyRendering(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mariadb"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/appdb"
+	cfg.Source.Charset = "latin1"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "appdb"
+	cfg.TypeMapping.TinyInt1AsBoolean = true
+
+	rendered := renderConfigTOML(&cfg)
+
+	for _, want := range []string{
+		`type = "mariadb"`,
+		`charset = "latin1"`,
+		"tinyint1_as_boolean = true",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected %q in rendered config, got:\n%s", want, rendered)
+		}
+	}
+}
+
 func TestRenderConfigTOMLIncludesUnloggedOptOut(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "mysql"
@@ -408,6 +433,23 @@ func TestSuggestSchemaNameUsesSourceDatabaseWhenDifferentFromTargetDatabase(t *t
 	)
 	if got != "sakila" {
 		t.Fatalf("suggestSchemaName() = %q, want sakila", got)
+	}
+}
+
+func TestSuggestSchemaName_MariaDBUsesSourceDatabase(t *testing.T) {
+	got := suggestSchemaName(
+		"mariadb",
+		"root:root@tcp(127.0.0.1:3306)/inventory",
+		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable",
+	)
+	if got != "inventory" {
+		t.Fatalf("suggestSchemaName() = %q, want inventory", got)
+	}
+}
+
+func TestValidateWizardSourceDSN_MariaDB(t *testing.T) {
+	if err := validateWizardSourceDSN("mariadb", "root:root@tcp(127.0.0.1:3306)/inventory"); err != nil {
+		t.Fatalf("validateWizardSourceDSN() error: %v", err)
 	}
 }
 

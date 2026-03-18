@@ -21,12 +21,14 @@ pgferry wizard
 schema = "app"
 
 [source]
-type = "mysql" # or "sqlite" / "mssql"
+type = "mysql" # or "mariadb" / "sqlite" / "mssql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
+
+Any PostgreSQL `sslmode` is supported. `sslmode=disable` is just a local example.
 
 ## Recommended starting points
 
@@ -66,13 +68,13 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. |
-| `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL and MSSQL. |
+| `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
 | `snake_case_identifiers` | bool | `true` | Convert source names to `snake_case`. When false, pgferry lowercases only. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
 | `preserve_defaults` | bool | `true` | Keep source column defaults in the created PostgreSQL schema. |
-| `add_unsigned_checks` | bool | `false` | Add `CHECK` constraints for MySQL unsigned ranges. |
+| `add_unsigned_checks` | bool | `false` | Add `CHECK` constraints for MySQL-family unsigned ranges. |
 | `clean_orphans` | bool | `true` | Automatically delete or null invalid child rows before FK creation. |
-| `replicate_on_update_current_timestamp` | bool | `false` | Create PostgreSQL trigger emulation for MySQL `ON UPDATE CURRENT_TIMESTAMP`. |
+| `replicate_on_update_current_timestamp` | bool | `false` | Create PostgreSQL trigger emulation for MySQL-family `ON UPDATE CURRENT_TIMESTAMP`. |
 | `workers` | int | `min(runtime.NumCPU(), 8)` | Parallel worker count for data loading. SQLite is internally capped at 1. |
 | `index_workers` | int | `workers` | Concurrent index builds during post-migration. |
 | `chunk_size` | int | `100000` | Target rows per chunk for single-column numeric PK tables. |
@@ -83,9 +85,9 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `type` | string | required | `"mysql"`, `"sqlite"`, or `"mssql"`. |
+| `type` | string | required | `"mysql"`, `"mariadb"`, `"sqlite"`, or `"mssql"`. |
 | `dsn` | string | required | Source connection string or SQLite file path/URI. |
-| `charset` | string | `"utf8mb4"` | MySQL only. Injected into the DSN unless already present. |
+| `charset` | string | `"utf8mb4"` | MySQL and MariaDB only. Injected into the DSN unless already present. |
 | `source_schema` | string | `"dbo"` | MSSQL only. Limits introspection to one source schema. |
 
 ### `[target]`
@@ -123,7 +125,7 @@ collation_mode = "none"
 ci_as_citext = false
 ```
 
-Optional MySQL collation remapping:
+Optional MySQL-family collation remapping:
 
 ```toml
 [type_mapping.collation_map]
@@ -135,7 +137,7 @@ utf8mb4_unicode_ci = "und-x-icu"
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `enabled` | bool | `false` | MySQL only. Maps spatial columns to PostgreSQL `geometry`. |
+| `enabled` | bool | `false` | MySQL only. Maps spatial columns to PostgreSQL `geometry`. MariaDB should use `type_mapping.spatial_mode` fallback modes instead. |
 | `create_extension` | bool | `false` | When true, pgferry runs `CREATE EXTENSION IF NOT EXISTS postgis`. |
 
 ### `[hooks]`
@@ -176,16 +178,16 @@ The `database` parameter is required because pgferry extracts the DB name for in
 
 ## Source-specific constraints
 
-| Setting | MySQL | SQLite | MSSQL |
-| --- | --- | --- | --- |
-| `source_snapshot_mode = "single_tx"` | Yes | No | Yes |
-| Worker parallelism | Yes | Forced to 1 | Yes |
-| `source.charset` | Yes | Error | Error |
-| `source.source_schema` | N/A | N/A | Yes |
-| MySQL-only type options | Yes | Error | Error |
-| MSSQL-only type options | Error | Error | Yes |
-| `[postgis]` | Yes | Error | Error |
-| `collation_mode` / `collation_map` / `ci_as_citext` | Yes | Error | Error |
+| Setting | MySQL | MariaDB | SQLite | MSSQL |
+| --- | --- | --- | --- | --- |
+| `source_snapshot_mode = "single_tx"` | Yes | Yes | No | Yes |
+| Worker parallelism | Yes | Yes | Forced to 1 | Yes |
+| `source.charset` | Yes | Yes | Error | Error |
+| `source.source_schema` | N/A | N/A | N/A | Yes |
+| MySQL-family type options | Yes | Yes | Error | Error |
+| MSSQL-only type options | Error | Error | Error | Yes |
+| `[postgis]` | Yes | Error | Error | Error |
+| `collation_mode` / `collation_map` / `ci_as_citext` | Yes | Yes | Error | Error |
 
 ## Important incompatibilities
 
@@ -196,6 +198,7 @@ The `database` parameter is required because pgferry extracts the DB name for in
 | `resume = true` + `unlogged_tables = true` | Invalid because checkpointed progress could outlive crash-truncated tables. |
 | `schema_only = true` + `data_only = true` | Invalid. Choose one or neither. |
 | SQLite + `source_snapshot_mode = "single_tx"` | Invalid. SQLite only supports `none`. |
+| MariaDB + `[postgis]` | Invalid. Use `type_mapping.spatial_mode` fallback modes instead. |
 
 ## Practical guidance
 

@@ -3,7 +3,7 @@ title: MySQL To PostgreSQL
 description: MySQL-specific pgferry behavior, type-mapping knobs, and recommended starting paths.
 ---
 
-MySQL is the richest pgferry source because it includes enums, sets, unsigned types, generated columns, optional PostGIS migration, and collation handling.
+MySQL is still the richest pgferry source because it includes enums, sets, unsigned types, generated columns, optional PostGIS migration, and collation handling. If your source is MariaDB, use the dedicated [MariaDB guide](/guides/mariadb/) rather than assuming every MySQL-specific feature applies unchanged.
 
 ## Start here
 

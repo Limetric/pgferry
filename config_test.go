@@ -909,6 +909,36 @@ enabled = true
 	}
 }
 
+func TestLoadConfig_PostGISRejectsMariaDBExplicitly(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "postgis_mariadb.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mariadb"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+
+[postgis]
+enabled = true
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for postgis on mariadb")
+	}
+	if !strings.Contains(err.Error(), "mariadb supports only type_mapping.spatial_mode fallback modes for now") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadConfig_PostGISConflictsWithSpatialMode(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "postgis_conflict.toml")
@@ -1264,6 +1294,35 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_MariaDBCharsetOverride(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "mariadb_charset.toml")
+
+	content := `
+schema = "target"
+
+[source]
+type = "mariadb"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+charset = "latin1"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if cfg.Source.Charset != "latin1" {
+		t.Errorf("Source.Charset = %q, want %q", cfg.Source.Charset, "latin1")
+	}
+}
+
 func TestLoadConfig_SQLiteCharsetRejected(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "sqlite_charset.toml")
@@ -1287,8 +1346,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if err == nil {
 		t.Fatal("expected error for SQLite + charset override")
 	}
-	if !strings.Contains(err.Error(), "MySQL-only") {
-		t.Errorf("error should mention MySQL-only, got: %v", err)
+	if !strings.Contains(err.Error(), "MySQL/MariaDB-only") {
+		t.Errorf("error should mention MySQL/MariaDB-only, got: %v", err)
 	}
 }
 

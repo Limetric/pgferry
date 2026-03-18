@@ -18,6 +18,7 @@ All you need are two connection strings: one for the source database you're migr
 | Source | Format | Example |
 | --- | --- | --- |
 | MySQL | `user:pass@tcp(host:port)/dbname` | `root:root@tcp(127.0.0.1:3306)/source_db` |
+| MariaDB | `user:pass@tcp(host:port)/dbname` | `root:root@tcp(127.0.0.1:3306)/source_db` |
 | SQLite | File path or `file:` URI | `/path/to/database.db` |
 | MSSQL | `sqlserver://` URI | `sqlserver://sa:Pass@127.0.0.1:1433?database=source_db` |
 
@@ -27,7 +28,7 @@ All you need are two connection strings: one for the source database you're migr
 postgres://user:pass@host:port/dbname?sslmode=disable
 ```
 
-Any `sslmode` works (`disable`, `require`, `verify-ca`, `verify-full`, etc.) — the example uses `disable` for brevity.
+Any PostgreSQL `sslmode` is supported. `sslmode=disable` is only shown here because it is a simple local-development example.
 
 The wizard will prompt you for both of these, so you don't need to get the format perfect from memory.
 
@@ -44,6 +45,7 @@ Use the wizard to generate `migration.toml`.
 If you already know your source type and want a fuller starter instead, jump to:
 
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
+- [MariaDB minimal-safe example](/examples/mariadb/)
 - [SQLite minimal-safe example](/examples/sqlite/minimal-safe/)
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 

@@ -307,7 +307,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		// 5a. Create native enum types if configured (must precede table creation)
 		if typeMap.EnumMode == "native" {
 			log.Printf("creating enum types...")
-			if err := createEnumTypes(ctx, pgPool, schema, cfg.Schema, typeMap); err != nil {
+			if err := createEnumTypes(ctx, pgPool, schema, cfg.Schema, typeMap, cfg.Source.Type); err != nil {
 				return fmt.Errorf("create enum types: %w", err)
 			}
 		}

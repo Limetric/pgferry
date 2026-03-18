@@ -19,7 +19,7 @@ Examples:
 
 ## Auto-increment and sequences
 
-MySQL `auto_increment`, SQLite integer primary key auto-increment behavior, and MSSQL `IDENTITY` columns are recreated as PostgreSQL sequences after data load.
+MySQL and MariaDB `auto_increment`, SQLite integer primary key auto-increment behavior, and MSSQL `IDENTITY` columns are recreated as PostgreSQL sequences after data load.
 
 The sequence flow is:
 
@@ -62,7 +62,7 @@ These are not migrated automatically. Recreate them with hooks or separate DDL.
 
 ### Unsupported or skipped indexes
 
-MySQL:
+MySQL and MariaDB:
 
 - `FULLTEXT`
 - `SPATIAL` unless `[postgis].enabled = true`
@@ -112,11 +112,12 @@ Important details:
 
 ## Source-specific caveats
 
-### MySQL
+### MySQL and MariaDB
 
 - `enum_mode` and `set_mode` control semantic handling of enums and sets.
 - `zero_date_mode` controls how `0000-00-00` values are handled.
-- `[postgis]` enables native spatial migration to PostgreSQL `geometry`.
+- MariaDB native `uuid` columns and JSON aliases are normalized onto PostgreSQL `uuid` and `json` / `jsonb` semantics during COPY.
+- `[postgis]` enables native spatial migration only for MySQL. MariaDB should use `spatial_mode` fallback storage modes instead.
 - `_ci` collations can be mapped to `citext` with `ci_as_citext = true`.
 
 ### SQLite
