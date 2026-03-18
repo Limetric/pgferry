@@ -1,13 +1,17 @@
 ---
 title: MariaDB Examples
-description: MariaDB migration configs that reuse the MySQL-family path without pretending PostGIS support exists yet.
+description: MariaDB migration configs and guidance for first-class MariaDB-to-PostgreSQL migrations.
 ---
 
-MariaDB is a first-class source type in `pgferry`, but the example set is intentionally small for now.
+MariaDB is a first-class source type in `pgferry`. The example set is still intentionally small, but the config validation, type mapping, wizard support, and guide surface are explicit about MariaDB rather than treating it as a footnote.
 
 ## Available examples
 
 - [`minimal-safe`](https://github.com/Limetric/pgferry/tree/main/examples/mariadb/minimal-safe)
+
+## Related docs
+
+- [MariaDB guide](/guides/mariadb/)
 
 ## What is different from MySQL
 

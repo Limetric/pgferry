@@ -38,10 +38,10 @@ Unknown MySQL and MariaDB types error by default. Set `unknown_as_text = true` t
 
 ### MySQL-family mapping decisions
 
-- `widen_unsigned_integers = true` preserves MySQL unsigned ranges by widening the PostgreSQL target type.
+- `widen_unsigned_integers = true` preserves MySQL-family unsigned ranges by widening the PostgreSQL target type.
 - `add_unsigned_checks = true` adds PostgreSQL `CHECK` constraints after load.
-- `binary16_uuid_mode = "mysql_uuid_to_bin_swap"` reverses MySQL `UUID_TO_BIN(uuid, 1)` byte swaps.
-- `zero_date_mode = "null"` converts MySQL zero dates to `NULL`. `error` aborts instead.
+- `binary16_uuid_mode = "mysql_uuid_to_bin_swap"` reverses MySQL-family `UUID_TO_BIN(uuid, 1)` byte swaps.
+- `zero_date_mode = "null"` converts MySQL-family zero dates to `NULL`. `error` aborts instead.
 - `collation_mode = "auto"` emits PostgreSQL `COLLATE` clauses when pgferry can map the source collation.
 - `ci_as_citext = true` maps `_ci` text columns to PostgreSQL `citext` unless a `collation_map` entry overrides that choice.
 - MariaDB `JSON` aliases detected through `JSON_VALID(...)` checks preserve JSON semantics instead of degrading to `text`.
@@ -126,7 +126,7 @@ spatial_mode = "off"
 | `text` | Store as unconstrained `text`. |
 | `native` | Create a PostgreSQL enum type and reuse it for identical value sets. |
 
-Use `check` when MySQL enum ordering matters and you do not want PostgreSQL native enum ordering semantics.
+Use `check` when MySQL or MariaDB enum ordering matters and you do not want PostgreSQL native enum ordering semantics.
 
 ### `set_mode`
 

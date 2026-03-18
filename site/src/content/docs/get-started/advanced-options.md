@@ -73,6 +73,7 @@ pgferry maps source types to PostgreSQL types automatically, but sometimes you w
 
 - [Type mapping reference](/reference/type-mapping/)
 - [MySQL guide](/guides/mysql/)
+- [MariaDB guide](/guides/mariadb/)
 - [MSSQL guide](/guides/mssql/)
 
 ## Validation
@@ -89,6 +90,7 @@ Note that validation runs after `after_data` hooks and re-reads the current sour
 Every source engine has its own quirks. These guides cover what pgferry handles automatically and what you should watch out for.
 
 - [MySQL to PostgreSQL](/guides/mysql/)
+- [MariaDB to PostgreSQL](/guides/mariadb/)
 - [SQLite to PostgreSQL](/guides/sqlite/)
 - [MSSQL to PostgreSQL](/guides/mssql/)
 

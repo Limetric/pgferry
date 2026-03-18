@@ -16,7 +16,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - Extension-backed features like `citext` and PostGIS, with validation and optional auto-create
 - Post-load validation modes that range from fast `row_count` checks to stronger bounded `sampled_hash` content checks
 
-CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation, MariaDB 11.4, MSSQL 2017 through 2025, and SQLite against the latest PostgreSQL release on every commit.
+CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation, MariaDB 10.6 and latest, MSSQL 2017 through 2025, and SQLite against the latest PostgreSQL release on every commit.
 
 ## Install
 

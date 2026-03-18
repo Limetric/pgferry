@@ -26,7 +26,7 @@ hero:
 <div class="hero-band">
 	<p class="hero-band-header">CI-tested sources</p>
 	<span>MySQL 5.7, 8.0, LTS, and Innovation</span>
-	<span>MariaDB 11.4+</span>
+	<span>MariaDB 10.6 and latest</span>
 	<span>SQLite</span>
 	<span>MSSQL 2017, 2019, 2022, and 2025</span>
 </div>
@@ -94,6 +94,7 @@ Every tool makes different trade-offs. Here's how pgferry stacks up against the 
 | Install | ✅ Single binary | ⚠️ Lisp toolchain or Docker | ☁️ Managed AWS service |
 | Config format | TOML | Custom Lisp-inspired DSL | JSON + AWS Console |
 | MySQL source | ✅ | ✅ | ✅ |
+| MariaDB source | ✅ | ⚠️ Via MySQL source path | ✅ |
 | SQLite source | ✅ | ✅ | ❌ |
 | MSSQL source | ✅ | ✅ | ✅ |
 | Preflight plan | ✅ Reports issues before data is touched | ❌ | ✅ Premigration assessment |
@@ -103,7 +104,7 @@ Every tool makes different trade-offs. Here's how pgferry stacks up against the 
 | Self-hosted | ✅ | ✅ | ❌ AWS only |
 | Cost | ✅ Free and open source | ✅ Free and open source | 💰 Per replication instance hour |
 
-pgloader has migrated a lot of databases over the years, but maintenance has slowed. AWS DMS is the right choice when you're already in AWS and want a managed service. pgferry is for operators who want a single binary with explicit config, a plan-before-migrate workflow, and no surprises when things get messy.
+pgloader has migrated a lot of databases over the years, but its own source matrix still calls out MySQL rather than MariaDB as a separate source category. AWS DMS explicitly documents MariaDB as a MySQL-compatible source. pgferry treats MariaDB as a first-class source type with its own config validation, examples, and docs.
 
 ## Read next
 

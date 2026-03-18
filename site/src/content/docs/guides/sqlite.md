@@ -17,7 +17,7 @@ SQLite is simpler operationally, but there are still a few important constraints
 - `source_snapshot_mode = "single_tx"` is unsupported
 - the source must be a real SQLite file, not an in-memory database
 - the source is opened read-only
-- MySQL-only and MSSQL-only type-mapping flags are rejected during config validation
+- MySQL-family-only and MSSQL-only type-mapping flags are rejected during config validation
 
 ## Where SQLite is usually easier
 

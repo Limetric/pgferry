@@ -21,5 +21,6 @@ The rule is simple: use `none` unless the source is live enough that cross-table
 ## Source limits
 
 - MySQL: supported
+- MariaDB: supported
 - MSSQL: supported, but source snapshot isolation must be enabled
 - SQLite: unsupported

@@ -72,9 +72,9 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `snake_case_identifiers` | bool | `true` | Convert source names to `snake_case`. When false, pgferry lowercases only. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
 | `preserve_defaults` | bool | `true` | Keep source column defaults in the created PostgreSQL schema. |
-| `add_unsigned_checks` | bool | `false` | Add `CHECK` constraints for MySQL unsigned ranges. |
+| `add_unsigned_checks` | bool | `false` | Add `CHECK` constraints for MySQL-family unsigned ranges. |
 | `clean_orphans` | bool | `true` | Automatically delete or null invalid child rows before FK creation. |
-| `replicate_on_update_current_timestamp` | bool | `false` | Create PostgreSQL trigger emulation for MySQL `ON UPDATE CURRENT_TIMESTAMP`. |
+| `replicate_on_update_current_timestamp` | bool | `false` | Create PostgreSQL trigger emulation for MySQL-family `ON UPDATE CURRENT_TIMESTAMP`. |
 | `workers` | int | `min(runtime.NumCPU(), 8)` | Parallel worker count for data loading. SQLite is internally capped at 1. |
 | `index_workers` | int | `workers` | Concurrent index builds during post-migration. |
 | `chunk_size` | int | `100000` | Target rows per chunk for single-column numeric PK tables. |
@@ -125,7 +125,7 @@ collation_mode = "none"
 ci_as_citext = false
 ```
 
-Optional MySQL collation remapping:
+Optional MySQL-family collation remapping:
 
 ```toml
 [type_mapping.collation_map]

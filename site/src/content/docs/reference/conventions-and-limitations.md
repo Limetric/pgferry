@@ -19,7 +19,7 @@ Examples:
 
 ## Auto-increment and sequences
 
-MySQL `auto_increment`, SQLite integer primary key auto-increment behavior, and MSSQL `IDENTITY` columns are recreated as PostgreSQL sequences after data load.
+MySQL and MariaDB `auto_increment`, SQLite integer primary key auto-increment behavior, and MSSQL `IDENTITY` columns are recreated as PostgreSQL sequences after data load.
 
 The sequence flow is:
 
@@ -62,7 +62,7 @@ These are not migrated automatically. Recreate them with hooks or separate DDL.
 
 ### Unsupported or skipped indexes
 
-MySQL:
+MySQL and MariaDB:
 
 - `FULLTEXT`
 - `SPATIAL` unless `[postgis].enabled = true`
