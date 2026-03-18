@@ -154,11 +154,20 @@ func runParallelMigrationWorkers(ctx context.Context, workers int, openSource fu
 
 	var firstErr error
 	var errOnce sync.Once
+	var otherErrsMu sync.Mutex
+	var otherErrs []error
 	recordErr := func(err error) {
+		isFirst := false
 		errOnce.Do(func() {
 			firstErr = err
+			isFirst = true
 			cancel()
 		})
+		if !isFirst {
+			otherErrsMu.Lock()
+			otherErrs = append(otherErrs, err)
+			otherErrsMu.Unlock()
+		}
 	}
 
 	for workerID := 0; workerID < workers; workerID++ {
@@ -193,7 +202,7 @@ func runParallelMigrationWorkers(ctx context.Context, workers int, openSource fu
 
 					count, err := execute(ctx, source, item)
 					if err != nil {
-						if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+						if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 							return
 						}
 						recordErr(formatMigrationWorkError(item, err))
@@ -218,6 +227,9 @@ enqueue:
 
 	if firstErr != nil {
 		log.Printf("ERROR: %v", firstErr)
+		for _, err := range otherErrs {
+			log.Printf("ERROR: %v", err)
+		}
 		return firstErr
 	}
 	if err := ctx.Err(); err != nil {

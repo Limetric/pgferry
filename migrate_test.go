@@ -196,6 +196,7 @@ func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.
 	chunkKey := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 	plans := []ChunkPlan{
 		{Table: Table{SourceName: "users"}},
+		{Table: Table{SourceName: "profiles"}},
 		{
 			Table:    Table{SourceName: "orders"},
 			ChunkKey: chunkKey,
@@ -220,23 +221,26 @@ func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.
 	}
 
 	got := buildParallelMigrationWorkItems(plans, mgr)
-	if len(got) != 4 {
-		t.Fatalf("work item count = %d, want 4", len(got))
+	if len(got) != 5 {
+		t.Fatalf("work item count = %d, want 5", len(got))
 	}
 
 	summaries := []string{
-		got[0].Table.SourceName + ":" + fmt.Sprint(got[0].Chunk.Index),
 		got[1].Table.SourceName + ":" + fmt.Sprint(got[1].Chunk.Index),
 		got[2].Table.SourceName + ":" + fmt.Sprint(got[2].Chunk.Index),
 		got[3].Table.SourceName + ":" + fmt.Sprint(got[3].Chunk.Index),
+		got[4].Table.SourceName + ":" + fmt.Sprint(got[4].Chunk.Index),
 	}
 	want := []string{"orders:0", "orders:2", "items:0", "items:1"}
 	if !slices.Equal(summaries, want) {
 		t.Fatalf("work items = %v, want %v", summaries, want)
 	}
-	for _, item := range got {
+	if got[0].Table.SourceName != "profiles" || got[0].ChunkKey != nil {
+		t.Fatalf("first work item = %+v, want full-table profiles item", got[0])
+	}
+	for _, item := range got[1:] {
 		if item.ChunkKey == nil {
-			t.Fatalf("item %+v missing chunk key", item)
+			t.Fatalf("chunked item %+v missing chunk key", item)
 		}
 		if item.ChunkCount != len(findPlanByTable(plans, item.Table.SourceName).Chunks) {
 			t.Fatalf("chunk count for %s = %d, want %d", item.Table.SourceName, item.ChunkCount, len(findPlanByTable(plans, item.Table.SourceName).Chunks))
@@ -377,8 +381,8 @@ func TestRunParallelMigrationWorkers_PropagatesParentCancellation(t *testing.T) 
 		},
 		[]migrationWorkItem{{Table: Table{SourceName: "users"}}},
 		&fakeMigrationCheckpointManager{},
-		func(context.Context, dbQuerier, migrationWorkItem) (int64, error) {
-			return 0, errors.New("execute should not run when parent context is already canceled")
+		func(ctx context.Context, _ dbQuerier, _ migrationWorkItem) (int64, error) {
+			return 0, ctx.Err()
 		},
 	)
 	if !errors.Is(err, context.Canceled) {
