@@ -290,10 +290,10 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("postgis.create_extension requires postgis.enabled = true")
 	}
 	if cfg.PostGIS.Enabled {
+		if cfg.Source.Type == "mariadb" {
+			return fmt.Errorf("postgis is currently only supported for mysql sources; mariadb supports only type_mapping.spatial_mode fallback modes for now")
+		}
 		if cfg.Source.Type != "mysql" {
-			if cfg.Source.Type == "mariadb" {
-				return fmt.Errorf("postgis is currently only supported for mysql sources; mariadb supports only type_mapping.spatial_mode fallback modes for now")
-			}
 			return fmt.Errorf("postgis is currently only supported for mysql sources")
 		}
 		if cfg.TypeMapping.SpatialMode != "off" {

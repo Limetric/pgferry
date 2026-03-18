@@ -217,7 +217,7 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 		errs = append(errs, fmt.Sprintf("zero_date_mode=%q is a MySQL/MariaDB-only option", typeMap.ZeroDateMode))
 	}
 	if typeMap.SpatialMode != "off" {
-		errs = append(errs, fmt.Sprintf("spatial_mode=%q is a MySQL/MSSQL-only option", typeMap.SpatialMode))
+		errs = append(errs, fmt.Sprintf("spatial_mode=%q is a MySQL/MariaDB/MSSQL-only option", typeMap.SpatialMode))
 	}
 	if typeMap.CIAsCitext {
 		errs = append(errs, "ci_as_citext is a MySQL/MariaDB-only option")
