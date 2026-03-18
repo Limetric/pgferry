@@ -16,14 +16,25 @@ const plausibleAPI = import.meta.env.PUBLIC_PLAUSIBLE_API?.trim() ?? '';
 	<slot />
 	{
 		plausibleDomain && (
-			<script type="module" define:vars={{ plausibleAPI, plausibleDomain }}>
-				import { init } from '@plausible-analytics/tracker';
+			<>
+				<script is:inline define:vars={{ plausibleAPI, plausibleDomain }}>
+					window.__PGFERRY_PLAUSIBLE__ = {
+						domain: plausibleDomain,
+						api: plausibleAPI,
+					};
+				</script>
+				<script>
+					import { init } from '@plausible-analytics/tracker';
 
-				init({
-					domain: plausibleDomain,
-					...(plausibleAPI ? { endpoint: plausibleAPI } : {}),
-				});
-			</script>
+					const config = window.__PGFERRY_PLAUSIBLE__;
+					if (config?.domain) {
+						init({
+							domain: config.domain,
+							...(config.api ? { endpoint: config.api } : {}),
+						});
+					}
+				</script>
+			</>
 		)
 	}
 	<SpeedInsights />
