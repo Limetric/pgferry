@@ -9,7 +9,7 @@ const expectedRoutes = [
 	'/',
 	'/get-started/install/',
 	'/get-started/quick-start/',
-	'/get-started/choose-your-path/',
+	'/get-started/advanced-options/',
 	'/migration-patterns/',
 	'/guides/',
 	'/operations/',
