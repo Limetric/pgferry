@@ -1,87 +1,83 @@
 ---
 title: Quick Start
-description: Create a migration config and run your first pgferry migration.
+description: Start with the wizard, then run plan and migrate.
+sidebar:
+  order: 2
 ---
 
-Every migration starts with a TOML file. The required shape is intentionally small: a PostgreSQL schema name, a source connection, and a target connection.
+pgferry is meant to be easy to use for the first run. You should not need to memorize every config option before you can get moving.
 
-## MySQL to PostgreSQL
+The fastest path is simple: let the wizard generate the config, run `plan` to see what needs attention, then run `migrate`.
 
-```toml
-schema = "app"
+## Prerequisites
 
-[source]
-type = "mysql"
-dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+All you need are two connection strings: one for the source database you're migrating from, and one for the target PostgreSQL database you're migrating into.
 
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+**Source DSN** — depends on your source type:
+
+| Source | Format | Example |
+| --- | --- | --- |
+| MySQL | `user:pass@tcp(host:port)/dbname` | `root:root@tcp(127.0.0.1:3306)/source_db` |
+| SQLite | File path or `file:` URI | `/path/to/database.db` |
+| MSSQL | `sqlserver://` URI | `sqlserver://sa:Pass@127.0.0.1:1433?database=source_db` |
+
+**Target DSN** — always a PostgreSQL connection string:
+
+```text
+postgres://user:pass@host:port/dbname?sslmode=disable
 ```
 
-## SQLite to PostgreSQL
+Any `sslmode` works (`disable`, `require`, `verify-ca`, `verify-full`, etc.) — the example uses `disable` for brevity.
 
-```toml
-schema = "app"
+The wizard will prompt you for both of these, so you don't need to get the format perfect from memory.
 
-[source]
-type = "sqlite"
-dsn = "/path/to/database.db"
+## 1. Run the wizard
 
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+```bash
+pgferry wizard
 ```
 
-## MSSQL to PostgreSQL
+In an interactive terminal, plain `pgferry` also opens the wizard. It asks the useful questions, writes the config, and gets you out of the “blank TOML file staring contest” phase quickly.
 
-```toml
-schema = "app"
+Use the wizard to generate `migration.toml`.
 
-[source]
-type = "mssql"
-dsn = "sqlserver://sa:YourStrong!Pass@127.0.0.1:1433?database=source_db"
+If you already know your source type and want a fuller starter instead, jump to:
 
-[target]
-dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+- [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
+- [SQLite minimal-safe example](/examples/sqlite/minimal-safe/)
+- [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
+
+## 2. Run plan
+
+```bash
+pgferry plan migration.toml
 ```
 
-## Run the migration
+`plan` is the part where pgferry tells you the truth before PostgreSQL gets involved. If there are views, routines, generated columns, skipped indexes, or required extensions, this is where you find out.
+
+This step is technically optional — the same way riding your bike without checking the weather is technically optional. You can skip it, but don't be surprised when it rains.
+
+## 3. Run migrate
 
 ```bash
 pgferry migrate migration.toml
 ```
 
-In an interactive terminal, plain `pgferry` starts the config wizard. The shorthand `pgferry migration.toml` still works for direct execution.
+If you ran `plan` first, this step shouldn't have any surprises — you've already seen what's coming.
 
-The default pipeline is:
+The migrate command runs the full pipeline:
 
-1. Load and validate config.
-2. Introspect the source schema.
-3. Create PostgreSQL tables.
-4. Stream table data with `COPY`.
-5. Add indexes, foreign keys, sequences, and optional triggers afterward.
-
-## High-value defaults
-
-- `snake_case_identifiers = true`
-- `unlogged_tables = true`
-- `preserve_defaults = true`
-- `clean_orphans = true`
-- `validation = "none"`
-- `workers = min(runtime.NumCPU(), 8)`
-
-These defaults bias toward fast full-load migrations while keeping the resulting PostgreSQL schema usable without much extra tuning.
-
-## When to stop using the minimal config
-
-Add more configuration when you need:
-
-- `source_snapshot_mode = "single_tx"` for a consistent source snapshot on MySQL or MSSQL.
-- `resume = true` plus `unlogged_tables = false` for chunk checkpoint reuse.
-- `validation = "row_count"` for a fast cardinality check.
-- `validation = "sampled_hash"` when you want stronger but still bounded post-load verification.
-- Hook files for views, routines, cleanup SQL, or foreign-key sequencing.
-- Source-specific type mapping, including PostGIS-backed MySQL spatial migration.
+1. introspect the source schema
+2. create PostgreSQL tables
+3. run before_data hooks (if configured)
+4. stream data with `COPY` (chunked and parallelized where possible)
+5. run after_data hooks and validation (if configured)
+6. add primary keys, indexes, foreign keys, and sequences
+7. run remaining hooks and finalize
 
 ## Next step
 
-Run [Plan and Validate](/get-started/plan-and-validate/) before pointing the tool at a real production schema.
+After the first run, move to:
+
+- [Advanced Options](/get-started/advanced-options/) for hooks, resume, snapshot mode, type mapping, and more
+- [Plan and Validate](/get-started/advanced-options/#plan-and-preflight) before pointing the tool at a real production schema
