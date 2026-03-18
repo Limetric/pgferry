@@ -28,7 +28,7 @@ All you need are two connection strings: one for the source database you're migr
 postgres://user:pass@host:port/dbname?sslmode=disable
 ```
 
-Any `sslmode` works (`disable`, `require`, `verify-ca`, `verify-full`, etc.) — the example uses `disable` for brevity.
+Any PostgreSQL `sslmode` is supported. `sslmode=disable` is only shown here because it is a simple local-development example.
 
 The wizard will prompt you for both of these, so you don't need to get the format perfect from memory.
 

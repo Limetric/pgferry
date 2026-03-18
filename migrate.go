@@ -609,6 +609,8 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 func mysqlPostGISSelectExpr(src SourceDB, quoted string) string {
 	mysqlSrc := mysqlFamilyBaseSource(src)
 	wkbExpr := fmt.Sprintf("ST_AsWKB(%s)", quoted)
+	// Real MariaDB configs never reach this path because [postgis] is rejected
+	// during config validation. Keep the nil-safe fallback for test doubles.
 	if mysqlSrc != nil && mysqlSrc.supportsAxisOrderOption() {
 		wkbExpr = fmt.Sprintf("ST_AsWKB(%s, 'axis-order=long-lat')", quoted)
 	}

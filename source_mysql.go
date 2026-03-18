@@ -13,6 +13,7 @@ import (
 )
 
 var uuidRegexp = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var mariaDBJSONValidCheckRegexp = regexp.MustCompile(`(?i)json_valid\s*\(\s*\(*\s*(?:` + "`" + `([^` + "`" + `]+)` + "`" + `|"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_$]*))\s*\)*\s*\)`)
 
 type mysqlSourceDB struct {
 	snakeCaseIDs          bool
@@ -130,6 +131,18 @@ func (m *mysqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 
 func (m *mariadbSourceDB) Name() string { return "MariaDB" }
 
+func (m *mariadbSourceDB) IntrospectSchema(db *sql.DB, dbName string) (*Schema, error) {
+	return introspectMariaDBSchema(db, dbName, m.identName)
+}
+
+func (m *mariadbSourceDB) MapType(col Column, typeMap TypeMappingConfig) (string, error) {
+	return mariadbMapType(col, typeMap)
+}
+
+func (m *mariadbSourceDB) TransformValue(val any, col Column, typeMap TypeMappingConfig) (any, error) {
+	return mariadbTransformValue(val, col, typeMap)
+}
+
 func (m *mariadbSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	return validateMySQLFamilyTypeMapping("MariaDB", typeMap)
 }
@@ -191,6 +204,99 @@ func introspectMySQLSchema(db *sql.DB, dbName string, identName func(string) str
 	}
 
 	return &Schema{Tables: tables}, nil
+}
+
+func introspectMariaDBSchema(db *sql.DB, dbName string, identName func(string) string) (*Schema, error) {
+	schema, err := introspectMySQLSchema(db, dbName, identName)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonAliases, err := introspectMariaDBJSONAliases(db, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MariaDB JSON aliases for schema %s: %w", dbName, err)
+	}
+	annotateMariaDBJSONColumns(schema, jsonAliases)
+
+	return schema, nil
+}
+
+func introspectMariaDBJSONAliases(db *sql.DB, dbName string) (map[string]map[string]bool, error) {
+	rows, err := db.Query(
+		`SELECT tc.TABLE_NAME, cc.CHECK_CLAUSE
+		 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+		 JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+		   ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA
+		  AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+		 WHERE tc.TABLE_SCHEMA = ?
+		   AND tc.CONSTRAINT_TYPE = 'CHECK'
+		 ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME`,
+		dbName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	aliases := make(map[string]map[string]bool)
+	for rows.Next() {
+		var tableName string
+		var clause sql.NullString
+		if err := rows.Scan(&tableName, &clause); err != nil {
+			return nil, err
+		}
+		if !clause.Valid {
+			continue
+		}
+		columnName := mariaDBJSONAliasColumnFromCheckClause(clause.String)
+		if columnName == "" {
+			continue
+		}
+		tableKey := normalizeMariaDBAliasKey(tableName)
+		columnKey := normalizeMariaDBAliasKey(columnName)
+		if aliases[tableKey] == nil {
+			aliases[tableKey] = make(map[string]bool)
+		}
+		aliases[tableKey][columnKey] = true
+	}
+
+	return aliases, rows.Err()
+}
+
+func annotateMariaDBJSONColumns(schema *Schema, jsonAliases map[string]map[string]bool) {
+	if schema == nil || len(jsonAliases) == 0 {
+		return
+	}
+
+	for ti := range schema.Tables {
+		table := &schema.Tables[ti]
+		tableAliases := jsonAliases[normalizeMariaDBAliasKey(table.SourceName)]
+		if len(tableAliases) == 0 {
+			continue
+		}
+		for ci := range table.Columns {
+			col := &table.Columns[ci]
+			if !tableAliases[normalizeMariaDBAliasKey(col.SourceName)] {
+				continue
+			}
+			col.DataType = "json"
+			col.ColumnType = "json"
+		}
+	}
+}
+
+func mariaDBJSONAliasColumnFromCheckClause(clause string) string {
+	matches := mariaDBJSONValidCheckRegexp.FindStringSubmatch(clause)
+	for i := 1; i < len(matches); i++ {
+		if matches[i] != "" {
+			return matches[i]
+		}
+	}
+	return ""
+}
+
+func normalizeMariaDBAliasKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }
 
 func introspectMySQLTables(db *sql.DB, dbName string, identName func(string) string) ([]Table, error) {
@@ -528,9 +634,19 @@ func mysqlColumnTypeLength(columnType, baseType string) (int64, bool) {
 }
 
 func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
+	return mysqlFamilyMapType(col, typeMap, "mysql", "MySQL")
+}
+
+func mariadbMapType(col Column, typeMap TypeMappingConfig) (string, error) {
+	return mysqlFamilyMapType(normalizeMariaDBColumn(col), typeMap, "mariadb", "MariaDB")
+}
+
+func mysqlFamilyMapType(col Column, typeMap TypeMappingConfig, sourceType string, sourceLabel string) (string, error) {
 	isUnsigned := strings.Contains(strings.ToLower(col.ColumnType), "unsigned")
 
 	switch {
+	case col.DataType == "uuid":
+		return "uuid", nil
 	case isBinary16Column(col) && typeMap.Binary16AsUUID:
 		return "uuid", nil
 	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
@@ -580,7 +696,7 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		}
 		return "json", nil
 	case col.DataType == "enum":
-		typeMap = effectiveTypeMappingForSource(typeMap, "mysql")
+		typeMap = effectiveTypeMappingForSource(typeMap, sourceType)
 		switch typeMap.EnumMode {
 		case "text", "check":
 			return "text", nil
@@ -653,7 +769,7 @@ func mysqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 		if typeMap.UnknownAsText {
 			return "text", nil
 		}
-		return "", fmt.Errorf("unsupported MySQL type %q (column_type=%q)", col.DataType, col.ColumnType)
+		return "", fmt.Errorf("unsupported %s type %q (column_type=%q)", sourceLabel, col.DataType, col.ColumnType)
 	}
 }
 
@@ -691,20 +807,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		return val, nil
 
 	case isStringUUIDColumn(col) && typeMap.StringUUIDAsUUID:
-		var s string
-		switch v := val.(type) {
-		case []byte:
-			s = string(v)
-		case string:
-			s = v
-		default:
-			return nil, fmt.Errorf("expected string UUID value, got %T", val)
-		}
-		s = strings.TrimSpace(s)
-		if !uuidRegexp.MatchString(s) {
-			return nil, fmt.Errorf("invalid UUID value %q for string_uuid_as_uuid", s)
-		}
-		return strings.ToLower(s), nil
+		return normalizeUUIDStringValue(val, "string_uuid_as_uuid")
 
 	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
 		switch v := val.(type) {
@@ -866,6 +969,38 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 	default:
 		return val, nil
 	}
+}
+
+func mariadbTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, error) {
+	col = normalizeMariaDBColumn(col)
+	if col.DataType == "uuid" {
+		return normalizeUUIDStringValue(val, "MariaDB uuid")
+	}
+	return mysqlTransformValue(val, col, typeMap)
+}
+
+func normalizeMariaDBColumn(col Column) Column {
+	if strings.EqualFold(strings.TrimSpace(col.ColumnType), "json") {
+		col.DataType = "json"
+	}
+	return col
+}
+
+func normalizeUUIDStringValue(val any, context string) (any, error) {
+	var s string
+	switch v := val.(type) {
+	case []byte:
+		s = string(v)
+	case string:
+		s = v
+	default:
+		return nil, fmt.Errorf("expected string UUID value, got %T", val)
+	}
+	s = strings.TrimSpace(s)
+	if !uuidRegexp.MatchString(s) {
+		return nil, fmt.Errorf("invalid UUID value %q for %s", s, context)
+	}
+	return strings.ToLower(s), nil
 }
 
 // --- Default mapping (moved from ddl.go) ---

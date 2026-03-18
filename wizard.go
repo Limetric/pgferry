@@ -338,12 +338,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	}
 
 	if isMySQLFamilySourceType(sourceType) {
-		mysqlFamilyLabel := "MySQL/MariaDB"
-		if sourceType == "mysql" {
-			mysqlFamilyLabel = "MySQL"
-		} else if sourceType == "mariadb" {
-			mysqlFamilyLabel = "MariaDB"
-		}
+		mysqlFamilyLabel := mysqlFamilySourceDisplayName(sourceType)
 		cfg.TypeMapping.TinyInt1AsBoolean, err = w.promptBoolGuided(
 			"Map tinyint(1) to boolean",
 			cfg.TypeMapping.TinyInt1AsBoolean,
@@ -792,8 +787,19 @@ func wizardSourceDSNPrompt(sourceType string) (string, string) {
 	}
 }
 
-func wizardTargetDSNPrompt() (string, string) {
-	return "PostgreSQL DSN", "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+func mysqlFamilySourceDisplayName(sourceType string) string {
+	switch sourceType {
+	case "mysql":
+		return "MySQL"
+	case "mariadb":
+		return "MariaDB"
+	default:
+		return "MySQL/MariaDB"
+	}
+}
+
+func wizardTargetDSNPrompt() (string, string, string) {
+	return "PostgreSQL DSN", "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable", "Any PostgreSQL sslmode is supported. sslmode=disable is only shown here because it is a simple local-development example."
 }
 
 func validateWizardSourceDSN(sourceType, dsn string) error {
@@ -802,25 +808,23 @@ func validateWizardSourceDSN(sourceType, dsn string) error {
 		return err
 	}
 
-	switch sourceType {
-	case "mysql":
+	if isMySQLFamilySourceType(sourceType) {
 		if _, err := mysql.ParseDSN(dsn); err != nil {
-			return fmt.Errorf("invalid MySQL DSN: %w", err)
+			return fmt.Errorf("invalid %s DSN: %w", mysqlFamilySourceDisplayName(sourceType), err)
 		}
-	case "mariadb":
-		if _, err := mysql.ParseDSN(dsn); err != nil {
-			return fmt.Errorf("invalid MariaDB DSN: %w", err)
+	} else {
+		switch sourceType {
+		case "sqlite":
+			if _, err := sqliteReadOnlyURI(dsn); err != nil {
+				return fmt.Errorf("invalid SQLite DSN: %w", err)
+			}
+		case "mssql":
+			if _, err := msdsn.Parse(dsn); err != nil {
+				return fmt.Errorf("invalid MSSQL DSN: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported source type %q", sourceType)
 		}
-	case "sqlite":
-		if _, err := sqliteReadOnlyURI(dsn); err != nil {
-			return fmt.Errorf("invalid SQLite DSN: %w", err)
-		}
-	case "mssql":
-		if _, err := msdsn.Parse(dsn); err != nil {
-			return fmt.Errorf("invalid MSSQL DSN: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported source type %q", sourceType)
 	}
 
 	src, err := newSourceDB(sourceType)
@@ -853,42 +857,35 @@ func testWizardSourceConnection(sourceType, dsn string) error {
 		err error
 	)
 
-	switch sourceType {
-	case "mysql":
+	if isMySQLFamilySourceType(sourceType) {
 		normalizedDSN, err := normalizedMySQLDSN(dsn, "utf8mb4")
 		if err != nil {
 			return err
 		}
 		db, err = sql.Open("mysql", normalizedDSN)
 		if err != nil {
-			return fmt.Errorf("open mysql: %w", err)
+			return fmt.Errorf("open %s: %w", strings.ToLower(mysqlFamilySourceDisplayName(sourceType)), err)
 		}
-	case "mariadb":
-		normalizedDSN, err := normalizedMySQLDSN(dsn, "utf8mb4")
-		if err != nil {
-			return err
+	} else {
+		switch sourceType {
+		case "sqlite":
+			uri, err := sqliteReadOnlyURI(dsn)
+			if err != nil {
+				return err
+			}
+			db, err = sql.Open("sqlite", uri)
+			if err != nil {
+				return fmt.Errorf("open sqlite: %w", err)
+			}
+			db.SetMaxOpenConns(1)
+		case "mssql":
+			db, err = sql.Open("sqlserver", dsn)
+			if err != nil {
+				return fmt.Errorf("open mssql: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported source type %q", sourceType)
 		}
-		db, err = sql.Open("mysql", normalizedDSN)
-		if err != nil {
-			return fmt.Errorf("open mariadb: %w", err)
-		}
-	case "sqlite":
-		uri, err := sqliteReadOnlyURI(dsn)
-		if err != nil {
-			return err
-		}
-		db, err = sql.Open("sqlite", uri)
-		if err != nil {
-			return fmt.Errorf("open sqlite: %w", err)
-		}
-		db.SetMaxOpenConns(1)
-	case "mssql":
-		db, err = sql.Open("sqlserver", dsn)
-		if err != nil {
-			return fmt.Errorf("open mssql: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported source type %q", sourceType)
 	}
 	defer db.Close()
 
@@ -982,6 +979,16 @@ func (w *wizardPrompter) promptStringWithExample(label, example, defaultValue st
 	return w.promptStringInline("Value", defaultValue, validate)
 }
 
+func (w *wizardPrompter) promptStringWithExampleAndGuide(label, example, guide, defaultValue string, validate func(string) error) (string, error) {
+	w.startBlock()
+	fmt.Fprintln(w.out, w.styles.header(label))
+	if example != "" {
+		fmt.Fprintf(w.out, "  %s\n", w.styles.muted("Example: "+example))
+	}
+	w.printGuide(guide)
+	return w.promptStringInline("Value", defaultValue, validate)
+}
+
 func (w *wizardPrompter) promptSourceDSN(sourceType string) (string, error) {
 	label, example := wizardSourceDSNPrompt(sourceType)
 	defaultValue := ""
@@ -1014,10 +1021,10 @@ func (w *wizardPrompter) promptSourceDSN(sourceType string) (string, error) {
 }
 
 func (w *wizardPrompter) promptTargetDSN() (string, error) {
-	label, example := wizardTargetDSNPrompt()
+	label, example, guide := wizardTargetDSNPrompt()
 	defaultValue := ""
 	for {
-		dsn, err := w.promptStringWithExample(label, example, defaultValue, wizardTargetDSNValidator)
+		dsn, err := w.promptStringWithExampleAndGuide(label, example, guide, defaultValue, wizardTargetDSNValidator)
 		if err != nil {
 			return "", err
 		}

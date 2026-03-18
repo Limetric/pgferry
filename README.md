@@ -52,6 +52,7 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
 Any PostgreSQL `sslmode` is supported. `sslmode=disable` is just a local example.
+Any valid PostgreSQL `sslmode` works here. `sslmode=disable` is only shown in the example because it is a common local-development setting.
 
 `pgferry migration.toml` remains supported as a shorthand for `pgferry migrate migration.toml`.
 

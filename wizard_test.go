@@ -66,6 +66,9 @@ func TestRunGenerateWizardWritesConfig(t *testing.T) {
 	if !strings.Contains(output, "Example: postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable") {
 		t.Fatalf("wizard output missing postgres DSN example, got:\n%s", output)
 	}
+	if !strings.Contains(output, "Any PostgreSQL sslmode is supported.") {
+		t.Fatalf("wizard output missing postgres sslmode guidance, got:\n%s", output)
+	}
 	if !strings.Contains(output, "Advanced options not covered by the wizard:") {
 		t.Fatalf("wizard output missing advanced options note, got:\n%s", output)
 	}

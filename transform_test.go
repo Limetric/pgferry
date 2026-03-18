@@ -126,6 +126,41 @@ func TestTransformValue_UUID(t *testing.T) {
 	}
 }
 
+func TestMariaDBMapType_UUIDAndJSONAlias(t *testing.T) {
+	tm := defaultTypeMappingConfig()
+
+	if got, err := mariadbMapType(Column{DataType: "uuid", ColumnType: "uuid"}, tm); err != nil || got != "uuid" {
+		t.Fatalf("mariadbMapType(uuid) = %q, err=%v; want uuid", got, err)
+	}
+
+	got, err := mariadbMapType(Column{DataType: "longtext", ColumnType: "json"}, tm)
+	if err != nil {
+		t.Fatalf("mariadbMapType(json alias) error: %v", err)
+	}
+	if got != "jsonb" {
+		t.Fatalf("mariadbMapType(json alias) = %q, want jsonb", got)
+	}
+}
+
+func TestMariaDBTransformValue_UUIDAndJSONAlias(t *testing.T) {
+	got, err := mariadbTransformValue("550E8400-E29B-41D4-A716-446655440000", Column{DataType: "uuid", ColumnType: "uuid"}, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("mariadbTransformValue(uuid) error: %v", err)
+	}
+	if got != "550e8400-e29b-41d4-a716-446655440000" {
+		t.Fatalf("mariadbTransformValue(uuid) = %q", got)
+	}
+
+	jsonInput := "hello\x00world"
+	got, err = mariadbTransformValue(jsonInput, Column{DataType: "longtext", ColumnType: "json"}, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("mariadbTransformValue(json alias) error: %v", err)
+	}
+	if got != "helloworld" {
+		t.Fatalf("mariadbTransformValue(json alias) = %q, want helloworld", got)
+	}
+}
+
 func TestTransformValue_UUIDSwapMode(t *testing.T) {
 	col := Column{DataType: "binary", Precision: 0, ColumnType: "binary(16)"}
 	swapTm := TypeMappingConfig{Binary16AsUUID: true, Binary16UUIDMode: "mysql_uuid_to_bin_swap", SanitizeJSONNullBytes: true, EnumMode: "text", SetMode: "text", BitMode: "bytea"}
