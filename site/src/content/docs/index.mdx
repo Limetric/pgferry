@@ -51,7 +51,7 @@ schema = "app"
 on_schema_exists = "recreate"
 
 [source]
-type = "mysql" # or "mariadb"
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [target]
@@ -73,7 +73,7 @@ resume = true
 validation = "row_count"
 
 [source]
-type = "mysql" # or "mariadb"
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
 [target]
