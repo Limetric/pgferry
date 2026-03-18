@@ -9,13 +9,28 @@ sidebar:
 
 ## Download a release
 
-Grab the latest binary from [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest).
+Grab the latest binary for your platform from [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest).
 
-After downloading, verify the binary is reachable:
+On Linux and macOS, make the binary executable after downloading:
 
 ```bash
+chmod +x pgferry
+```
+
+You can either move it somewhere on your PATH:
+
+```bash
+sudo mv pgferry /usr/local/bin/
 pgferry version
 ```
+
+Or run it directly from wherever you downloaded it:
+
+```bash
+./pgferry version
+```
+
+The rest of the docs use `pgferry` without `./` — just adjust if you haven't added it to your PATH.
 
 ## Build from source
 
@@ -25,12 +40,6 @@ cd pgferry
 go build -o build/pgferry .
 ./build/pgferry version
 ```
-
-## What the binary expects
-
-- A source DSN for MySQL, SQLite, or MSSQL.
-- A target PostgreSQL DSN.
-- A TOML config file describing schema, type mapping, and migration behavior.
 
 ## Next step
 
