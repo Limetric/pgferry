@@ -411,6 +411,33 @@ func TestSuggestSchemaNameUsesSourceDatabaseWhenDifferentFromTargetDatabase(t *t
 	}
 }
 
+func TestValidateWizardTargetDSN_AcceptsPercentEncodedUnicode(t *testing.T) {
+	dsn := "postgres://postgres:p%C2%A3ss@127.0.0.1:5432/target?sslmode=disable"
+
+	// pgloader issue #1666 reports a PostgreSQL DSN failure around special
+	// characters. Decoding is delegated to pgx/net/url; this just documents that
+	// properly percent-encoded non-ASCII credentials are accepted by the validator.
+	if err := validateWizardTargetDSN(dsn); err != nil {
+		t.Fatalf("validateWizardTargetDSN() error: %v", err)
+	}
+}
+
+func TestValidateWizardTargetDSN_RejectsInvalidUserinfo(t *testing.T) {
+	badPassword := string([]byte{'p', 'a', 's', 0xc2, 's'})
+	dsn := "postgres://postgres:" + badPassword + "@127.0.0.1:5432/target?sslmode=disable"
+
+	// Raw non-ASCII bytes in URL userinfo are rejected by the current pgx/net/url
+	// parser path as invalid userinfo; this documents the present boundary rather
+	// than claiming pgferry implements its own UTF-8 validation.
+	err := validateWizardTargetDSN(dsn)
+	if err == nil {
+		t.Fatal("validateWizardTargetDSN() expected error for invalid URL userinfo")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "invalid userinfo") {
+		t.Fatalf("validateWizardTargetDSN() error = %q, want invalid userinfo parse failure", err)
+	}
+}
+
 func wizardBlankInputs(n int) []string {
 	lines := make([]string, n)
 	for i := range lines {
