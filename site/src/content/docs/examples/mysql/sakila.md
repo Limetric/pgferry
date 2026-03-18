@@ -16,6 +16,8 @@ source_snapshot_mode = "none"
 unlogged_tables = false
 clean_orphans = true
 preserve_defaults = true
+add_unsigned_checks = false
+replicate_on_update_current_timestamp = false
 workers = 4
 
 [source]
@@ -24,6 +26,16 @@ dsn = "root:root@tcp(127.0.0.1:3306)/sakila"
 
 [target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/sakila"
+
+[type_mapping]
+tinyint1_as_boolean = false
+binary16_as_uuid = false
+datetime_as_timestamptz = false
+json_as_jsonb = true
+enum_mode = "check"
+set_mode = "text"
+sanitize_json_null_bytes = true
+unknown_as_text = false
 
 [hooks]
 before_data = []

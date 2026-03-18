@@ -36,6 +36,12 @@ money_as_numeric = true
 xml_as_text = false
 sanitize_json_null_bytes = true
 unknown_as_text = false
+
+[hooks]
+before_data = []
+after_data = []
+before_fk = []
+after_all = []
 ```
 
 Raw files: [migration.toml](https://github.com/Limetric/pgferry/blob/main/examples/mssql/recreate-fast/migration.toml)

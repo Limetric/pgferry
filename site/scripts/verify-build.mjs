@@ -24,6 +24,8 @@ const expectedRoutes = [
 	'/reference/hooks/',
 	'/reference/conventions-and-limitations/',
 	'/examples/',
+	'/examples/mariadb/',
+	'/examples/mariadb/minimal-safe/',
 	'/examples/mysql/minimal-safe/',
 	'/examples/sqlite/minimal-safe/',
 	'/examples/mssql/minimal-safe/',

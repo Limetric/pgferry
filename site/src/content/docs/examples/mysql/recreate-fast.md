@@ -17,6 +17,7 @@ on_schema_exists = "recreate"
 source_snapshot_mode = "none"
 unlogged_tables = true
 clean_orphans = true
+clean_orphans_mode = "apply"
 preserve_defaults = true
 add_unsigned_checks = false
 replicate_on_update_current_timestamp = false
@@ -38,6 +39,12 @@ enum_mode = "check"
 set_mode = "text"
 sanitize_json_null_bytes = true
 unknown_as_text = false
+
+[hooks]
+before_data = []
+after_data = []
+before_fk = []
+after_all = []
 ```
 
 ## Run it

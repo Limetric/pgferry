@@ -52,21 +52,20 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 ```
 
 Any PostgreSQL `sslmode` is supported. `sslmode=disable` is just a local example.
-Any valid PostgreSQL `sslmode` works here. `sslmode=disable` is only shown in the example because it is a common local-development setting.
 
 `pgferry migration.toml` remains supported as a shorthand for `pgferry migrate migration.toml`.
 
 ## Examples
 
-The [`examples/`](examples/) directory is split by source type.
+Use the docs site for copy-pasteable example configs and walkthroughs:
 
-**MySQL:** [`minimal-safe`](examples/mysql/minimal-safe/), [`recreate-fast`](examples/mysql/recreate-fast/), [`hooks`](examples/mysql/hooks/), [`sakila`](examples/mysql/sakila/), [`schema-only`](examples/mysql/schema-only/), [`data-only`](examples/mysql/data-only/), [`chunked-resume`](examples/mysql/chunked-resume/)
+- [All examples](https://pgferry.com/examples/)
+- [MySQL examples](https://pgferry.com/examples/mysql/)
+- [MariaDB examples](https://pgferry.com/examples/mariadb/)
+- [SQLite examples](https://pgferry.com/examples/sqlite/)
+- [MSSQL examples](https://pgferry.com/examples/mssql/)
 
-**MariaDB:** [`minimal-safe`](examples/mariadb/minimal-safe/)
-
-**SQLite:** [`minimal-safe`](examples/sqlite/minimal-safe/), [`recreate-fast`](examples/sqlite/recreate-fast/), [`hooks`](examples/sqlite/hooks/), [`schema-only`](examples/sqlite/schema-only/), [`data-only`](examples/sqlite/data-only/), [`chunked-resume`](examples/sqlite/chunked-resume/)
-
-**MSSQL:** [`minimal-safe`](examples/mssql/minimal-safe/), [`recreate-fast`](examples/mssql/recreate-fast/)
+The raw example files still live in [`examples/`](examples/).
 
 ## Documentation
 
@@ -74,10 +73,11 @@ The website is the primary end-user docs surface:
 
 - [Install](https://pgferry.com/get-started/install/)
 - [Quick Start](https://pgferry.com/get-started/quick-start/)
-- [Plan and Validate](https://pgferry.com/get-started/plan-and-validate/)
+- [Advanced Options](https://pgferry.com/get-started/advanced-options/)
 - [Migration Patterns](https://pgferry.com/migration-patterns/)
-- [Source Guides](https://pgferry.com/source-guides/)
+- [Guides](https://pgferry.com/guides/)
 - [Examples](https://pgferry.com/examples/)
+- [Operations](https://pgferry.com/operations/)
 - [Reference](https://pgferry.com/reference/)
 
 ## How it's built

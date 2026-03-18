@@ -45,7 +45,7 @@ Use the wizard to generate `migration.toml`.
 If you already know your source type and want a fuller starter instead, jump to:
 
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
-- [MariaDB minimal-safe example](/examples/mariadb/)
+- [MariaDB minimal-safe example](/examples/mariadb/minimal-safe/)
 - [SQLite minimal-safe example](/examples/sqlite/minimal-safe/)
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 

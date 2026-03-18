@@ -25,6 +25,17 @@ dsn = "./source.db"
 
 [target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+
+[type_mapping]
+json_as_jsonb = true
+sanitize_json_null_bytes = true
+unknown_as_text = false
+
+[hooks]
+before_data = []
+after_data = []
+before_fk = []
+after_all = []
 ```
 
 Raw files: [migration.toml](https://github.com/Limetric/pgferry/blob/main/examples/sqlite/recreate-fast/migration.toml)

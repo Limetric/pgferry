@@ -7,7 +7,7 @@ MariaDB is a first-class pgferry source type. It shares most MySQL-family behavi
 
 ## Start here
 
-- [minimal-safe example](/examples/mariadb/)
+- [minimal-safe example](/examples/mariadb/minimal-safe/)
 - [configuration reference](/reference/configuration/)
 - [type mapping reference](/reference/type-mapping/)
 

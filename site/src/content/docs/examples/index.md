@@ -9,7 +9,7 @@ Use the examples section when you want a working starting point instead of an ab
 
 - First production-style rehearsal:
   [MySQL minimal-safe](/examples/mysql/minimal-safe/),
-  [MariaDB minimal-safe](/examples/mariadb/),
+  [MariaDB minimal-safe](/examples/mariadb/minimal-safe/),
   [SQLite minimal-safe](/examples/sqlite/minimal-safe/),
   [MSSQL minimal-safe](/examples/mssql/minimal-safe/)
 - Fast disposable reloads:
