@@ -1,18 +1,21 @@
 ---
 title: pgferry
-description: Move MySQL, SQLite, or MSSQL into PostgreSQL without trusting a brittle black box.
+description: The operator-first docs surface for MySQL, SQLite, and MSSQL migrations into PostgreSQL.
 template: splash
+head:
+  - tag: title
+    content: pgferry
 hero:
-  tagline: Deterministic schema conversion, resumable COPY loads, and the operator controls you need when the source database is messy.
+  tagline: Migrate MySQL, SQLite, or MSSQL into PostgreSQL with a plan-first workflow, copy-pasteable configs, and explicit handling for the messy parts.
   actions:
-    - text: Install
+    - text: Install CLI
       link: /get-started/install/
       icon: right-arrow
     - text: Quick Start
       link: /get-started/quick-start/
       icon: right-arrow
-    - text: Browse Examples
-      link: /examples/
+    - text: Advanced Options
+      link: /get-started/advanced-options/
       icon: right-arrow
     - text: GitHub
       link: https://github.com/Limetric/pgferry
@@ -20,80 +23,90 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
-
 <div class="hero-band">
-	<span>MySQL 5.7+</span>
+	<p class="hero-band-header">CI-tested sources</p>
+	<span>MySQL 5.7, 8.0, LTS, and Innovation</span>
 	<span>SQLite</span>
-	<span>MSSQL 2017-2025</span>
-	<span>PostgreSQL target</span>
-	<span>Chunked COPY</span>
-	<span>Plan before migrate</span>
+	<span>MSSQL 2017, 2019, 2022, and 2025</span>
 </div>
 
-## Why pgferry exists
+<section class="hero-recommendation">
+	<p class="eyebrow">Real migrations, no surprises</p>
+	<h2>Introspects your source schema, creates matching PostgreSQL tables, and streams data — then adds keys, indexes, foreign keys, sequences, and triggers after the load.</h2>
+	<p>For most migrations, that covers the entire pipeline end to end. When something can't be migrated automatically — views, routines, generated-column expressions, or unsupported index types — <code>pgferry plan</code> tells you before any data is touched. No surprises, no black box.</p>
+</section>
 
-Most migration tools are fine until the schema gets ugly: generated columns, unsupported indexes, collations, extension-backed types, or the first interruption halfway through a bulk copy. `pgferry` was built for that failure mode.
+## Two valid approaches, both easy
 
-<div class="signal-grid">
-	<article>
-		<h3>One config file</h3>
-		<p>Use one TOML file to define source, target, hooks, validation, type mapping, and cutover behavior.</p>
-	</article>
-	<article>
-		<h3>Preflight first</h3>
-		<p><code>pgferry plan</code> finds unsupported objects and generates hook skeletons before PostgreSQL is touched.</p>
-	</article>
-	<article>
-		<h3>Resume when reality happens</h3>
-		<p>Checkpointed chunking means long migrations can survive network failures and operator mistakes.</p>
-	</article>
-	<article>
-		<h3>Modern edge cases included</h3>
-		<p>PostGIS, <code>citext</code>, generated columns, source-specific type mapping, and bounded post-load parallelism are all first-class.</p>
-	</article>
-</div>
+Both are a single config file. Fast is great for dev iterations and works fine for production when you can afford to re-run from scratch. Safe adds crash recovery and validation for when you can't.
 
-## What you get
+<div class="config-compare">
+	<div class="config-compare-col">
+		<p class="config-compare-label">Fast</p>
+		<div class="config-panel">
 
-<CardGrid>
-	<Card title="Introspection that errs on the side of honesty" icon="list">
-		Source schema analysis reports unsupported types, generated columns, skipped indexes, views, routines, and triggers that need manual handling.
-	</Card>
-	<Card title="COPY performance with control" icon="bolt">
-		Chunked range planning for eligible tables, worker pools for the hot path, and bounded index creation during post-migration cleanup.
-	</Card>
-	<Card title="Operational escape hatches" icon="gear">
-		Hooks at four phases, <code>schema_only</code> and <code>data_only</code> modes, orphan cleanup, snapshot options, and configurable defaults preservation.
-	</Card>
-	<Card title="Validation instead of vibes" icon="check-circle">
-		Optional row-count checks and explicit logging reduce the number of surprises left for cutover day.
-	</Card>
-</CardGrid>
+```toml
+schema = "app"
+on_schema_exists = "recreate"
 
-## Default path through a migration
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
 
-```bash
-pgferry plan migration.toml
-pgferry migrate migration.toml
+[target]
+dsn = "postgres://…/target_db?sslmode=disable"
 ```
 
-1. Inspect the source and generate a preflight report.
-2. Fill in hooks for views, routines, or custom data cleanup.
-3. Run the migration with chunking, checkpoints, and optional validation.
-4. Review post-load objects, row counts, and extension-backed features before cutover.
+</div>
+		<p class="config-compare-note">Drops the target schema, skips WAL logging, and optimizes for speed. Ideal for disposable dev or staging targets you rebuild often.</p>
+	</div>
+	<div class="config-compare-col">
+		<p class="config-compare-label">Safe</p>
+		<div class="config-panel">
 
-## Source matrix
+```toml
+schema = "app"
+on_schema_exists = "error"
+unlogged_tables = false
+resume = true
+validation = "row_count"
 
-| Source | Driver | Workers | Snapshot mode |
-| ------ | ------ | ------- | ------------- |
-| MySQL | `go-sql-driver/mysql` | Parallel | `none`, `single_tx` |
-| SQLite | `modernc.org/sqlite` | Sequential | `none` |
-| MSSQL | `go-mssqldb` | Parallel | `none`, `single_tx` |
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+
+[target]
+dsn = "postgres://…/target_db?sslmode=disable"
+```
+
+</div>
+		<p class="config-compare-note">Refuses to overwrite existing schemas, keeps WAL logging for crash safety, checkpoints progress, and validates row counts after the load.</p>
+	</div>
+</div>
+
+## How pgferry compares
+
+Every tool makes different trade-offs. Here's how pgferry stacks up against the alternatives you're most likely evaluating.
+
+| | pgferry | pgloader | AWS DMS |
+| --- | --- | --- | --- |
+| Install | ✅ Single binary | ⚠️ Lisp toolchain or Docker | ☁️ Managed AWS service |
+| Config format | TOML | Custom Lisp-inspired DSL | JSON + AWS Console |
+| MySQL source | ✅ | ✅ | ✅ |
+| SQLite source | ✅ | ✅ | ❌ |
+| MSSQL source | ✅ | ✅ | ✅ |
+| Preflight plan | ✅ Reports issues before data is touched | ❌ | ✅ Premigration assessment |
+| Resumable loads | ✅ Checkpoint-based chunking | ❌ | ✅ Checkpoint-based |
+| Hook phases | ✅ 4 phases | ⚠️ 2 phases | ❌ External orchestration |
+| Post-load validation | ✅ Row counts + sampled hash | ❌ | ✅ Row-level comparison |
+| Self-hosted | ✅ | ✅ | ❌ AWS only |
+| Cost | ✅ Free and open source | ✅ Free and open source | 💰 Per replication instance hour |
+
+pgloader has migrated a lot of databases over the years, but maintenance has slowed — it currently can't connect to MySQL 8.4+ due to missing `caching_sha2_password` support, and building from source requires the full Lisp toolchain. AWS DMS is the right choice when you're already in AWS and want a managed service. pgferry is for operators who want a single binary with explicit config, a plan-before-migrate workflow, and no surprises when things get messy.
 
 ## Read next
 
-- [Install pgferry](/get-started/install/)
-- [Quick start for MySQL, SQLite, and MSSQL](/get-started/quick-start/)
-- [Plan and validate before cutover](/get-started/plan-and-validate/)
-- [Examples by source database](/examples/)
+- [Start with install and quick start](/get-started/install/)
+- [Choose a migration pattern](/migration-patterns/)
+- [Read the guides](/guides/)
+- [Pick a copy-pasteable example](/examples/)
