@@ -18,12 +18,6 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 
 CI runs integration tests across MySQL 5.7, 8.0, LTS, and Innovation, MSSQL 2017 through 2025, and SQLite against the latest PostgreSQL release on every commit.
 
-| Source | Driver                         | Workers                 | Snapshot mode       |
-| ------ | ------------------------------ | ----------------------- | ------------------- |
-| MySQL  | `go-sql-driver/mysql`          | Parallel (configurable) | `none`, `single_tx` |
-| SQLite | `modernc.org/sqlite` (pure Go) | Sequential (1 worker)   | `none` only         |
-| MSSQL  | `go-mssqldb` (pure Go)         | Parallel (configurable) | `none`, `single_tx` |
-
 ## Install
 
 Download the latest binary from [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest), or build from source:
