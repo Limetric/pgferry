@@ -79,5 +79,5 @@ The migrate command runs the full pipeline:
 
 After the first run, move to:
 
-- [Choose Your Path](/get-started/choose-your-path/) if you need more operational control
-- [Plan and Validate](/get-started/plan-and-validate/) before pointing the tool at a real production schema
+- [Advanced Options](/get-started/choose-your-path/) for hooks, resume, snapshot mode, type mapping, and more
+- [Plan and Validate](/get-started/choose-your-path/#plan-and-preflight) before pointing the tool at a real production schema

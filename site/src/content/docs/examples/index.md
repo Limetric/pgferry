@@ -43,5 +43,5 @@ Use the examples section when you want a working starting point instead of an ab
 
 1. Replace the source and target DSNs with your real endpoints.
 2. Run `pgferry plan migration.toml` first.
-3. Read the matching [source guide](/source-guides/) for source-specific constraints.
+3. Read the matching [guide](/guides/) for source-specific constraints.
 4. Decide whether you want the safe path, the fast disposable path, or the resumable path before you start editing flags.

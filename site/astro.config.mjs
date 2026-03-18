@@ -77,8 +77,8 @@ export default defineConfig({
 					autogenerate: { directory: 'migration-patterns' },
 				},
 				{
-					label: 'Source Guides',
-					autogenerate: { directory: 'source-guides' },
+					label: 'Guides',
+					autogenerate: { directory: 'guides' },
 				},
 				{
 					label: 'Examples',
