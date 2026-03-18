@@ -2,20 +2,20 @@ package main
 
 // Column represents a single column from the source database.
 type Column struct {
-	SourceName string
-	PGName     string
-	DataType   string // e.g. "binary", "int", "varchar"
-	ColumnType string // full type e.g. "tinyint(1)", "enum('a','b')"
-	CharMaxLen int64
-	Precision  int64
-	Scale      int64
-	Nullable   bool
-	Default    *string
+	SourceName           string
+	PGName               string
+	DataType             string // e.g. "binary", "int", "varchar"
+	ColumnType           string // full type e.g. "tinyint(1)", "enum('a','b')"
+	CharMaxLen           int64
+	Precision            int64
+	Scale                int64
+	Nullable             bool
+	Default              *string
 	Extra                string // e.g. "auto_increment", "on update CURRENT_TIMESTAMP"
 	GenerationExpression string // actual expression for generated columns (MySQL GENERATION_EXPRESSION)
-	OrdinalPos int
-	Charset    string // e.g. "utf8mb4" — MySQL only, zero-value for SQLite
-	Collation  string // e.g. "utf8mb4_general_ci" — MySQL only, zero-value for SQLite
+	OrdinalPos           int
+	Charset              string // e.g. "utf8mb4" — MySQL only, zero-value for SQLite
+	Collation            string // e.g. "utf8mb4_general_ci" — MySQL only, zero-value for SQLite
 }
 
 // Index represents a source database index (may span multiple columns).
@@ -35,7 +35,8 @@ type Index struct {
 type ForeignKey struct {
 	Name       string
 	Columns    []string // local PG column names
-	RefTable   string   // referenced MySQL table name
+	RefSchema  string   // referenced source schema when available (MSSQL), empty for single-schema backends
+	RefTable   string   // referenced source table name
 	RefPGTable string   // referenced PG table name (snake_case)
 	RefColumns []string // referenced PG column names
 	UpdateRule string   // CASCADE, SET NULL, etc.

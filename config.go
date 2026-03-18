@@ -16,6 +16,8 @@ type MigrationConfig struct {
 	Target                            TargetConfig      `toml:"target"`
 	PostGIS                           PostGISConfig     `toml:"postgis"`
 	Schema                            string            `toml:"schema"`
+	IncludeTables                     []string          `toml:"include_tables"`
+	ExcludeTables                     []string          `toml:"exclude_tables"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
 	DataOnly                          bool              `toml:"data_only"`
@@ -169,6 +171,16 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.Schema == "" {
 		return fmt.Errorf("schema is required")
 	}
+	includeTables, err := normalizeTableFilterEntries("include_tables", cfg.IncludeTables)
+	if err != nil {
+		return err
+	}
+	cfg.IncludeTables = includeTables
+	excludeTables, err := normalizeTableFilterEntries("exclude_tables", cfg.ExcludeTables)
+	if err != nil {
+		return err
+	}
+	cfg.ExcludeTables = excludeTables
 
 	if cfg.OnSchemaExists == "" {
 		cfg.OnSchemaExists = "error"
@@ -393,4 +405,35 @@ func effectiveTypeMapping(cfg *MigrationConfig) TypeMappingConfig {
 	tm := effectiveTypeMappingForSource(cfg.TypeMapping, cfg.Source.Type)
 	tm.UsePostGIS = cfg.PostGIS.Enabled
 	return tm
+}
+
+func normalizeTableFilterEntries(field string, entries []string) ([]string, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	out := make([]string, 0, len(entries))
+	seen := make(map[string]string, len(entries))
+	for _, raw := range entries {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			return nil, fmt.Errorf("%s entries must be non-empty", field)
+		}
+		if strings.ContainsAny(name, "*?[]") {
+			return nil, fmt.Errorf("%s entry %q is invalid: glob patterns are not supported; use exact source table names", field, raw)
+		}
+
+		key := normalizeTableFilterKey(name)
+		if prev, ok := seen[key]; ok {
+			return nil, fmt.Errorf("%s contains duplicate table name %q (conflicts with %q after normalization)", field, name, prev)
+		}
+		seen[key] = name
+		out = append(out, name)
+	}
+
+	return out, nil
+}
+
+func normalizeTableFilterKey(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
 }

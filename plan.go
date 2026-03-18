@@ -159,6 +159,14 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("introspect schema: %w", err)
 	}
+	filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("filter schema tables: %w", err)
+	}
+	schema = filteredSchema
+	if hasTableFilters(cfg) {
+		logTableFilterReport(filterReport)
+	}
 
 	sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName)
 	if err != nil {

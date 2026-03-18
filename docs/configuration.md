@@ -27,6 +27,16 @@ TOML for later reuse, execute it immediately, or do both.
 # Target PostgreSQL schema name (required)
 schema = "app"
 
+# Optional source-table allowlist. Matching uses source table names, not PostgreSQL names.
+# Exact names only (no globs). Matching is case-insensitive after trimming whitespace.
+# Default: [] (all tables)
+include_tables = ["orders", "order_items"]
+
+# Optional source-table denylist applied after include_tables.
+# Foreign keys that point to excluded tables are skipped automatically.
+# Default: []
+exclude_tables = ["audit_log"]
+
 # What to do if the schema already exists: "error" (default) or "recreate"
 # "error"    — abort if the schema exists
 # "recreate" — DROP CASCADE then re-create
@@ -217,6 +227,35 @@ after_all = []     # after everything (views, ANALYZE, etc.)
 
 See [Hooks](hooks.md) for details on the hook system.
 
+## Table selection
+
+Use `include_tables` and `exclude_tables` when you want to migrate only part of
+the source schema:
+
+```toml
+include_tables = ["orders", "order_items", "customers"]
+exclude_tables = ["audit_log"]
+```
+
+Semantics:
+
+- Matching uses **source table names**, not transformed PostgreSQL names.
+- Matching is exact-name only. Globs such as `tmp_*` are rejected.
+- Matching is case-insensitive after trimming whitespace.
+- `exclude_tables` is applied after `include_tables`.
+- If both lists are empty, pgferry migrates every introspected table.
+- If a selected table has a foreign key to an excluded table, that foreign key
+  is skipped and logged during filtering.
+- `validation`, orphan cleanup, post-migration FK creation, and resume
+  compatibility all operate on the filtered table set.
+
+Validation rules for table filters:
+
+- blank entries are rejected
+- duplicate names after normalization are rejected
+- explicitly named tables must exist in the source schema
+- filters that exclude every table fail instead of running a no-op migration
+
 ## SQLite DSN formats
 
 SQLite accepts file paths or file URIs. pgferry opens the database in **read-only mode**.
@@ -279,6 +318,7 @@ pgferry validates the config at load time and reports errors before connecting t
 | Field | Rule |
 |---|---|
 | `schema` | Required, must be non-empty after trimming whitespace |
+| `include_tables` / `exclude_tables` | Exact source table names only; blank entries, globs, and duplicates after normalization are rejected |
 | `on_schema_exists` | Must be `"error"` or `"recreate"` |
 | `source_snapshot_mode` | Must be `"none"` or `"single_tx"` |
 | `source.type` | Required, must be `"mysql"`, `"sqlite"`, or `"mssql"` |
@@ -315,6 +355,8 @@ Fields omitted from the TOML file use these defaults:
 | `snake_case_identifiers` | `true` |
 | `schema_only` | `false` |
 | `data_only` | `false` |
+| `include_tables` | `[]` |
+| `exclude_tables` | `[]` |
 | `source_snapshot_mode` | `"none"` |
 | `unlogged_tables` | `true` |
 | `preserve_defaults` | `true` |

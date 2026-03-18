@@ -720,6 +720,33 @@ func TestPersistentCheckpointManager_RejectsChangedUnloggedTables(t *testing.T) 
 	}
 }
 
+func TestPersistentCheckpointManager_RejectsChangedFilteredTableSet(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	compat := testCheckpointCompatibility()
+	state := newCheckpointStateWithCompatibility(&compat)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	incompatibleSummary := *compat.Summary
+	incompatibleSummary.Tables = append(incompatibleSummary.Tables, checkpointCompatibilityTable{
+		SourceName: "orders",
+		PGName:     "orders",
+		TableHash:  "orders-hash",
+	})
+	incompatible := testCheckpointCompatibilityWithSummary(incompatibleSummary)
+
+	_, err := newPersistentCheckpointManager(path, &incompatible)
+	if err == nil {
+		t.Fatal("expected incompatibility error")
+	}
+	if !strings.Contains(err.Error(), "table added") {
+		t.Fatalf("expected filtered table-set mismatch, got: %v", err)
+	}
+}
+
 func TestPersistentCheckpointManager_FallsBackToGenericFingerprintReason(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
