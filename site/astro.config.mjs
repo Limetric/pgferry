@@ -22,9 +22,6 @@ const site =
 	normalizeURL(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
 	normalizeURL(process.env.VERCEL_URL) ||
 	'https://pgferry.com';
-const plausibleDomain = process.env.PUBLIC_PLAUSIBLE_DOMAIN || '';
-const plausibleSrc = process.env.PUBLIC_PLAUSIBLE_SRC || '';
-const plausibleAPI = process.env.PUBLIC_PLAUSIBLE_API || '';
 
 const head = [
 	{
@@ -32,18 +29,6 @@ const head = [
 		attrs: { name: 'theme-color', content: '#11243c' },
 	},
 ];
-
-if (plausibleDomain && plausibleSrc) {
-	head.push({
-		tag: 'script',
-		attrs: {
-			defer: true,
-			src: plausibleSrc,
-			'data-domain': plausibleDomain,
-			...(plausibleAPI ? { 'data-api': plausibleAPI } : {}),
-		},
-	});
-}
 
 export default defineConfig({
 	site,

@@ -1,6 +1,9 @@
 ---
 import DefaultPageFrame from '@astrojs/starlight/components/PageFrame.astro';
 import SpeedInsights from '@vercel/speed-insights/astro';
+
+const plausibleDomain = import.meta.env.PUBLIC_PLAUSIBLE_DOMAIN?.trim() ?? '';
+const plausibleAPI = import.meta.env.PUBLIC_PLAUSIBLE_API?.trim() ?? '';
 ---
 
 <DefaultPageFrame>
@@ -11,5 +14,17 @@ import SpeedInsights from '@vercel/speed-insights/astro';
 		<slot name="sidebar" />
 	</Fragment>
 	<slot />
+	{
+		plausibleDomain && (
+			<script type="module" define:vars={{ plausibleAPI, plausibleDomain }}>
+				import { init } from '@plausible-analytics/tracker';
+
+				init({
+					domain: plausibleDomain,
+					...(plausibleAPI ? { endpoint: plausibleAPI } : {}),
+				});
+			</script>
+		)
+	}
 	<SpeedInsights />
 </DefaultPageFrame>

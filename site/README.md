@@ -42,7 +42,6 @@ Add these in Vercel under Project Settings -> Environment Variables:
 
 - `SITE_URL=https://pgferry.com`
 - `PUBLIC_PLAUSIBLE_DOMAIN=pgferry.com`
-- `PUBLIC_PLAUSIBLE_SRC=https://your-plausible-host/js/script.js`
 - `PUBLIC_PLAUSIBLE_API=https://your-plausible-host/api/event` (optional)
 
 `SITE_URL` should be a full absolute URL with protocol. Example: `https://pgferry.com`, not just `pgferry.com`.
@@ -82,11 +81,10 @@ bun run check-routes
 
 ## Plausible
 
-The site only injects the Plausible script when the relevant environment variables are present:
+The site initializes `@plausible-analytics/tracker` in the browser only when the relevant environment variables are present:
 
 - `SITE_URL`
 - `PUBLIC_PLAUSIBLE_DOMAIN`
-- `PUBLIC_PLAUSIBLE_SRC`
 - `PUBLIC_PLAUSIBLE_API` (optional)
 
 Example values for a self-hosted instance:
@@ -94,6 +92,5 @@ Example values for a self-hosted instance:
 ```bash
 SITE_URL=https://pgferry.com
 PUBLIC_PLAUSIBLE_DOMAIN=pgferry.com
-PUBLIC_PLAUSIBLE_SRC=https://plausible.example.com/js/script.js
 PUBLIC_PLAUSIBLE_API=https://plausible.example.com/api/event
 ```
