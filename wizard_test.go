@@ -411,6 +411,28 @@ func TestSuggestSchemaNameUsesSourceDatabaseWhenDifferentFromTargetDatabase(t *t
 	}
 }
 
+func TestValidateWizardTargetDSN_AcceptsPercentEncodedUnicode(t *testing.T) {
+	dsn := "postgres://postgres:p%C2%A3ss@127.0.0.1:5432/target?sslmode=disable"
+
+	if err := validateWizardTargetDSN(dsn); err != nil {
+		t.Fatalf("validateWizardTargetDSN() error: %v", err)
+	}
+}
+
+func TestValidateWizardTargetDSN_RejectsInvalidUTF8(t *testing.T) {
+	badPassword := string([]byte{'p', 'a', 's', 0xc2, 's'})
+	dsn := "postgres://postgres:" + badPassword + "@127.0.0.1:5432/target?sslmode=disable"
+
+	err := validateWizardTargetDSN(dsn)
+	if err == nil {
+		t.Fatal("validateWizardTargetDSN() expected error for malformed UTF-8")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "utf") &&
+		!strings.Contains(strings.ToLower(err.Error()), "invalid") {
+		t.Fatalf("validateWizardTargetDSN() error = %q, want UTF-8/invalid parse failure", err)
+	}
+}
+
 func wizardBlankInputs(n int) []string {
 	lines := make([]string, n)
 	for i := range lines {
