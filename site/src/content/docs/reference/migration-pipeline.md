@@ -90,7 +90,7 @@ Tradeoff: this is slower than the default full pipeline because data is loaded w
 
 ### `source_snapshot_mode = "single_tx"`
 
-- Supported on MySQL and MSSQL.
+- Supported on MySQL, MariaDB, and MSSQL.
 - Reads the source inside one read-only transaction for a stable point-in-time view.
 - Gives up parallel source reads for consistency.
 
@@ -103,6 +103,7 @@ pgferry chunks a table only when it has a single-column numeric primary key.
 ### Chunkable tables
 
 - MySQL integer PKs such as `tinyint`, `smallint`, `mediumint`, `int`, `bigint`
+- MariaDB integer PKs such as `tinyint`, `smallint`, `mediumint`, `int`, `bigint`
 - SQLite integer primary keys
 - MSSQL numeric integer primary keys
 

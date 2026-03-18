@@ -86,48 +86,48 @@ func (m *mssqlSourceDB) ExtractDBName(dsn string) (string, error) {
 func (m *mssqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	var errs []string
 
-	// MySQL-only options
+	// MySQL/MariaDB-only options
 	if typeMap.TinyInt1AsBoolean {
-		errs = append(errs, "tinyint1_as_boolean is a MySQL-only option")
+		errs = append(errs, "tinyint1_as_boolean is a MySQL/MariaDB-only option")
 	}
 	if typeMap.Binary16AsUUID {
-		errs = append(errs, "binary16_as_uuid is a MySQL-only option")
+		errs = append(errs, "binary16_as_uuid is a MySQL/MariaDB-only option")
 	}
 	if typeMap.VarcharAsText {
-		errs = append(errs, "varchar_as_text is a MySQL-only option")
+		errs = append(errs, "varchar_as_text is a MySQL/MariaDB-only option")
 	}
 	if !typeMap.WidenUnsignedIntegers {
-		errs = append(errs, "widen_unsigned_integers is a MySQL-only option")
+		errs = append(errs, "widen_unsigned_integers is a MySQL/MariaDB-only option")
 	}
 	if effectiveTypeMappingForSource(typeMap, "mssql").EnumMode != "text" {
-		errs = append(errs, fmt.Sprintf("enum_mode=%q is a MySQL-only option", typeMap.EnumMode))
+		errs = append(errs, fmt.Sprintf("enum_mode=%q is a MySQL/MariaDB-only option", typeMap.EnumMode))
 	}
 	if typeMap.SetMode != "text" {
-		errs = append(errs, fmt.Sprintf("set_mode=%q is a MySQL-only option", typeMap.SetMode))
+		errs = append(errs, fmt.Sprintf("set_mode=%q is a MySQL/MariaDB-only option", typeMap.SetMode))
 	}
 	if typeMap.CollationMode != "none" {
-		errs = append(errs, fmt.Sprintf("collation_mode=%q is a MySQL-only option", typeMap.CollationMode))
+		errs = append(errs, fmt.Sprintf("collation_mode=%q is a MySQL/MariaDB-only option", typeMap.CollationMode))
 	}
 	if len(typeMap.CollationMap) > 0 {
-		errs = append(errs, "collation_map is a MySQL-only option")
+		errs = append(errs, "collation_map is a MySQL/MariaDB-only option")
 	}
 	if typeMap.CIAsCitext {
-		errs = append(errs, "ci_as_citext is a MySQL-only option")
+		errs = append(errs, "ci_as_citext is a MySQL/MariaDB-only option")
 	}
 	if typeMap.BitMode != "bytea" {
-		errs = append(errs, fmt.Sprintf("bit_mode=%q is a MySQL-only option", typeMap.BitMode))
+		errs = append(errs, fmt.Sprintf("bit_mode=%q is a MySQL/MariaDB-only option", typeMap.BitMode))
 	}
 	if typeMap.StringUUIDAsUUID {
-		errs = append(errs, "string_uuid_as_uuid is a MySQL-only option")
+		errs = append(errs, "string_uuid_as_uuid is a MySQL/MariaDB-only option")
 	}
 	if typeMap.Binary16UUIDMode != "rfc4122" {
-		errs = append(errs, fmt.Sprintf("binary16_uuid_mode=%q is a MySQL-only option", typeMap.Binary16UUIDMode))
+		errs = append(errs, fmt.Sprintf("binary16_uuid_mode=%q is a MySQL/MariaDB-only option", typeMap.Binary16UUIDMode))
 	}
 	if typeMap.TimeMode != "time" {
-		errs = append(errs, fmt.Sprintf("time_mode=%q is a MySQL-only option", typeMap.TimeMode))
+		errs = append(errs, fmt.Sprintf("time_mode=%q is a MySQL/MariaDB-only option", typeMap.TimeMode))
 	}
 	if typeMap.ZeroDateMode != "null" {
-		errs = append(errs, fmt.Sprintf("zero_date_mode=%q is a MySQL-only option", typeMap.ZeroDateMode))
+		errs = append(errs, fmt.Sprintf("zero_date_mode=%q is a MySQL/MariaDB-only option", typeMap.ZeroDateMode))
 	}
 
 	if len(errs) > 0 {

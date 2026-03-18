@@ -583,15 +583,15 @@ func buildSourceSelectQuery(src SourceDB, table Table, typeMap TypeMappingConfig
 // wkt_text mode use ST_AsText() to produce Well-Known Text output.
 func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) string {
 	quoted := src.QuoteIdentifier(col.SourceName)
-	switch src.Name() {
-	case "MySQL":
+	switch {
+	case isMySQLFamilySource(src):
 		if isMySQLSpatialType(col.DataType) && typeMap.UsePostGIS {
 			return mysqlPostGISSelectExpr(src, quoted)
 		}
 		if isMySQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkt_text" {
 			return fmt.Sprintf("ST_AsText(%s) AS %s", quoted, quoted)
 		}
-	case "MSSQL":
+	case sourceTypeForDB(src) == "mssql":
 		switch {
 		case col.DataType == "hierarchyid":
 			return fmt.Sprintf("%s.ToString() AS %s", quoted, quoted)
@@ -607,9 +607,9 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 }
 
 func mysqlPostGISSelectExpr(src SourceDB, quoted string) string {
-	mysqlSrc := src.(*mysqlSourceDB)
+	mysqlSrc := mysqlFamilyBaseSource(src)
 	wkbExpr := fmt.Sprintf("ST_AsWKB(%s)", quoted)
-	if mysqlSrc.supportsAxisOrderOption() {
+	if mysqlSrc != nil && mysqlSrc.supportsAxisOrderOption() {
 		wkbExpr = fmt.Sprintf("ST_AsWKB(%s, 'axis-order=long-lat')", quoted)
 	}
 	sridExpr := fmt.Sprintf("ST_SRID(%s)", quoted)

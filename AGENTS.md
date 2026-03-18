@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Source database to PostgreSQL migration CLI. Supports MySQL, SQLite, and MSSQL sources. Reads source schema via INFORMATION_SCHEMA (MySQL), PRAGMAs (SQLite), or `sys.*` catalog views (MSSQL), creates tables in PG (optionally UNLOGGED), streams data via the COPY protocol with parallel workers, then adds constraints/indexes/sequences/triggers in post-migration.
+Source database to PostgreSQL migration CLI. Supports MySQL, MariaDB, SQLite, and MSSQL sources. Reads source schema via INFORMATION_SCHEMA (MySQL/MariaDB), PRAGMAs (SQLite), or `sys.*` catalog views (MSSQL), creates tables in PG (optionally UNLOGGED), streams data via the COPY protocol with parallel workers, then adds constraints/indexes/sequences/triggers in post-migration.
 
 ## Commands
 
@@ -14,6 +14,11 @@ go test -run TestFoo ./...     # Run a single test
 MYSQL_DSN="root:root@tcp(127.0.0.1:3306)/pgferry_test" \
 POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
 go test -tags integration -count=1 -v ./...
+
+# Integration tests — MariaDB (requires MariaDB on :3306 and PostgreSQL on :5432)
+MARIADB_DSN="root:root@tcp(127.0.0.1:3306)/pgferry_test" \
+POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
+go test -tags integration -run TestIntegration_MariaDB -count=1 -v ./...
 
 # Integration tests — SQLite (requires only PostgreSQL on :5432)
 POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=disable" \
@@ -31,6 +36,7 @@ All source is in `package main` at the repo root. Single-binary CLI using Cobra.
 
 **Source abstraction** (`source.go`): The `SourceDB` interface abstracts source-specific logic (introspection, type mapping, value transformation, identifier quoting). Implementations:
 - `source_mysql.go` — MySQL via `INFORMATION_SCHEMA`, backtick quoting, parallel workers
+- `source_mysql.go` / `mariadbSourceDB` — MariaDB reuses the MySQL-family adapter via `INFORMATION_SCHEMA`, backtick quoting, parallel workers
 - `source_sqlite.go` — SQLite via PRAGMAs, double-quote quoting, single worker (`MaxWorkers=1`)
 - `source_mssql.go` — MSSQL via `sys.*` catalog views, bracket `[name]` quoting, parallel workers, configurable `sourceSchema` (default "dbo")
 
@@ -54,13 +60,14 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 - Source names are converted to snake_case by default via `toSnakeCase`; when `snake_case_identifiers=false`, only lowercased; PostgreSQL reserved words are quoted via `pgIdent`
 - Tables are created as UNLOGGED by default during full migrations; set `unlogged_tables=false` for crash-safe WAL logging or when using `resume=true`
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
-- `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`) — MySQL only
-- Some type mapping options are MySQL-only (`tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `widen_unsigned_integers`, `enum_mode`, `set_mode`); some are MSSQL-only (`nvarchar_as_text`, `money_as_numeric`, `xml_as_text`); some are shared (`datetime_as_timestamptz`, `spatial_mode`). Incompatible sources reject these at config validation
+- `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`) — MySQL/MariaDB only
+- Some type mapping options are MySQL/MariaDB-only (`tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `widen_unsigned_integers`, `enum_mode`, `set_mode`); some are MSSQL-only (`nvarchar_as_text`, `money_as_numeric`, `xml_as_text`); some are shared (`datetime_as_timestamptz`, `spatial_mode`). Incompatible sources reject these at config validation
 - Unsupported index features (e.g. MySQL FULLTEXT/SPATIAL/prefix/expression indexes, SQLite partial/expression indexes, MSSQL XML/SPATIAL/filtered indexes) are reported and skipped so migration can proceed safely
 - Unsupported column types are detected up front with a complete error list before table creation starts
 - Generated columns are migrated as materialized values; expression semantics are reported for manual follow-up
 - SQLite sources use `modernc.org/sqlite` (pure Go, no CGO); DSNs are normalized to read-only URI mode; in-memory databases are rejected
 - MSSQL sources use `go-mssqldb` (pure Go, native TDS); introspection via `sys.tables`, `sys.columns`, `sys.types`, `sys.indexes`, `sys.foreign_keys` filtered by `sourceSchema`; `nvarchar`/`nchar` `max_length` divided by 2 (UCS-2 bytes → chars); user-defined types resolved to base system types; default expressions have outer parentheses stripped; `IDENTITY` columns mapped to `auto_increment` convention; computed columns detected via `is_computed`; `timestamp`/`rowversion` mapped to `bytea` (not datetime); `uniqueidentifier` byte reordering for mixed-endian UUIDs; `money`/`smallmoney` → `numeric` to avoid float precision loss
+- MariaDB reuses the MySQL-family adapter and type mapping behavior, but `[postgis]` remains MySQL-only for now; use `type_mapping.spatial_mode` fallback modes with MariaDB spatial columns
 - Chunking logic is in `chunk.go` (chunk key eligibility, range planning, chunked SELECT queries); checkpoint persistence is in `checkpoint.go` (JSON state, atomic writes); validation is in `validate.go` (row count comparison)
 - Tables with composite or non-numeric primary keys fall back to full-table copy (not chunkable)
 - Integration tests use build tag `//go:build integration`

@@ -386,7 +386,7 @@ func TestMSSQLValidateTypeMapping(t *testing.T) {
 		t.Fatalf("default type mapping should be valid: %v", err)
 	}
 
-	// MySQL-only options should fail
+	// MySQL/MariaDB-only options should fail
 	tm := defaultTypeMappingConfig()
 	tm.TinyInt1AsBoolean = true
 	if err := src.ValidateTypeMapping(tm); err == nil {
@@ -668,10 +668,10 @@ tinyint1_as_boolean = true
 
 	_, err := loadConfig(cfgFile)
 	if err == nil {
-		t.Fatal("expected error for MySQL-only option with MSSQL source")
+		t.Fatal("expected error for MySQL/MariaDB-only option with MSSQL source")
 	}
-	if !strings.Contains(err.Error(), "MySQL-only") {
-		t.Errorf("error should mention MySQL-only, got: %v", err)
+	if !strings.Contains(err.Error(), "MySQL/MariaDB-only") {
+		t.Errorf("error should mention MySQL/MariaDB-only, got: %v", err)
 	}
 }
 
@@ -698,8 +698,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if err == nil {
 		t.Fatal("expected error for MSSQL + charset override")
 	}
-	if !strings.Contains(err.Error(), "MySQL-only") {
-		t.Errorf("error should mention MySQL-only, got: %v", err)
+	if !strings.Contains(err.Error(), "MySQL/MariaDB-only") {
+		t.Errorf("error should mention MySQL/MariaDB-only, got: %v", err)
 	}
 }
 

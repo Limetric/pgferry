@@ -112,11 +112,12 @@ Important details:
 
 ## Source-specific caveats
 
-### MySQL
+### MySQL and MariaDB
 
 - `enum_mode` and `set_mode` control semantic handling of enums and sets.
 - `zero_date_mode` controls how `0000-00-00` values are handled.
-- `[postgis]` enables native spatial migration to PostgreSQL `geometry`.
+- MariaDB native `uuid` columns and JSON aliases are normalized onto PostgreSQL `uuid` and `json` / `jsonb` semantics during COPY.
+- `[postgis]` enables native spatial migration only for MySQL. MariaDB should use `spatial_mode` fallback storage modes instead.
 - `_ci` collations can be mapped to `citext` with `ci_as_citext = true`.
 
 ### SQLite

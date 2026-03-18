@@ -50,6 +50,33 @@ func TestNewConfiguredSourceDB_MySQLAppliesCharsetAndIdentifiers(t *testing.T) {
 	}
 }
 
+func TestNewConfiguredSourceDB_MariaDBAppliesCharsetAndIdentifiers(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mariadb"
+	cfg.Source.Charset = "latin1"
+	cfg.SnakeCaseIdentifiers = false
+
+	src, err := newConfiguredSourceDB(&cfg)
+	if err != nil {
+		t.Fatalf("newConfiguredSourceDB() error: %v", err)
+	}
+
+	mariaSrc, ok := src.(*mariadbSourceDB)
+	if !ok {
+		t.Fatalf("source type = %T, want *mariadbSourceDB", src)
+	}
+
+	if mariaSrc.charset != "latin1" {
+		t.Fatalf("charset = %q, want latin1", mariaSrc.charset)
+	}
+	if mariaSrc.snakeCaseIDs {
+		t.Fatal("snakeCaseIDs = true, want false")
+	}
+	if mariaSrc.Name() != "MariaDB" {
+		t.Fatalf("Name() = %q, want MariaDB", mariaSrc.Name())
+	}
+}
+
 func TestNewConfiguredSourceDB_SQLiteAppliesIdentifiers(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "sqlite"
@@ -78,7 +105,7 @@ func TestNewConfiguredSourceDB_InvalidType(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid source type")
 	}
-	if got, want := err.Error(), `unsupported source type "oracle" (must be mysql, sqlite, or mssql)`; got != want {
+	if got, want := err.Error(), `unsupported source type "oracle" (must be mysql, mariadb, sqlite, or mssql)`; got != want {
 		t.Fatalf("error = %q, want %q", got, want)
 	}
 }

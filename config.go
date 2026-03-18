@@ -44,9 +44,9 @@ type MigrationConfig struct {
 
 // SourceConfig identifies the source database engine and connection string.
 type SourceConfig struct {
-	Type         string `toml:"type"` // "mysql", "sqlite", or "mssql"
+	Type         string `toml:"type"` // "mysql", "mariadb", "sqlite", or "mssql"
 	DSN          string `toml:"dsn"`
-	Charset      string `toml:"charset"`       // character set for MySQL connection (default: "utf8mb4")
+	Charset      string `toml:"charset"`       // character set for MySQL/MariaDB connection (default: "utf8mb4")
 	SourceSchema string `toml:"source_schema"` // MSSQL schema to read from (default: "dbo")
 }
 
@@ -79,14 +79,14 @@ type TypeMappingConfig struct {
 	SanitizeJSONNullBytes bool              `toml:"sanitize_json_null_bytes"`
 	UnknownAsText         bool              `toml:"unknown_as_text"`
 	CollationMode         string            `toml:"collation_mode"`      // none|auto
-	CollationMap          map[string]string `toml:"collation_map"`       // MySQL collation → PG collation overrides
-	CIAsCitext            bool              `toml:"ci_as_citext"`        // map _ci text columns to citext (MySQL only)
-	BitMode               string            `toml:"bit_mode"`            // bytea|bit|varbit (MySQL only)
-	StringUUIDAsUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL only)
-	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL only)
-	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL only)
-	ZeroDateMode          string            `toml:"zero_date_mode"`      // null|error (MySQL only)
-	SpatialMode           string            `toml:"spatial_mode"`        // off|wkb_bytea|wkt_text (MySQL/MSSQL)
+	CollationMap          map[string]string `toml:"collation_map"`       // MySQL/MariaDB collation → PG collation overrides
+	CIAsCitext            bool              `toml:"ci_as_citext"`        // map _ci text columns to citext (MySQL/MariaDB only)
+	BitMode               string            `toml:"bit_mode"`            // bytea|bit|varbit (MySQL/MariaDB only)
+	StringUUIDAsUUID      bool              `toml:"string_uuid_as_uuid"` // map CHAR(36)/VARCHAR(36) to uuid (MySQL/MariaDB only)
+	Binary16UUIDMode      string            `toml:"binary16_uuid_mode"`  // rfc4122|mysql_uuid_to_bin_swap (MySQL/MariaDB only)
+	TimeMode              string            `toml:"time_mode"`           // text|time|interval (MySQL/MariaDB only)
+	ZeroDateMode          string            `toml:"zero_date_mode"`      // null|error (MySQL/MariaDB only)
+	SpatialMode           string            `toml:"spatial_mode"`        // off|wkb_bytea|wkt_text (MySQL-family/MSSQL)
 	NvarcharAsText        bool              `toml:"nvarchar_as_text"`    // map nvarchar(n) to text (MSSQL only)
 	MoneyAsNumeric        bool              `toml:"money_as_numeric"`    // map money to numeric(19,4) (MSSQL only, default true)
 	XmlAsText             bool              `toml:"xml_as_text"`         // map xml to text (MSSQL only)
@@ -163,7 +163,7 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		cfg.CleanOrphansMode = "apply"
 	}
 	if cfg.Source.Type == "" {
-		return fmt.Errorf("source.type is required (must be mysql, sqlite, or mssql)")
+		return fmt.Errorf("source.type is required (must be mysql, mariadb, sqlite, or mssql)")
 	}
 	applySourceTypeMappingDefaults(&cfg.TypeMapping, cfg.Source.Type)
 
@@ -291,6 +291,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 	if cfg.PostGIS.Enabled {
 		if cfg.Source.Type != "mysql" {
+			if cfg.Source.Type == "mariadb" {
+				return fmt.Errorf("postgis is currently only supported for mysql sources; mariadb supports only type_mapping.spatial_mode fallback modes for now")
+			}
 			return fmt.Errorf("postgis is currently only supported for mysql sources")
 		}
 		if cfg.TypeMapping.SpatialMode != "off" {
@@ -309,9 +312,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("source_snapshot_mode \"single_tx\" is not supported for %s sources", cfg.Source.Type)
 	}
 
-	// Source-specific charset validation (charset is MySQL-only)
-	if (cfg.Source.Type == "sqlite" || cfg.Source.Type == "mssql") && cfg.Source.Charset != "utf8mb4" {
-		return fmt.Errorf("source.charset is a MySQL-only option")
+	// Source-specific charset validation (charset is MySQL-family only)
+	if !isMySQLFamilySourceType(cfg.Source.Type) && cfg.Source.Charset != "utf8mb4" {
+		return fmt.Errorf("source.charset is a MySQL/MariaDB-only option")
 	}
 
 	// Default source_schema for MSSQL
@@ -384,7 +387,7 @@ func defaultTypeMappingConfig() TypeMappingConfig {
 }
 
 func defaultEnumMode(sourceType string) string {
-	if sourceType == "mysql" {
+	if isMySQLFamilySourceType(sourceType) {
 		return "check"
 	}
 	return "text"

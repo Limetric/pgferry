@@ -18,6 +18,7 @@ All you need are two connection strings: one for the source database you're migr
 | Source | Format | Example |
 | --- | --- | --- |
 | MySQL | `user:pass@tcp(host:port)/dbname` | `root:root@tcp(127.0.0.1:3306)/source_db` |
+| MariaDB | `user:pass@tcp(host:port)/dbname` | `root:root@tcp(127.0.0.1:3306)/source_db` |
 | SQLite | File path or `file:` URI | `/path/to/database.db` |
 | MSSQL | `sqlserver://` URI | `sqlserver://sa:Pass@127.0.0.1:1433?database=source_db` |
 
@@ -44,6 +45,7 @@ Use the wizard to generate `migration.toml`.
 If you already know your source type and want a fuller starter instead, jump to:
 
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
+- [MariaDB minimal-safe example](/examples/mariadb/)
 - [SQLite minimal-safe example](/examples/sqlite/minimal-safe/)
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 

@@ -1,0 +1,21 @@
+schema = "app"
+source_snapshot_mode = "single_tx"
+unlogged_tables = false
+clean_orphans = true
+validation = "row_count"
+
+[source]
+type = "mariadb"
+dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+charset = "utf8mb4"
+
+[target]
+dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
+
+[type_mapping]
+json_as_jsonb = true
+enum_mode = "check"
+set_mode = "text"
+time_mode = "time"
+zero_date_mode = "null"
+spatial_mode = "off"

@@ -21,6 +21,10 @@ type mysqlSourceDB struct {
 	supportsAxisOrderExpr bool
 }
 
+type mariadbSourceDB struct {
+	mysqlSourceDB
+}
+
 func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
 func (m *mysqlSourceDB) SetCharset(charset string)            { m.charset = charset }
 func (m *mysqlSourceDB) SetSourceSchema(_ string)             {}
@@ -121,6 +125,16 @@ func (m *mysqlSourceDB) SupportsSnapshotMode() bool { return true }
 func (m *mysqlSourceDB) MaxWorkers() int            { return 0 }
 
 func (m *mysqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
+	return validateMySQLFamilyTypeMapping("MySQL", typeMap)
+}
+
+func (m *mariadbSourceDB) Name() string { return "MariaDB" }
+
+func (m *mariadbSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
+	return validateMySQLFamilyTypeMapping("MariaDB", typeMap)
+}
+
+func validateMySQLFamilyTypeMapping(sourceName string, typeMap TypeMappingConfig) error {
 	var errs []string
 	if typeMap.NvarcharAsText {
 		errs = append(errs, "nvarchar_as_text is a MSSQL-only option")
@@ -132,7 +146,7 @@ func (m *mysqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 		errs = append(errs, "xml_as_text is a MSSQL-only option")
 	}
 	if len(errs) > 0 {
-		return fmt.Errorf("invalid type_mapping for MySQL source: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("invalid type_mapping for %s source: %s", sourceName, strings.Join(errs, "; "))
 	}
 	return nil
 }

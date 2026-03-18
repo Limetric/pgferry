@@ -584,6 +584,44 @@ func TestBuildPlanReport_TemporalWarnings_MySQLDatetimeAsTimestamptz(t *testing.
 	}
 }
 
+func TestBuildPlanReport_TemporalWarnings_MariaDB(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mariadb"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{PGName: "duration", DataType: "time"},
+					{PGName: "opened_at", DataType: "datetime"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, &mariadbSourceDB{}, cfg, effectiveTypeMapping(cfg))
+
+	gotCategories := make([]string, 0, len(report.TemporalWarnings))
+	for _, warning := range report.TemporalWarnings {
+		gotCategories = append(gotCategories, warning.Category)
+	}
+
+	for _, want := range []string{
+		"mariadb_time_mode_time",
+		"mariadb_zero_date_mode_null",
+		"mariadb_datetime_without_timezone",
+	} {
+		if !slices.Contains(gotCategories, want) {
+			t.Fatalf("missing temporal warning category %q in %v", want, gotCategories)
+		}
+	}
+	if len(report.TemporalWarnings) != 3 {
+		t.Fatalf("temporal warnings = %d, want 3", len(report.TemporalWarnings))
+	}
+}
+
 func TestBuildPlanReport_TemporalWarnings_MSSQL(t *testing.T) {
 	cfg := &MigrationConfig{
 		Source:      SourceConfig{Type: "mssql"},

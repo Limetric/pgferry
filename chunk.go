@@ -124,8 +124,8 @@ func chunkKeyForTable(table Table, src SourceDB) *ChunkKey {
 // suitable for range-based chunking. Unsigned bigint is excluded because its
 // values can exceed int64 range, causing scan failures in queryMinMax.
 func isNumericChunkableType(col Column, src SourceDB) bool {
-	switch src.Name() {
-	case "MySQL":
+	switch {
+	case isMySQLFamilySource(src):
 		isUnsigned := strings.Contains(strings.ToLower(col.ColumnType), "unsigned")
 		if col.DataType == "bigint" && isUnsigned {
 			return false
@@ -134,13 +134,13 @@ func isNumericChunkableType(col Column, src SourceDB) bool {
 		case "tinyint", "smallint", "mediumint", "int", "bigint":
 			return true
 		}
-	case "SQLite":
+	case sourceTypeForDB(src) == "sqlite":
 		dt := strings.ToUpper(normalizeAffinity(col.ColumnType))
 		switch dt {
 		case "INTEGER", "INT", "SMALLINT", "TINYINT", "MEDIUMINT", "BIGINT":
 			return true
 		}
-	case "MSSQL":
+	case sourceTypeForDB(src) == "mssql":
 		switch col.DataType {
 		case "tinyint", "smallint", "int", "bigint":
 			return true

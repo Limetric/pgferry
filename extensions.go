@@ -95,7 +95,7 @@ func sourceIsMySQL(cfg *MigrationConfig, src SourceDB) bool {
 	if cfg != nil && cfg.Source.Type != "" {
 		return cfg.Source.Type == "mysql"
 	}
-	return src != nil && src.Name() == "MySQL"
+	return sourceTypeForDB(src) == "mysql"
 }
 
 func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []extensionRequirement) error {

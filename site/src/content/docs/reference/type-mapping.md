@@ -5,9 +5,9 @@ description: Source-to-PostgreSQL type mappings, alternate modes, and source-spe
 
 pgferry defaults to conservative, mostly lossless mappings. The main default exception is JSON, which becomes PostgreSQL `jsonb` because that is usually the more useful target type.
 
-## MySQL to PostgreSQL
+## MySQL and MariaDB to PostgreSQL
 
-| MySQL type | Default PG type | Alternate mapping | Flag |
+| MySQL / MariaDB type | Default PG type | Alternate mapping | Flag |
 | --- | --- | --- | --- |
 | `tinyint(1)` | `smallint` | `boolean` | `tinyint1_as_boolean` |
 | `tinyint` | `smallint` | | |
@@ -29,13 +29,14 @@ pgferry defaults to conservative, mostly lossless mappings. The main default exc
 | `time` | `time` | `text`, `interval` | `time_mode` |
 | `bit(n)` | `bytea` | `bit(n)`, `varbit` | `bit_mode` |
 | `binary(16)` | `bytea` | `uuid` | `binary16_as_uuid` |
+| `uuid` | `uuid` | | MariaDB native type |
 | `char(36)` / `varchar(36)` | `varchar(36)` | `uuid` | `string_uuid_as_uuid` |
 | `binary` / `varbinary` / blob family | `bytea` | | |
 | Spatial types | unsupported | `geometry`, `bytea`, `text` | `[postgis].enabled`, `spatial_mode` |
 
-Unknown MySQL types error by default. Set `unknown_as_text = true` to coerce them to `text` instead.
+Unknown MySQL and MariaDB types error by default. Set `unknown_as_text = true` to coerce them to `text` instead.
 
-### MySQL-specific mapping decisions
+### MySQL-family mapping decisions
 
 - `widen_unsigned_integers = true` preserves MySQL unsigned ranges by widening the PostgreSQL target type.
 - `add_unsigned_checks = true` adds PostgreSQL `CHECK` constraints after load.
@@ -43,6 +44,7 @@ Unknown MySQL types error by default. Set `unknown_as_text = true` to coerce the
 - `zero_date_mode = "null"` converts MySQL zero dates to `NULL`. `error` aborts instead.
 - `collation_mode = "auto"` emits PostgreSQL `COLLATE` clauses when pgferry can map the source collation.
 - `ci_as_citext = true` maps `_ci` text columns to PostgreSQL `citext` unless a `collation_map` entry overrides that choice.
+- MariaDB `JSON` aliases detected through `JSON_VALID(...)` checks preserve JSON semantics instead of degrading to `text`.
 
 ## SQLite to PostgreSQL
 
@@ -61,7 +63,7 @@ SQLite uses type affinity, so pgferry keeps the mapping conservative.
 | `DATE` | `date` | |
 | `JSON` | `jsonb` | `json` when `json_as_jsonb = false` |
 
-SQLite rejects MySQL-only and MSSQL-only type-mapping options during config validation.
+SQLite rejects MySQL-family-only and MSSQL-only type-mapping options during config validation.
 
 ## MSSQL to PostgreSQL
 
@@ -138,7 +140,7 @@ Use `check` when MySQL enum ordering matters and you do not want PostgreSQL nati
 
 | Choice | Use when |
 | --- | --- |
-| `[postgis].enabled = true` | You want real `geometry` columns and spatial index recreation for MySQL spatial data. |
+| `[postgis].enabled = true` | You want real `geometry` columns and spatial index recreation for MySQL spatial data. MariaDB is intentionally excluded from this path. |
 | `spatial_mode = "wkb_bytea"` | You want raw binary preservation without PostGIS. |
 | `spatial_mode = "wkt_text"` | You want readable text output without PostGIS. |
 | `spatial_mode = "off"` | You prefer pgferry to stop and report spatial columns instead of guessing. |

@@ -9,6 +9,7 @@ Use the examples section when you want a working starting point instead of an ab
 
 - First production-style rehearsal:
   [MySQL minimal-safe](/examples/mysql/minimal-safe/),
+  [MariaDB minimal-safe](/examples/mariadb/),
   [SQLite minimal-safe](/examples/sqlite/minimal-safe/),
   [MSSQL minimal-safe](/examples/mssql/minimal-safe/)
 - Fast disposable reloads:
@@ -27,6 +28,7 @@ Use the examples section when you want a working starting point instead of an ab
 ## Browse by source
 
 - [MySQL examples](/examples/mysql/)
+- [MariaDB examples](/examples/mariadb/)
 - [SQLite examples](/examples/sqlite/)
 - [MSSQL examples](/examples/mssql/)
 
@@ -45,3 +47,10 @@ Use the examples section when you want a working starting point instead of an ab
 2. Run `pgferry plan migration.toml` first.
 3. Read the matching [guide](/guides/) for source-specific constraints.
 4. Decide whether you want the safe path, the fast disposable path, or the resumable path before you start editing flags.
+
+## Raw example files
+
+- [examples/mysql](https://github.com/Limetric/pgferry/tree/main/examples/mysql)
+- [examples/mariadb](https://github.com/Limetric/pgferry/tree/main/examples/mariadb)
+- [examples/sqlite](https://github.com/Limetric/pgferry/tree/main/examples/sqlite)
+- [examples/mssql](https://github.com/Limetric/pgferry/tree/main/examples/mssql)

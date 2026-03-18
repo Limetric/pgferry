@@ -60,7 +60,7 @@ type SourceDB interface {
 
 	// SetSourceSchema sets the source schema to introspect.
 	// For MSSQL, this filters sys.* queries by schema name (default "dbo").
-	// No-op for MySQL and SQLite.
+	// No-op for MySQL, MariaDB, and SQLite.
 	SetSourceSchema(schema string)
 }
 
@@ -69,12 +69,14 @@ func newSourceDB(sourceType string) (SourceDB, error) {
 	switch sourceType {
 	case "mysql":
 		return &mysqlSourceDB{}, nil
+	case "mariadb":
+		return &mariadbSourceDB{}, nil
 	case "sqlite":
 		return &sqliteSourceDB{}, nil
 	case "mssql":
 		return &mssqlSourceDB{}, nil
 	default:
-		return nil, fmt.Errorf("unsupported source type %q (must be mysql, sqlite, or mssql)", sourceType)
+		return nil, fmt.Errorf("unsupported source type %q (must be mysql, mariadb, sqlite, or mssql)", sourceType)
 	}
 }
 

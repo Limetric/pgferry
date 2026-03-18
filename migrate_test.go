@@ -140,6 +140,26 @@ func TestBuildSourceSelectQuery_MySQLPostGISLegacyExport(t *testing.T) {
 	}
 }
 
+func TestBuildSourceSelectQuery_MariaDBSpatialWKTUsesMySQLFamilyPath(t *testing.T) {
+	src := &mariadbSourceDB{}
+	table := Table{
+		SourceName: "places",
+		Columns: []Column{
+			{SourceName: "id", DataType: "int"},
+			{SourceName: "shape", DataType: "point"},
+		},
+	}
+
+	tm := defaultTypeMappingConfig()
+	tm.SpatialMode = "wkt_text"
+
+	got := buildSourceSelectQuery(src, table, tm)
+	want := "SELECT `id`, ST_AsText(`shape`) AS `shape` FROM `places`"
+	if got != want {
+		t.Fatalf("buildSourceSelectQuery() = %q, want %q", got, want)
+	}
+}
+
 type fakeMigrationCheckpointManager struct {
 	doneTables map[string]bool
 	doneChunks map[string]map[int]bool
