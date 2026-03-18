@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 )
 
@@ -84,5 +85,11 @@ func TestAnnotateMariaDBJSONColumns(t *testing.T) {
 	}
 	if got := schema.Tables[0].Columns[1].DataType; got != "longtext" {
 		t.Fatalf("note DataType = %q, want longtext", got)
+	}
+}
+
+func TestMySQLForeignKeysByTableQueryJoinsReferentialConstraintsOnTableName(t *testing.T) {
+	if !strings.Contains(mysqlForeignKeysByTableQuery, "AND kcu.TABLE_NAME = rc.TABLE_NAME") {
+		t.Fatalf("mysqlForeignKeysByTableQuery must join REFERENTIAL_CONSTRAINTS on TABLE_NAME to avoid duplicating same-named foreign keys across tables")
 	}
 }

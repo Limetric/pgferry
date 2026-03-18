@@ -459,6 +459,18 @@ type mysqlForeignKeysForTable struct {
 	order []string
 }
 
+const mysqlForeignKeysByTableQuery = `SELECT kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+	        kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
+	        rc.UPDATE_RULE, rc.DELETE_RULE
+	 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+	 JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+	   ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
+	   AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
+	   AND kcu.TABLE_NAME = rc.TABLE_NAME
+	 WHERE kcu.TABLE_SCHEMA = ?
+	   AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+	 ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
+
 func mysqlIndexHasPrefix(indexType string, subPart sql.NullInt64) bool {
 	if !subPart.Valid {
 		return false
@@ -469,19 +481,7 @@ func mysqlIndexHasPrefix(indexType string, subPart sql.NullInt64) bool {
 }
 
 func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func(string) string) (map[string][]ForeignKey, error) {
-	rows, err := db.Query(
-		`SELECT kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
-		        kcu.REFERENCED_TABLE_NAME, kcu.REFERENCED_COLUMN_NAME,
-		        rc.UPDATE_RULE, rc.DELETE_RULE
-		 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-		 JOIN INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
-		   ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
-		   AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
-		 WHERE kcu.TABLE_SCHEMA = ?
-		   AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-		 ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`,
-		dbName,
-	)
+	rows, err := db.Query(mysqlForeignKeysByTableQuery, dbName)
 	if err != nil {
 		return nil, err
 	}
