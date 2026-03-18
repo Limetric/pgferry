@@ -3,8 +3,7 @@
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
-    "dev": "astro dev",
-    "start": "astro dev",
+    "dev": "portless run astro dev",
     "build": "astro build",
     "check-routes": "node ./scripts/verify-build.mjs",
     "preview": "astro preview",
