@@ -18,6 +18,7 @@ type skippedForeignKey struct {
 	Table    string
 	Name     string
 	RefTable string
+	Reason   string
 }
 
 func hasTableFilters(cfg *MigrationConfig) bool {
@@ -27,7 +28,7 @@ func hasTableFilters(cfg *MigrationConfig) bool {
 func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFilterReport, error) {
 	report := schemaFilterReport{}
 	if schema == nil {
-		return nil, report, nil
+		return &Schema{}, report, nil
 	}
 
 	report.TotalTables = len(schema.Tables)
@@ -88,7 +89,8 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 		cloned := cloneTable(table)
 		cloned.ForeignKeys = nil
 		for _, fk := range table.ForeignKeys {
-			if shouldKeepFilteredForeignKey(fk, cfg, selected) {
+			keep, reason := shouldKeepFilteredForeignKey(fk, cfg, selected)
+			if keep {
 				cloned.ForeignKeys = append(cloned.ForeignKeys, cloneForeignKey(fk))
 				continue
 			}
@@ -96,6 +98,7 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 				Table:    table.SourceName,
 				Name:     fk.Name,
 				RefTable: fk.RefTable,
+				Reason:   reason,
 			})
 		}
 
@@ -106,11 +109,14 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 	return filtered, report, nil
 }
 
-func shouldKeepFilteredForeignKey(fk ForeignKey, cfg *MigrationConfig, selected map[string]bool) bool {
+func shouldKeepFilteredForeignKey(fk ForeignKey, cfg *MigrationConfig, selected map[string]bool) (bool, string) {
 	if fk.RefSchema != "" && !strings.EqualFold(strings.TrimSpace(fk.RefSchema), strings.TrimSpace(cfg.Source.SourceSchema)) {
-		return false
+		return false, fmt.Sprintf("referenced table %s is in schema %q, outside the migrated schema %q", fk.RefTable, fk.RefSchema, cfg.Source.SourceSchema)
 	}
-	return selected[normalizeTableFilterKey(fk.RefTable)]
+	if !selected[normalizeTableFilterKey(fk.RefTable)] {
+		return false, fmt.Sprintf("referenced table %s is not in the selected table set", fk.RefTable)
+	}
+	return true, ""
 }
 
 func missingTableFilterEntries(entries []string, tableKeys map[string]string) []string {
@@ -175,8 +181,8 @@ func logTableFilterReport(report schemaFilterReport) {
 		return
 	}
 
-	log.Printf("table filter: skipped %d foreign key(s) that reference excluded tables", len(report.SkippedForeignKeys))
+	log.Printf("table filter: skipped %d foreign key(s) during table filtering", len(report.SkippedForeignKeys))
 	for _, fk := range report.SkippedForeignKeys {
-		log.Printf("  WARN: skipping foreign key %s on %s because referenced table %s is excluded", fk.Name, fk.Table, fk.RefTable)
+		log.Printf("  WARN: skipping foreign key %s on %s because %s", fk.Name, fk.Table, fk.Reason)
 	}
 }

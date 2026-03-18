@@ -206,4 +206,23 @@ func TestFilterSchemaTables_PrunesCrossSchemaMSSQLForeignKeys(t *testing.T) {
 	if got := report.SkippedForeignKeys[0].RefTable; got != "Users" {
 		t.Fatalf("skipped foreign key ref table = %q, want Users", got)
 	}
+	if got := report.SkippedForeignKeys[0].Reason; !strings.Contains(got, `outside the migrated schema "dbo"`) {
+		t.Fatalf("skipped foreign key reason = %q, want migrated schema detail", got)
+	}
+}
+
+func TestFilterSchemaTables_NilSchemaReturnsEmptySchema(t *testing.T) {
+	filtered, report, err := filterSchemaTables(nil, &MigrationConfig{})
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+	if filtered == nil {
+		t.Fatal("filtered schema = nil, want empty schema")
+	}
+	if got := len(filtered.Tables); got != 0 {
+		t.Fatalf("filtered table count = %d, want 0", got)
+	}
+	if report.TotalTables != 0 {
+		t.Fatalf("report.TotalTables = %d, want 0", report.TotalTables)
+	}
 }
