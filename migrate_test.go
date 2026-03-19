@@ -330,6 +330,29 @@ func TestBuildParallelMigrationWorkItems_ChunksSharePGCopyColumnsSlice(t *testin
 	}
 }
 
+func TestBuildParallelMigrationWorkItems_FullTableCarriesPlanPGCopyColumns(t *testing.T) {
+	table := Table{
+		SourceName: "profiles",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id"},
+			{SourceName: "bio", PGName: "bio"},
+		},
+	}
+	pgCols := tablePGCopyColumns(table)
+	plan := ChunkPlan{Table: table, ChunkSize: 100_000, PGCopyColumns: pgCols}
+	items := buildParallelMigrationWorkItems([]ChunkPlan{plan}, &fakeMigrationCheckpointManager{})
+	if len(items) != 1 {
+		t.Fatalf("work items = %d, want 1", len(items))
+	}
+	if items[0].ChunkKey != nil {
+		t.Fatal("expected full-table work item")
+	}
+	got := items[0].PGCopyColumns
+	if reflect.ValueOf(got).Pointer() != reflect.ValueOf(plan.PGCopyColumns).Pointer() {
+		t.Fatal("full-table item should reuse plan.PGCopyColumns backing slice")
+	}
+}
+
 func TestRunParallelMigrationWorkers_ReusesSourceAcrossItems(t *testing.T) {
 	workItems := []migrationWorkItem{
 		{Table: Table{SourceName: "a"}},

@@ -208,6 +208,27 @@ func TestBuildChunkedSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
 	}
 }
 
+func TestChunkPlan_NonChunkableLeavesColumnSelectListEmpty(t *testing.T) {
+	// Invariant from buildChunkPlans: ColumnSelectList is only set for chunkable tables.
+	table := Table{
+		SourceName: "logs",
+		Columns: []Column{
+			{SourceName: "msg", PGName: "msg"},
+		},
+	}
+	plan := ChunkPlan{
+		Table:         table,
+		ChunkSize:     100_000,
+		PGCopyColumns: tablePGCopyColumns(table),
+	}
+	if plan.ChunkKey != nil {
+		t.Fatal("test expects non-chunkable plan (ChunkKey nil)")
+	}
+	if plan.ColumnSelectList != "" {
+		t.Fatalf("ColumnSelectList = %q, want empty", plan.ColumnSelectList)
+	}
+}
+
 func TestBuildChunkedSelectQuery_ColumnListSharedAcrossChunks(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{

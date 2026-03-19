@@ -459,6 +459,8 @@ func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, t
 }
 
 // buildChunkPlans creates chunk plans for all tables by querying MIN/MAX on chunkable tables.
+// typeMap must be the same validated TypeMappingConfig used for the data migration so
+// ColumnSelectList matches buildSourceSelectQuery / columnSelectExpr semantics.
 func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64, typeMap TypeMappingConfig) ([]ChunkPlan, error) {
 	srcDB, err := openMigrationSourceDB(src, srcDSN)
 	if err != nil {
