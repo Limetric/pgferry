@@ -119,8 +119,12 @@ func (m *mysqlSourceDB) TransformValue(val any, col Column, typeMap TypeMappingC
 	return mysqlTransformValue(val, col, typeMap)
 }
 
+func quoteMySQLBacktickIdent(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
 func (m *mysqlSourceDB) QuoteIdentifier(name string) string {
-	return fmt.Sprintf("`%s`", strings.ReplaceAll(name, "`", "``"))
+	return quoteMySQLBacktickIdent(name)
 }
 
 func (m *mysqlSourceDB) SourceTableRef(table Table) string {
@@ -226,8 +230,21 @@ func introspectMariaDBSchema(db *sql.DB, dbName string, identName func(string) s
 		return nil, fmt.Errorf("introspect MariaDB JSON aliases for schema %s: %w", dbName, err)
 	}
 	annotateMariaDBJSONColumns(schema, jsonAliases)
+	normalizeMariaDBSchemaColumns(schema)
 
 	return schema, nil
+}
+
+func normalizeMariaDBSchemaColumns(schema *Schema) {
+	if schema == nil {
+		return
+	}
+	for ti := range schema.Tables {
+		t := &schema.Tables[ti]
+		for ci := range t.Columns {
+			t.Columns[ci] = normalizeMariaDBColumn(t.Columns[ci])
+		}
+	}
 }
 
 func introspectMariaDBJSONAliases(db *sql.DB, dbName string) (map[string]map[string]bool, error) {
@@ -625,6 +642,11 @@ func introspectMySQLColumnsByTable(db *sql.DB, dbName string, identName func(str
 			c.Default = &dflt.String
 		}
 		c.DataType = strings.ToLower(c.DataType)
+		if c.DataType == "bit" {
+			if n, ok := mysqlColumnTypeLength(c.ColumnType, "bit"); ok && n > 0 {
+				c.MySQLBitWidth = int(n)
+			}
+		}
 		colsByTable[tableName] = append(colsByTable[tableName], c)
 	}
 	return colsByTable, rows.Err()
@@ -1059,9 +1081,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 	case col.DataType == "json" && typeMap.SanitizeJSONNullBytes:
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", ""), nil
+			return stripNULBytesToString(v), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", ""), nil
+			return stripNULString(v), nil
 		}
 		return val, nil
 
@@ -1095,13 +1117,12 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		var raw string
 		switch v := val.(type) {
 		case []byte:
-			raw = string(v)
+			raw = stripNULBytesToString(v)
 		case string:
-			raw = v
+			raw = stripNULString(v)
 		default:
 			return nil, fmt.Errorf("cannot coerce set value of type %T to text[]", val)
 		}
-		raw = strings.ReplaceAll(raw, "\x00", "")
 		if raw == "" {
 			return []string{}, nil
 		}
@@ -1113,20 +1134,30 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		if !ok {
 			return nil, fmt.Errorf("expected []byte for BIT value, got %T", val)
 		}
-		// Determine bit width from column type
-		bitWidth, wOk := mysqlColumnTypeLength(col.ColumnType, "bit")
-		if !wOk {
-			bitWidth = col.Precision
+		bitWidth := int64(col.MySQLBitWidth)
+		if bitWidth <= 0 {
+			var wOk bool
+			bitWidth, wOk = mysqlColumnTypeLength(col.ColumnType, "bit")
+			if !wOk {
+				bitWidth = col.Precision
+			}
 		}
 		if bitWidth <= 0 {
 			bitWidth = int64(len(b)) * 8
 		}
-		// Convert bytes to binary string, then truncate to the actual bit width
-		var sb strings.Builder
+		buf := make([]byte, len(b)*8)
+		pos := 0
 		for _, byt := range b {
-			fmt.Fprintf(&sb, "%08b", byt)
+			for i := 7; i >= 0; i-- {
+				if byt&(1<<uint(i)) != 0 {
+					buf[pos] = '1'
+				} else {
+					buf[pos] = '0'
+				}
+				pos++
+			}
 		}
-		bits := sb.String()
+		bits := string(buf)
 		// MySQL may send more bytes than needed; take the rightmost bitWidth bits
 		if int64(len(bits)) > bitWidth {
 			bits = bits[len(bits)-int(bitWidth):]
@@ -1219,9 +1250,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		col.DataType == "enum" || col.DataType == "set":
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", ""), nil
+			return stripNULBytesToString(v), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", ""), nil
+			return stripNULString(v), nil
 		}
 		return val, nil
 
@@ -1231,7 +1262,6 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 }
 
 func mariadbTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, error) {
-	col = normalizeMariaDBColumn(col)
 	if col.DataType == "uuid" {
 		return normalizeUUIDStringValue(val, "MariaDB uuid")
 	}

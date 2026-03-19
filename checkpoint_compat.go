@@ -173,6 +173,7 @@ func hashCheckpointTable(table Table) (string, error) {
 		OrdinalPos           int     `json:"ordinal_pos"`
 		Charset              string  `json:"charset,omitempty"`
 		Collation            string  `json:"collation,omitempty"`
+		MySQLBitWidth        int     `json:"mysql_bit_width,omitempty"`
 	}
 	type checkpointTable struct {
 		SourceName string             `json:"source_name"`

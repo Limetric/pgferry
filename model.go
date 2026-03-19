@@ -16,6 +16,8 @@ type Column struct {
 	OrdinalPos           int
 	Charset              string // e.g. "utf8mb4" — MySQL only, zero-value for SQLite
 	Collation            string // e.g. "utf8mb4_general_ci" — MySQL only, zero-value for SQLite
+	// MySQLBitWidth is the declared BIT(n) width from COLUMN_TYPE (MySQL/MariaDB only; 0 if unknown).
+	MySQLBitWidth int
 }
 
 // Index represents a source database index (may span multiple columns).
