@@ -498,6 +498,14 @@ func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *S
 	return plans, nil
 }
 
+// progressLogTimeSampleRows controls how often rowSource.Next samples wall time
+// for the ~10s progress log. time.Now() is not called on every row.
+const progressLogTimeSampleRows int64 = 1024
+
+func shouldSampleProgressLogTime(copied int64) bool {
+	return copied == 1 || copied%progressLogTimeSampleRows == 0
+}
+
 // rowSource implements pgx.CopyFromSource by reading from source rows.
 type rowSource struct {
 	rows        *sql.Rows
@@ -555,9 +563,11 @@ func (r *rowSource) Next() bool {
 	}
 
 	r.copied++
-	if now := time.Now(); now.Sub(r.lastLog) >= 10*time.Second {
-		log.Printf("  [%s] progress: %d rows copied", r.tableName, r.copied)
-		r.lastLog = now
+	if shouldSampleProgressLogTime(r.copied) {
+		if now := time.Now(); now.Sub(r.lastLog) >= 10*time.Second {
+			log.Printf("  [%s] progress: %d rows copied", r.tableName, r.copied)
+			r.lastLog = now
+		}
 	}
 	return true
 }
