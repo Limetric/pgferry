@@ -25,8 +25,25 @@ func TestMySQLSourceExtractDBName(t *testing.T) {
 
 func TestMySQLSourceQuoteIdentifier(t *testing.T) {
 	src := &mysqlSourceDB{}
-	got := src.QuoteIdentifier("my`table")
-	want := "`my``table`"
+	tests := []struct {
+		in, want string
+	}{
+		{"plain", "`plain`"},
+		{"my`table", "`my``table`"},
+		{"a``b", "`a````b`"},
+		{"", "``"},
+	}
+	for _, tt := range tests {
+		if got := src.QuoteIdentifier(tt.in); got != tt.want {
+			t.Errorf("QuoteIdentifier(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestMariaDBSourceQuoteIdentifier(t *testing.T) {
+	src := &mariadbSourceDB{}
+	got := src.QuoteIdentifier("x`y")
+	want := "`x``y`"
 	if got != want {
 		t.Errorf("QuoteIdentifier() = %q, want %q", got, want)
 	}

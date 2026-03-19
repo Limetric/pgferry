@@ -119,8 +119,12 @@ func (m *mysqlSourceDB) TransformValue(val any, col Column, typeMap TypeMappingC
 	return mysqlTransformValue(val, col, typeMap)
 }
 
+func quoteMySQLBacktickIdent(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
 func (m *mysqlSourceDB) QuoteIdentifier(name string) string {
-	return fmt.Sprintf("`%s`", strings.ReplaceAll(name, "`", "``"))
+	return quoteMySQLBacktickIdent(name)
 }
 
 func (m *mysqlSourceDB) SourceTableRef(table Table) string {
