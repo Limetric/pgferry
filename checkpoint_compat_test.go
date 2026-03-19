@@ -124,7 +124,7 @@ func TestValidateCheckpointCompatibility_MatchingFingerprints(t *testing.T) {
 	compat := testCheckpointCompatibility()
 	state := newCheckpointStateWithCompatibility(&compat)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, compat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, compat)
 	if err != nil {
 		t.Fatalf("expected no error for matching fingerprints, got: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestValidateCheckpointCompatibility_MatchingFingerprints(t *testing.T) {
 
 func TestValidateCheckpointCompatibility_NilState(t *testing.T) {
 	compat := testCheckpointCompatibility()
-	err := validateCheckpointCompatibility("/tmp/cp.json", nil, compat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), nil, compat)
 	if err != nil {
 		t.Fatalf("expected no error for nil state, got: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestValidateCheckpointCompatibility_NilState(t *testing.T) {
 
 func TestValidateCheckpointCompatibility_EmptyExpectedFingerprint(t *testing.T) {
 	state := newCheckpointState()
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, checkpointCompatibility{})
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, checkpointCompatibility{})
 	if err != nil {
 		t.Fatalf("expected no error for empty expected fingerprint, got: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestValidateCheckpointCompatibility_SourceTypeChanged(t *testing.T) {
 	changed.SourceType = "mariadb"
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, changedCompat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -171,7 +171,7 @@ func TestValidateCheckpointCompatibility_DatabaseChanged(t *testing.T) {
 	changed.SourceDBName = "otherdb"
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, changedCompat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -188,7 +188,7 @@ func TestValidateCheckpointCompatibility_TargetSchemaChanged(t *testing.T) {
 	changed.TargetSchema = "other_schema"
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, changedCompat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -205,7 +205,7 @@ func TestValidateCheckpointCompatibility_SnakeCaseChanged(t *testing.T) {
 	changed.SnakeCaseIdentifiers = !changed.SnakeCaseIdentifiers
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, changedCompat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -222,7 +222,7 @@ func TestValidateCheckpointCompatibility_TypeMappingChanged(t *testing.T) {
 	changed.TypeMapping.TinyInt1AsBoolean = true
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, changedCompat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -239,7 +239,7 @@ func TestValidateCheckpointCompatibility_MissingSummary(t *testing.T) {
 		Fingerprint: "different-fp",
 	}
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, noSummary)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, noSummary)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -252,7 +252,10 @@ func TestValidateCheckpointCompatibility_MaxReasonsLimited(t *testing.T) {
 	compat := testCheckpointCompatibility()
 	state := newCheckpointStateWithCompatibility(&compat)
 
-	// Change many fields to produce > 8 reasons
+	// Intentionally set mutually exclusive fields (schema_only + data_only) to
+	// produce > 8 diff reasons. This config is unreachable in production (blocked
+	// by finalizeConfig), but validateCheckpointCompatibility operates on raw
+	// summaries, so it's valid to stress the truncation logic this way.
 	changed := *compat.Summary
 	changed.SourceType = "mssql"
 	changed.SourceDBName = "otherdb"
@@ -266,7 +269,7 @@ func TestValidateCheckpointCompatibility_MaxReasonsLimited(t *testing.T) {
 	changed.TypeMapping.TinyInt1AsBoolean = true
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
-	err := validateCheckpointCompatibility("/tmp/cp.json", state, changedCompat)
+	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}

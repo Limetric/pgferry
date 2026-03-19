@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -111,49 +113,44 @@ func TestRunParallelMigrationWorkers_LazySourceOpenFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when openSource fails")
 	}
-	if got := err.Error(); !containsSubstring(got, "open source worker") {
+	if got := err.Error(); !strings.Contains(got, "open source worker") {
 		t.Fatalf("error = %q, want substring 'open source worker'", got)
 	}
 }
 
 func TestRunParallelMigrationWorkers_ContextCancellationDuringEnqueue(t *testing.T) {
-	// Create many work items but cancel context externally.
-	// Use 2 workers so one can process while the other is blocked,
-	// and the first error causes the enqueue loop to break.
+	// Verify that a worker failure cancels the context and stops the enqueue
+	// loop before all items are dispatched. Use 1 worker for determinism:
+	// with a single worker, items are dispatched sequentially, so the first
+	// item's failure cancels the context before remaining items are sent.
 	items := make([]migrationWorkItem, 50)
 	for i := range items {
 		items[i] = migrationWorkItem{Table: Table{SourceName: fmt.Sprintf("t%d", i)}}
 	}
 
+	var processed atomic.Int64
 	var mu sync.Mutex
-	processed := 0
 	err := runParallelMigrationWorkers(
 		context.Background(),
-		2,
+		1,
 		func() (migrationWorkerSource, error) {
 			return &fakeMigrationWorkerSource{id: 1, closeMu: &mu, closeCounts: map[int]int{}}, nil
 		},
 		items,
 		&fakeMigrationCheckpointManager{},
-		func(ctx context.Context, _ dbQuerier, item migrationWorkItem) (int64, error) {
-			mu.Lock()
-			processed++
-			mu.Unlock()
-			// First item fails, which should cancel context and stop enqueue
-			if item.Table.SourceName == "t0" {
-				return 0, fmt.Errorf("forced failure")
-			}
-			// Other items wait for cancellation
-			<-ctx.Done()
-			return 0, ctx.Err()
+		func(ctx context.Context, _ dbQuerier, _ migrationWorkItem) (int64, error) {
+			processed.Add(1)
+			return 0, fmt.Errorf("forced failure")
 		},
 	)
 
 	if err == nil {
 		t.Fatal("expected error after failure")
 	}
-	if processed >= len(items) {
-		t.Fatalf("processed all %d items despite cancellation, want early stop", processed)
+	// With 1 worker, only 1 item should be processed before the error
+	// cancels the context and breaks the enqueue loop.
+	if n := processed.Load(); n >= int64(len(items)) {
+		t.Fatalf("processed all %d items despite cancellation, want early stop", n)
 	}
 }
 
@@ -215,15 +212,3 @@ func TestRecordMigrationWorkResult_Chunk(t *testing.T) {
 	}
 }
 
-func containsSubstring(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(s) > 0 && contains(s, sub))
-}
-
-func contains(s, sub string) bool {
-	for i := 0; i+len(sub) <= len(s); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
-}
