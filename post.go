@@ -224,6 +224,9 @@ func truncateGeneratedIdentifierWithSuffix(base, suffix string) string {
 // execSQL is a helper that runs a single statement and logs errors with context.
 func execSQL(ctx context.Context, exec statementExecutor, desc, query string) error {
 	if _, err := exec.Exec(ctx, query); err != nil {
+		if desc == "" {
+			return fmt.Errorf("%w\nSQL: %s", err, query)
+		}
 		return fmt.Errorf("%s: %w\nSQL: %s", desc, err, query)
 	}
 	return nil
@@ -720,7 +723,11 @@ func preflightDataOnlyTriggerControl(ctx context.Context, beginTx func(context.C
 		probeErr := setTableTriggers(ctx, tx, pgSchema, t.PGName, false)
 		rollbackErr := tx.Rollback(ctx)
 		if probeErr != nil {
-			err = fmt.Errorf("%w. data_only preflight failed before COPY started, so no data was copied and the probe transaction was rolled back. data_only requires permission to disable and re-enable triggers on the target tables; use a role with that capability or run a full migration/schema_only workflow instead", probeErr)
+			status := "the probe transaction was rolled back"
+			if rollbackErr != nil {
+				status = "pgferry attempted to roll back the probe transaction, but that rollback failed"
+			}
+			err = fmt.Errorf("%w. data_only preflight failed before COPY started, so no data was copied and %s. data_only requires permission to disable and re-enable triggers on the target tables; use a role with that capability or run a full migration/schema_only workflow instead", probeErr, status)
 			if rollbackErr != nil {
 				err = errors.Join(err, fmt.Errorf("rollback trigger-control preflight for table %s.%s: %w", pgSchema, t.PGName, rollbackErr))
 			}
@@ -739,7 +746,7 @@ func setTableTriggers(ctx context.Context, exec statementExecutor, pgSchema, tab
 		action = "ENABLE"
 	}
 	q := fmt.Sprintf("ALTER TABLE %s.%s %s TRIGGER ALL", pgIdent(pgSchema), pgIdent(table), action)
-	if err := execSQL(ctx, exec, table, q); err != nil {
+	if err := execSQL(ctx, exec, "", q); err != nil {
 		return fmt.Errorf("table %s.%s: %w", pgSchema, table, err)
 	}
 	return nil

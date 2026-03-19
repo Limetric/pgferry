@@ -100,6 +100,36 @@ func TestPreflightDataOnlyTriggerControl_FailureReturnsGuidanceAndRollsBack(t *t
 	}
 }
 
+func TestPreflightDataOnlyTriggerControl_FailureWithRollbackErrorDoesNotClaimSuccess(t *testing.T) {
+	probeSQL := `ALTER TABLE "app"."users" DISABLE TRIGGER ALL`
+	tx := &fakeRollbackExecutor{
+		errByQuery: map[string]error{
+			probeSQL: errors.New("permission denied"),
+		},
+		rollbackErr: errors.New("rollback failed"),
+	}
+
+	err := preflightDataOnlyTriggerControl(context.Background(), func(context.Context) (rollbackExecutor, error) {
+		return tx, nil
+	}, &Schema{
+		Tables: []Table{{PGName: "users"}},
+	}, "app")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "probe transaction was rolled back") {
+		t.Fatalf("error %q should not claim rollback succeeded", err)
+	}
+	for _, want := range []string{
+		"attempted to roll back the probe transaction, but that rollback failed",
+		"rollback trigger-control preflight for table app.users: rollback failed",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q missing %q", err, want)
+		}
+	}
+}
+
 func TestSetTriggers_DisableFailureIncludesPrivilegeGuidance(t *testing.T) {
 	sql := `ALTER TABLE "app"."users" DISABLE TRIGGER ALL`
 	exec := &recordingStatementExecutor{
@@ -122,6 +152,9 @@ func TestSetTriggers_DisableFailureIncludesPrivilegeGuidance(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q missing %q", err, want)
 		}
+	}
+	if strings.Contains(err.Error(), "table app.users: users:") {
+		t.Fatalf("error %q should not repeat the unqualified table name", err)
 	}
 }
 
