@@ -70,7 +70,7 @@ jobs:
 
       - name: Create pull request
         if: steps.version.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: automation/update-go-${{ steps.version.outputs.latest }}
           delete-branch: true
