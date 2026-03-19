@@ -951,6 +951,7 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 		Source:               SourceConfig{Type: "mysql", DSN: mysqlDSN},
 		Target:               TargetConfig{DSN: pgDSN},
 		Schema:               pgSchema,
+		IncludeTables:        []string{"events"},
 		Workers:              1,
 		ChunkSize:            2,
 		Resume:               true,
@@ -962,6 +963,10 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 		Validation:           "none",
 		TypeMapping:          defaultTypeMappingConfig(),
 		configDir:            tmpDir,
+	}
+	schema, _, err = filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filter schema: %v", err)
 	}
 	cfg.TypeMapping.ZeroDateMode = "error"
 	typeMap := effectiveTypeMapping(cfg)
@@ -1352,6 +1357,7 @@ func seedMySQL(t *testing.T, db *sql.DB) {
 	stmts := []string{
 		"DROP TABLE IF EXISTS places_optional",
 		"DROP TABLE IF EXISTS places",
+		"DROP TABLE IF EXISTS events",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -1419,6 +1425,7 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	stmts := []string{
 		"DROP TABLE IF EXISTS places_optional",
 		"DROP TABLE IF EXISTS places",
+		"DROP TABLE IF EXISTS events",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
@@ -1506,6 +1513,7 @@ func seedMySQLSpatial(t *testing.T, db *sql.DB) {
 	stmts := []string{
 		"DROP TABLE IF EXISTS places_optional",
 		"DROP TABLE IF EXISTS places",
+		"DROP TABLE IF EXISTS events",
 		`CREATE TABLE places (
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			name VARCHAR(100) NOT NULL,
@@ -1623,6 +1631,7 @@ func seedSakila(t *testing.T, db *sql.DB) {
 		// Drop tables from other tests sharing the same database
 		"DROP TABLE IF EXISTS places_optional",
 		"DROP TABLE IF EXISTS places",
+		"DROP TABLE IF EXISTS events",
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
