@@ -223,7 +223,11 @@ func TestBuildPlanReport_MergesIntrospectedSchemaSemanticWarnings(t *testing.T) 
 		TypeMapping: defaultTypeMappingConfig(),
 	}
 	report := buildPlanReport(
-		&Schema{},
+		&Schema{
+			Tables: []Table{
+				{SourceName: "Orders", PGName: "orders"},
+			},
+		},
 		nil,
 		[]SchemaSemanticWarning{
 			{
@@ -245,6 +249,60 @@ func TestBuildPlanReport_MergesIntrospectedSchemaSemanticWarnings(t *testing.T) 
 	}
 	if got := report.SchemaSemanticWarnings[0].ObjectName; got != "orders.chk_total" {
 		t.Fatalf("object name = %q, want orders.chk_total", got)
+	}
+}
+
+func TestBuildPlanReport_FiltersSchemaSemanticWarningsToSelectedTables(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mysql"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	report := buildPlanReport(
+		&Schema{
+			Tables: []Table{
+				{SourceName: "Orders", PGName: "orders"},
+			},
+		},
+		nil,
+		[]SchemaSemanticWarning{
+			{
+				Category:            "constraints",
+				ObjectType:          "constraint",
+				ObjectName:          "orders.chk_total",
+				Disposition:         "skipped",
+				Reason:              `MySQL CHECK constraint "chk_total" is not migrated automatically.`,
+				RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
+			},
+			{
+				Category:            "comments",
+				ObjectType:          "column",
+				ObjectName:          "customers.email",
+				Disposition:         "skipped",
+				Reason:              `MySQL column comment "Primary email" is not migrated automatically.`,
+				RecommendedFollowUp: "Recreate the comment with PostgreSQL COMMENT ON statements if operators rely on it.",
+			},
+			{
+				Category:            "constraints",
+				ObjectType:          "schema",
+				ObjectName:          "",
+				Disposition:         "unavailable",
+				Reason:              "MySQL CHECK constraint metadata is unavailable on this server, so pgferry could not inspect source CHECK constraints automatically.",
+				RecommendedFollowUp: "Review source CHECK constraints manually if the schema relies on them.",
+			},
+		},
+		mysqlSrc,
+		cfg,
+		effectiveTypeMapping(cfg),
+	)
+
+	if len(report.SchemaSemanticWarnings) != 2 {
+		t.Fatalf("schema semantic warnings = %d, want 2", len(report.SchemaSemanticWarnings))
+	}
+	if got := report.SchemaSemanticWarnings[0].ObjectName; got != "orders.chk_total" {
+		t.Fatalf("first warning object = %q, want orders.chk_total", got)
+	}
+	if got := report.SchemaSemanticWarnings[1].Disposition; got != "unavailable" {
+		t.Fatalf("second warning disposition = %q, want unavailable", got)
 	}
 }
 

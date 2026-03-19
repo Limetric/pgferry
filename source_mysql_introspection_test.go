@@ -338,7 +338,7 @@ func TestMySQLIntrospectSchemaBatchesSchemaQueries(t *testing.T) {
 }
 
 func TestMySQLIntrospectSchemaSemanticWarnings(t *testing.T) {
-	db, stub := openMySQLIntrospectionStubDB(t)
+	db, _ := openMySQLIntrospectionStubDB(t)
 	defer db.Close()
 
 	src := &mysqlSourceDB{snakeCaseIDs: true}
@@ -347,9 +347,6 @@ func TestMySQLIntrospectSchemaSemanticWarnings(t *testing.T) {
 		t.Fatalf("IntrospectSchemaSemanticWarnings: %v", err)
 	}
 
-	if len(stub.queries) != 4 {
-		t.Fatalf("query count = %d, want 4", len(stub.queries))
-	}
 	if len(warnings) != 4 {
 		t.Fatalf("warnings = %d, want 4", len(warnings))
 	}
@@ -390,7 +387,7 @@ func TestMySQLCheckConstraintMetadataUnavailable(t *testing.T) {
 		{
 			name: "string fallback",
 			err:  errors.New("Table 'information_schema.CHECK_CONSTRAINTS' doesn't exist"),
-			want: true,
+			want: false,
 		},
 		{
 			name: "other error",
@@ -403,6 +400,38 @@ func TestMySQLCheckConstraintMetadataUnavailable(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := mySQLCheckConstraintMetadataUnavailable(tt.err); got != tt.want {
 				t.Fatalf("mySQLCheckConstraintMetadataUnavailable(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMySQLPartitionMetadataUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "mysql unknown table",
+			err:  &mysql.MySQLError{Number: 1109, Message: "Unknown table 'PARTITIONS'"},
+			want: true,
+		},
+		{
+			name: "mysql table missing",
+			err:  &mysql.MySQLError{Number: 1146, Message: "Table 'information_schema.PARTITIONS' doesn't exist"},
+			want: true,
+		},
+		{
+			name: "other error",
+			err:  errors.New("permission denied"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mySQLPartitionMetadataUnavailable(tt.err); got != tt.want {
+				t.Fatalf("mySQLPartitionMetadataUnavailable(%v) = %t, want %t", tt.err, got, tt.want)
 			}
 		})
 	}

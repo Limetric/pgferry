@@ -249,7 +249,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		}
 	}
 
-	preserveDefaults := true
+	preserveDefaults := false
 	if cfg != nil {
 		preserveDefaults = cfg.PreserveDefaults
 	}
@@ -385,12 +385,10 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		hasContent = true
 		fmt.Fprintf(w, "## Schema Semantic Warnings (%d)\n\n", len(report.SchemaSemanticWarnings))
 		fmt.Fprintf(w, "These items do not stop the migration, but pgferry will skip source semantics or leave them for manual recreation.\n\n")
+		byCategory := groupSchemaSemanticWarningsByCategory(report.SchemaSemanticWarnings)
 		for _, category := range orderedSchemaSemanticWarningCategories(report.SchemaSemanticWarnings) {
-			fmt.Fprintf(w, "%s (%d):\n", schemaSemanticWarningCategoryTitle(category), countSchemaSemanticWarningsByCategory(report.SchemaSemanticWarnings, category))
-			for _, warning := range report.SchemaSemanticWarnings {
-				if warning.Category != category {
-					continue
-				}
+			fmt.Fprintf(w, "%s (%d):\n", schemaSemanticWarningCategoryTitle(category), len(byCategory[category]))
+			for _, warning := range byCategory[category] {
 				fmt.Fprintf(w, "  - %s [%s]: %s\n", warning.ObjectName, warning.Disposition, warning.Reason)
 				if warning.RecommendedFollowUp != "" {
 					fmt.Fprintf(w, "    Follow-up: %s\n", warning.RecommendedFollowUp)
@@ -648,4 +646,12 @@ func countSchemaSemanticWarningsByCategory(warnings []SchemaSemanticWarning, cat
 		}
 	}
 	return count
+}
+
+func groupSchemaSemanticWarningsByCategory(warnings []SchemaSemanticWarning) map[string][]SchemaSemanticWarning {
+	grouped := make(map[string][]SchemaSemanticWarning)
+	for _, warning := range warnings {
+		grouped[warning.Category] = append(grouped[warning.Category], warning)
+	}
+	return grouped
 }

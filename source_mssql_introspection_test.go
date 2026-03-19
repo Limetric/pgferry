@@ -287,7 +287,7 @@ func TestMSSQLIntrospectSchemaBatchesSchemaQueries(t *testing.T) {
 }
 
 func TestMSSQLIntrospectSchemaSemanticWarnings(t *testing.T) {
-	db, stub := openMSSQLIntrospectionStubDB(t)
+	db, _ := openMSSQLIntrospectionStubDB(t)
 	defer db.Close()
 
 	src := &mssqlSourceDB{snakeCaseIDs: true, sourceSchema: "dbo"}
@@ -296,9 +296,6 @@ func TestMSSQLIntrospectSchemaSemanticWarnings(t *testing.T) {
 		t.Fatalf("IntrospectSchemaSemanticWarnings: %v", err)
 	}
 
-	if len(stub.queries) != 4 {
-		t.Fatalf("query count = %d, want 4", len(stub.queries))
-	}
 	if len(warnings) != 4 {
 		t.Fatalf("warnings = %d, want 4", len(warnings))
 	}

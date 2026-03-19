@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -347,8 +346,14 @@ func introspectMySQLFamilyCheckConstraintWarnings(db *sql.DB, dbName string, ide
 	)
 	if err != nil {
 		if mySQLCheckConstraintMetadataUnavailable(err) {
-			log.Printf("WARN: skipping %s CHECK constraint semantic introspection: %v", sourceName, err)
-			return []SchemaSemanticWarning{}, nil
+			return []SchemaSemanticWarning{
+				mysqlSchemaSemanticWarningUnavailable(
+					sourceName,
+					"constraints",
+					"CHECK constraint metadata is unavailable on this server, so pgferry could not inspect source CHECK constraints automatically.",
+					"Review source CHECK constraints manually if the schema relies on them.",
+				),
+			}, nil
 		}
 		return nil, err
 	}
@@ -385,12 +390,7 @@ func mySQLCheckConstraintMetadataUnavailable(err error) bool {
 			return true
 		}
 	}
-
-	lower := strings.ToLower(err.Error())
-	return strings.Contains(lower, "check_constraints") &&
-		(strings.Contains(lower, "doesn't exist") ||
-			strings.Contains(lower, "does not exist") ||
-			strings.Contains(lower, "unknown table"))
+	return false
 }
 
 func introspectMySQLFamilyCommentWarnings(db *sql.DB, dbName string, identName func(string) string, sourceName string) ([]SchemaSemanticWarning, error) {
@@ -406,6 +406,16 @@ func introspectMySQLFamilyCommentWarnings(db *sql.DB, dbName string, identName f
 		dbName,
 	)
 	if err != nil {
+		if mySQLPartitionMetadataUnavailable(err) {
+			return []SchemaSemanticWarning{
+				mysqlSchemaSemanticWarningUnavailable(
+					sourceName,
+					"partitioning",
+					"partitioning metadata is unavailable on this server, so pgferry could not inspect source partition layouts automatically.",
+					"Review source partitioning manually if PostgreSQL partitioning needs to be recreated.",
+				),
+			}, nil
+		}
 		return nil, err
 	}
 	defer tableRows.Close()
@@ -524,6 +534,28 @@ func introspectMySQLFamilyPartitionWarnings(db *sql.DB, dbName string, identName
 		})
 	}
 	return warnings, rows.Err()
+}
+
+func mySQLPartitionMetadataUnavailable(err error) bool {
+	var myErr *mysql.MySQLError
+	if errors.As(err, &myErr) {
+		switch myErr.Number {
+		case 1109, 1146:
+			return true
+		}
+	}
+	return false
+}
+
+func mysqlSchemaSemanticWarningUnavailable(sourceName, category, reason, followUp string) SchemaSemanticWarning {
+	return SchemaSemanticWarning{
+		Category:            category,
+		ObjectType:          "schema",
+		ObjectName:          "",
+		Disposition:         "unavailable",
+		Reason:              sourceName + " " + reason,
+		RecommendedFollowUp: followUp,
+	}
 }
 
 func introspectMySQLTables(db *sql.DB, dbName string, identName func(string) string) ([]Table, error) {

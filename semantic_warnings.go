@@ -35,7 +35,7 @@ func introspectSourceSchemaSemanticWarnings(db *sql.DB, src SourceDB, dbName str
 }
 
 func collectSchemaSemanticWarnings(schema *Schema, src SourceDB, preserveDefaults bool, typeMap TypeMappingConfig, introspected []SchemaSemanticWarning) []SchemaSemanticWarning {
-	warnings := append([]SchemaSemanticWarning{}, introspected...)
+	warnings := filterSchemaSemanticWarningsForSchema(schema, introspected)
 	if schema == nil || src == nil {
 		sortSchemaSemanticWarnings(warnings)
 		return warnings
@@ -54,6 +54,25 @@ func collectSchemaSemanticWarnings(schema *Schema, src SourceDB, preserveDefault
 
 	sortSchemaSemanticWarnings(warnings)
 	return warnings
+}
+
+func filterSchemaSemanticWarningsForSchema(schema *Schema, warnings []SchemaSemanticWarning) []SchemaSemanticWarning {
+	if len(warnings) == 0 || schema == nil {
+		return append([]SchemaSemanticWarning{}, warnings...)
+	}
+
+	allowedTables := make(map[string]bool, len(schema.Tables))
+	for _, table := range schema.Tables {
+		allowedTables[table.PGName] = true
+	}
+
+	filtered := make([]SchemaSemanticWarning, 0, len(warnings))
+	for _, warning := range warnings {
+		if schemaSemanticWarningTableName(warning) == "" || allowedTables[schemaSemanticWarningTableName(warning)] {
+			filtered = append(filtered, warning)
+		}
+	}
+	return filtered
 }
 
 func collectDefaultSemanticWarning(table Table, col Column, src SourceDB, typeMap TypeMappingConfig) (SchemaSemanticWarning, bool) {
@@ -104,9 +123,6 @@ func compactSemanticDetail(detail string) string {
 	compacted := strings.Join(strings.Fields(strings.TrimSpace(detail)), " ")
 	if len(compacted) <= maxSemanticDetailLen {
 		return compacted
-	}
-	if maxSemanticDetailLen <= 3 {
-		return compacted[:maxSemanticDetailLen]
 	}
 	return compacted[:maxSemanticDetailLen-3] + "..."
 }
@@ -165,4 +181,15 @@ func schemaSemanticWarningCategoryTitle(category string) string {
 		}
 		return strings.ToUpper(category[:1]) + category[1:]
 	}
+}
+
+func schemaSemanticWarningTableName(warning SchemaSemanticWarning) string {
+	if warning.ObjectName == "" {
+		return ""
+	}
+	tableName, _, found := strings.Cut(warning.ObjectName, ".")
+	if !found {
+		return warning.ObjectName
+	}
+	return tableName
 }
