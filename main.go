@@ -323,6 +323,16 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		err := runDataMigrationPhase(
 			cfg.DataOnly,
 			log.Printf,
+			func() error {
+				return preflightDataOnlyTriggerControl(
+					ctx,
+					func(ctx context.Context) (rollbackExecutor, error) {
+						return pgPool.Begin(ctx)
+					},
+					schema,
+					cfg.Schema,
+				)
+			},
 			func(enable bool) error {
 				return setTriggers(ctx, pgPool, schema, cfg.Schema, enable)
 			},
@@ -382,6 +392,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 func runDataMigrationPhase(
 	dataOnly bool,
 	logf func(string, ...any),
+	preflightTriggerControl func() error,
 	setTriggers func(enable bool) error,
 	beforeData func() error,
 	migrate func() error,
@@ -398,6 +409,11 @@ func runDataMigrationPhase(
 			return fmt.Errorf("after_data hooks: %w", err)
 		}
 		return nil
+	}
+
+	logf("preflighting trigger control for data_only...")
+	if err := preflightTriggerControl(); err != nil {
+		return fmt.Errorf("preflight data_only trigger control: %w", err)
 	}
 
 	logf("disabling triggers for data load...")

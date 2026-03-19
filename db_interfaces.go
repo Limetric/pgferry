@@ -19,3 +19,10 @@ type queryExecutor interface {
 	statementExecutor
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
+
+// rollbackExecutor is the minimal transactional contract needed for
+// rollback-only preflight probes against PostgreSQL.
+type rollbackExecutor interface {
+	statementExecutor
+	Rollback(context.Context) error
+}

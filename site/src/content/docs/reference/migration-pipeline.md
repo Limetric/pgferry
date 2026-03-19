@@ -71,6 +71,10 @@ Use this when the target schema already exists from a prior `schema_only` run or
 - unsigned checks
 - trigger creation
 
+Operational note: before COPY starts, pgferry verifies that the target role can run `ALTER TABLE ... DISABLE TRIGGER ALL` and later re-enable those triggers on the selected target tables. If that preflight fails, pgferry aborts before copying any data.
+
+This matters because `data_only` loads into a schema where foreign keys and other triggers may already exist. pgferry temporarily disables those triggers during the load so parallel COPY can proceed without immediate FK enforcement.
+
 ## Two-phase workflow
 
 ```bash
@@ -153,5 +157,6 @@ This is intentional:
 
 - Use the full pipeline for most rehearsals and first production attempts.
 - Split into `schema_only` and `data_only` only when you need manual schema review or a more controlled cutover sequence.
+- Treat `data_only` as privilege-sensitive on PostgreSQL. Managed services and restricted roles often block trigger control on pre-existing tables.
 - Prefer `resume = true` for large runs where restarts are expensive.
 - Prefer `validation = "row_count"` for the final rehearsals before cutover.

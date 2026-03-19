@@ -13,9 +13,15 @@ Use this when you want PostgreSQL tables, keys, and indexes created before any d
 
 Use this when the target schema already exists and you only need to stream data plus reset sequences.
 
+`data_only` is not a pure insert-only mode. pgferry preflights and then uses `ALTER TABLE ... DISABLE TRIGGER ALL` before COPY, followed by `ENABLE TRIGGER ALL` afterward. That means the PostgreSQL role must be allowed to control triggers on the target tables.
+
+If that preflight fails, pgferry aborts before COPY starts so operators are not left guessing whether any data moved or whether trigger state changed permanently.
+
 ## Tradeoff
 
 This is slower than the default full pipeline because data loads into a schema that already has more objects in place.
+
+It is also more privilege-sensitive than the full pipeline, especially on managed PostgreSQL services or environments with restricted application roles.
 
 ## Start from these examples
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -221,8 +222,8 @@ func truncateGeneratedIdentifierWithSuffix(base, suffix string) string {
 }
 
 // execSQL is a helper that runs a single statement and logs errors with context.
-func execSQL(ctx context.Context, pool *pgxpool.Pool, desc, query string) error {
-	if _, err := pool.Exec(ctx, query); err != nil {
+func execSQL(ctx context.Context, exec statementExecutor, desc, query string) error {
+	if _, err := exec.Exec(ctx, query); err != nil {
 		return fmt.Errorf("%s: %w\nSQL: %s", desc, err, query)
 	}
 	return nil
@@ -697,16 +698,54 @@ func foreignKeyAllNotNullPredicate(cols []string) string {
 
 // setTriggers enables or disables all triggers on every table in the schema.
 // Disabling triggers suspends FK enforcement, allowing parallel COPY in data_only mode.
-func setTriggers(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, enable bool) error {
+func setTriggers(ctx context.Context, exec statementExecutor, schema *Schema, pgSchema string, enable bool) error {
+	for _, t := range schema.Tables {
+		if err := setTableTriggers(ctx, exec, pgSchema, t.PGName, enable); err != nil {
+			if enable {
+				return fmt.Errorf("%w. pgferry attempted to restore trigger state after the data_only load path; verify the affected table's triggers are enabled before retrying", err)
+			}
+			return fmt.Errorf("%w. data_only requires permission to disable and re-enable triggers on the existing target tables; rerun with a role that can ALTER TABLE ... DISABLE/ENABLE TRIGGER ALL or use a full migration/schema_only workflow instead", err)
+		}
+	}
+	return nil
+}
+
+func preflightDataOnlyTriggerControl(ctx context.Context, beginTx func(context.Context) (rollbackExecutor, error), schema *Schema, pgSchema string) error {
+	for _, t := range schema.Tables {
+		tx, err := beginTx(ctx)
+		if err != nil {
+			return fmt.Errorf("begin trigger-control preflight for table %s.%s: %w", pgSchema, t.PGName, err)
+		}
+
+		probeErr := setTableTriggers(ctx, tx, pgSchema, t.PGName, false)
+		rollbackErr := tx.Rollback(ctx)
+		if probeErr != nil {
+			status := "the probe transaction was rolled back"
+			if rollbackErr != nil {
+				status = "pgferry attempted to roll back the probe transaction, but that rollback failed"
+			}
+			err = fmt.Errorf("%w. data_only preflight failed before COPY started, so no data was copied and %s. data_only requires permission to disable and re-enable triggers on the target tables; use a role with that capability or run a full migration/schema_only workflow instead", probeErr, status)
+			if rollbackErr != nil {
+				err = errors.Join(err, fmt.Errorf("rollback trigger-control preflight for table %s.%s: %w", pgSchema, t.PGName, rollbackErr))
+			}
+			return err
+		}
+		if rollbackErr != nil {
+			return fmt.Errorf("rollback trigger-control preflight for table %s.%s: %w", pgSchema, t.PGName, rollbackErr)
+		}
+	}
+	return nil
+}
+
+func setTableTriggers(ctx context.Context, exec statementExecutor, pgSchema, table string, enable bool) error {
 	action := "DISABLE"
 	if enable {
 		action = "ENABLE"
 	}
-	for _, t := range schema.Tables {
-		q := fmt.Sprintf("ALTER TABLE %s.%s %s TRIGGER ALL", pgIdent(pgSchema), pgIdent(t.PGName), action)
-		if err := execSQL(ctx, pool, t.PGName, q); err != nil {
-			return err
-		}
+	q := fmt.Sprintf("ALTER TABLE %s.%s %s TRIGGER ALL", pgIdent(pgSchema), pgIdent(table), action)
+	desc := fmt.Sprintf("table %s.%s", pgSchema, table)
+	if err := execSQL(ctx, exec, desc, q); err != nil {
+		return err
 	}
 	return nil
 }
