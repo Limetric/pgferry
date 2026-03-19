@@ -184,8 +184,7 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("analyze copy risk: %w", err)
 	}
-	report := buildPlanReport(schema, sourceObjects, semanticWarnings, src, cfg, typeMap)
-	report.CopyRiskFindings = copyRisks
+	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, src, cfg, typeMap)
 
 	if format == "json" {
 		if err := writePlanJSON(out, report); err != nil {
@@ -205,10 +204,10 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	return nil
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
 		RequiredExtensions:      []PlanRequiredExtension{},
-		CopyRiskFindings:        []PlanCopyRiskFinding{},
+		CopyRiskFindings:        ensureCopyRiskSlice(copyRisks),
 		UnsupportedColumns:      []PlanUnsupportedColumn{},
 		SchemaSemanticWarnings:  []SchemaSemanticWarning{},
 		GeneratedColumns:        []PlanGeneratedColumn{},
@@ -319,6 +318,13 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 	}
 
 	return report
+}
+
+func ensureCopyRiskSlice(findings []PlanCopyRiskFinding) []PlanCopyRiskFinding {
+	if findings == nil {
+		return []PlanCopyRiskFinding{}
+	}
+	return findings
 }
 
 func ensureStringSlice(s []string) []string {

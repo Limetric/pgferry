@@ -33,6 +33,7 @@ type MigrationConfig struct {
 	Workers                           int               `toml:"workers"`
 	IndexWorkers                      int               `toml:"index_workers"`
 	ChunkSize                         int64             `toml:"chunk_size"`
+	CopyRiskAnalysis                  bool              `toml:"copy_risk_analysis"`
 	Resume                            bool              `toml:"resume"`
 	Validation                        string            `toml:"validation"` // none|row_count|sampled_hash
 	Hooks                             HooksConfig       `toml:"hooks"`
@@ -135,6 +136,7 @@ func defaultMigrationConfig() MigrationConfig {
 		CleanOrphans:         true,
 		CleanOrphansMode:     "apply",
 		SnakeCaseIdentifiers: true,
+		CopyRiskAnalysis:     true,
 		TypeMapping:          defaultTypeMappingConfig(),
 	}
 }

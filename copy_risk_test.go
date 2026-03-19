@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"log"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -18,7 +21,7 @@ func TestAnalyzeCopyRiskTable_LargeNonChunkable(t *testing.T) {
 		PrimaryKey: &Index{Columns: []string{"id"}},
 	}
 
-	findings := analyzeCopyRiskTable(table, src, 2_000_000, 100000, nil, 0, 0, false)
+	findings := analyzeCopyRiskTable(table, src, 2_000_000, 100000, nil, 0, 0)
 	if len(findings) != 1 {
 		t.Fatalf("findings = %d, want 1", len(findings))
 	}
@@ -47,7 +50,7 @@ func TestAnalyzeCopyRiskTable_HighChunkCount(t *testing.T) {
 	}
 	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 
-	findings := analyzeCopyRiskTable(table, src, 20_000_000, 100000, key, 1, 20_000_000, true)
+	findings := analyzeCopyRiskTable(table, src, 20_000_000, 100000, key, 1, 20_000_000)
 	if len(findings) != 1 {
 		t.Fatalf("findings = %d, want 1", len(findings))
 	}
@@ -76,7 +79,7 @@ func TestAnalyzeCopyRiskTable_PoorRangeDensity(t *testing.T) {
 	}
 	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 
-	findings := analyzeCopyRiskTable(table, src, 1_000, 10000, key, 1, 1_000_000, true)
+	findings := analyzeCopyRiskTable(table, src, 1_000, 10000, key, 1, 1_000_000)
 	if len(findings) != 1 {
 		t.Fatalf("findings = %d, want 1", len(findings))
 	}
@@ -102,7 +105,7 @@ func TestAnalyzeCopyRiskTable_DenseChunkableTableHasNoWarning(t *testing.T) {
 	}
 	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 
-	findings := analyzeCopyRiskTable(table, src, 1_000, 100000, key, 1, 1_000, true)
+	findings := analyzeCopyRiskTable(table, src, 1_000, 100000, key, 1, 1_000)
 	if len(findings) != 0 {
 		t.Fatalf("findings = %d, want 0: %+v", len(findings), findings)
 	}
@@ -120,12 +123,99 @@ func TestAnalyzeCopyRiskTable_SuspiciousBigintChunkKey(t *testing.T) {
 	}
 	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 
-	findings := analyzeCopyRiskTable(table, src, 8_000_000, 100000, key, 1, 8_000_000, true)
-	if len(findings) != 1 {
-		t.Fatalf("findings = %d, want 1", len(findings))
+	findings := analyzeCopyRiskTable(table, src, 8_000_000, 100000, key, 1, 100_000_000)
+	if len(findings) < 2 {
+		t.Fatalf("findings = %d, want at least 2", len(findings))
 	}
-	if findings[0].Category != "suspicious_chunk_key_type" {
-		t.Fatalf("category = %q, want suspicious_chunk_key_type", findings[0].Category)
+
+	var sawSuspicious bool
+	for _, finding := range findings {
+		if finding.Category == "suspicious_chunk_key_type" {
+			sawSuspicious = true
+		}
+	}
+	if !sawSuspicious {
+		t.Fatalf("missing suspicious_chunk_key_type in %+v", findings)
+	}
+}
+
+func TestAnalyzeCopyRiskTable_DenseBigintTableDoesNotTriggerSuspiciousType(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "ledger",
+		PGName:     "ledger",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "bigint"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
+
+	findings := analyzeCopyRiskTable(table, src, 8_000_000, 100000, key, 1, 8_000_000)
+	if len(findings) != 0 {
+		t.Fatalf("findings = %d, want 0: %+v", len(findings), findings)
+	}
+}
+
+func TestCollectCopyRiskFindings_SQLite(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "copy-risk.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE sparse_events (id INTEGER PRIMARY KEY, payload TEXT)`,
+		`INSERT INTO sparse_events (id, payload) VALUES (1, 'a'), (1000000, 'b')`,
+		`CREATE TABLE small_uuid_table (id TEXT PRIMARY KEY, payload TEXT)`,
+		`INSERT INTO small_uuid_table (id, payload) VALUES ('a', 'x'), ('b', 'y')`,
+		`CREATE TABLE empty_events (id INTEGER PRIMARY KEY, payload TEXT)`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "sparse_events",
+				PGName:     "sparse_events",
+				Columns: []Column{
+					{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "BIGINT"},
+				},
+				PrimaryKey: &Index{Columns: []string{"id"}},
+			},
+			{
+				SourceName: "small_uuid_table",
+				PGName:     "small_uuid_table",
+				Columns: []Column{
+					{SourceName: "id", PGName: "id", DataType: "text", ColumnType: "TEXT"},
+				},
+				PrimaryKey: &Index{Columns: []string{"id"}},
+			},
+			{
+				SourceName: "empty_events",
+				PGName:     "empty_events",
+				Columns: []Column{
+					{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "BIGINT"},
+				},
+				PrimaryKey: &Index{Columns: []string{"id"}},
+			},
+		},
+	}
+
+	findings, err := collectCopyRiskFindings(context.Background(), db, &sqliteSourceDB{}, schema, 10000)
+	if err != nil {
+		t.Fatalf("collectCopyRiskFindings() error: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings = %d, want 1: %+v", len(findings), findings)
+	}
+	if findings[0].Table != "sparse_events" || findings[0].Category != "poor_range_density" {
+		t.Fatalf("first finding = %+v, want sparse_events poor_range_density", findings[0])
 	}
 }
 
@@ -180,5 +270,19 @@ func TestLogCopyRiskFindings(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("log output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestEstimateChunkCount_GuardsInvalidRange(t *testing.T) {
+	if got := estimateChunkCount(10, 1, 100); got != 0 {
+		t.Fatalf("estimateChunkCount(10, 1, 100) = %d, want 0", got)
+	}
+}
+
+func TestBuildSourceCountQuery_ReusedByCopyRisk(t *testing.T) {
+	src := &sqliteSourceDB{}
+	table := Table{SourceName: "events"}
+	if got := buildSourceCountQuery(src, table); got != `SELECT COUNT(*) FROM "events"` {
+		t.Fatalf("buildSourceCountQuery() = %q", got)
 	}
 }

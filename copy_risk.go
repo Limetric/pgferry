@@ -36,12 +36,8 @@ type PlanCopyRiskFinding struct {
 	Recommendation      string  `json:"recommendation"`
 }
 
-func buildCountQuery(src SourceDB, table Table) string {
-	return fmt.Sprintf("SELECT COUNT(*) FROM %s", src.SourceTableRef(table))
-}
-
 func queryExactRowCount(ctx context.Context, source dbQuerier, src SourceDB, table Table) (int64, error) {
-	rows, err := source.QueryContext(ctx, buildCountQuery(src, table))
+	rows, err := source.QueryContext(ctx, buildSourceCountQuery(src, table))
 	if err != nil {
 		return 0, fmt.Errorf("query row count for %s: %w", table.SourceName, err)
 	}
@@ -69,7 +65,7 @@ func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB
 		return []PlanCopyRiskFinding{}, nil
 	}
 
-	findings := make([]PlanCopyRiskFinding, 0)
+	findings := make([]PlanCopyRiskFinding, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		rowCount, err := queryExactRowCount(ctx, source, src, table)
 		if err != nil {
@@ -81,7 +77,7 @@ func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB
 
 		key := chunkKeyForTable(table, src)
 		if key == nil {
-			findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, nil, 0, 0, false)...)
+			findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, nil, 0, 0)...)
 			continue
 		}
 
@@ -92,14 +88,14 @@ func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB
 		if !hasRows {
 			continue
 		}
-		findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, key, min, max, true)...)
+		findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, key, min, max)...)
 	}
 
 	sortCopyRiskFindings(findings)
 	return findings, nil
 }
 
-func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize int64, key *ChunkKey, minPK, maxPK int64, hasRange bool) []PlanCopyRiskFinding {
+func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize int64, key *ChunkKey, minPK, maxPK int64) []PlanCopyRiskFinding {
 	if rowCount <= 0 {
 		return nil
 	}
@@ -148,7 +144,7 @@ func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize i
 		})
 	}
 
-	if hasRange && chunkCount >= copyRiskPoorDensityMinChunks && density < copyRiskPoorDensityThreshold {
+	if chunkCount >= copyRiskPoorDensityMinChunks && density < copyRiskPoorDensityThreshold {
 		findings = append(findings, PlanCopyRiskFinding{
 			Category:            "poor_range_density",
 			Severity:            "medium",
@@ -166,7 +162,7 @@ func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize i
 		})
 	}
 
-	if strings.EqualFold(chunkKeyType, "bigint") && rowCount >= copyRiskBigintRowsThreshold && chunkCount >= copyRiskBigintChunkThreshold {
+	if strings.EqualFold(chunkKeyType, "bigint") && rowCount >= copyRiskBigintRowsThreshold && chunkCount >= copyRiskBigintChunkThreshold && density < copyRiskPoorDensityThreshold {
 		findings = append(findings, PlanCopyRiskFinding{
 			Category:            "suspicious_chunk_key_type",
 			Severity:            "medium",
@@ -200,9 +196,6 @@ func nonChunkableTableReason(table Table, src SourceDB) string {
 		if col.PGName != pkName {
 			continue
 		}
-		if isNumericChunkableType(col, src) {
-			return "The table is not chunkable under the current chunking rules."
-		}
 		return fmt.Sprintf("Primary key column %s has non-chunkable type %q.", pkName, col.ColumnType)
 	}
 
@@ -233,6 +226,9 @@ func normalizedChunkSize(chunkSize int64) int64 {
 
 func estimateChunkCount(minPK, maxPK, chunkSize int64) int {
 	chunkSize = normalizedChunkSize(chunkSize)
+	if maxPK < minPK {
+		return 0
+	}
 	diff := uint64(maxPK) - uint64(minPK)
 	count := diff/uint64(chunkSize) + 1
 	maxInt := int(^uint(0) >> 1)
