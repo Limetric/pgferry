@@ -11,6 +11,26 @@ import (
 	"testing"
 )
 
+func TestShouldSampleProgressLogTime(t *testing.T) {
+	tests := []struct {
+		copied int64
+		want   bool
+	}{
+		{1, true},
+		{2, false},
+		{1023, false},
+		{1024, true},
+		{1025, false},
+		{2048, true},
+		{2049, false},
+	}
+	for _, tt := range tests {
+		if got := shouldSampleProgressLogTime(tt.copied); got != tt.want {
+			t.Errorf("shouldSampleProgressLogTime(%d) = %v, want %v", tt.copied, got, tt.want)
+		}
+	}
+}
+
 func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 	table := Table{
 		SourceName: "users",
