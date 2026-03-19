@@ -14,7 +14,7 @@ func TestBuildPlanReport_Empty(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views = %d, want 0", len(report.SourceObjects.Views))
@@ -57,7 +57,7 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig(), CleanOrphans: true}
 
-	report := buildPlanReport(schema, objs, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, objs, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 1 || report.SourceObjects.Views[0] != "v_active_users" {
 		t.Errorf("views = %v, want [v_active_users]", report.SourceObjects.Views)
@@ -92,6 +92,77 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	}
 }
 
+func TestBuildPlanReport_CollectsDefaultSemanticWarnings(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "sqlite"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	defaultExpr := "(datetime('now'))"
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{
+						SourceName: "created_at",
+						PGName:     "created_at",
+						DataType:   "datetime",
+						ColumnType: "DATETIME",
+						Default:    &defaultExpr,
+					},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.SchemaSemanticWarnings) != 1 {
+		t.Fatalf("schema semantic warnings = %d, want 1", len(report.SchemaSemanticWarnings))
+	}
+	got := report.SchemaSemanticWarnings[0]
+	if got.Category != "defaults" {
+		t.Fatalf("category = %q, want defaults", got.Category)
+	}
+	if got.ObjectName != "events.created_at" {
+		t.Fatalf("object name = %q, want events.created_at", got.ObjectName)
+	}
+	if !strings.Contains(got.Reason, "datetime('now')") {
+		t.Fatalf("reason = %q, want skipped default detail", got.Reason)
+	}
+}
+
+func TestBuildPlanReport_MergesIntrospectedSchemaSemanticWarnings(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "mysql"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	report := buildPlanReport(
+		&Schema{},
+		nil,
+		[]SchemaSemanticWarning{
+			{
+				Category:            "constraints",
+				ObjectType:          "constraint",
+				ObjectName:          "orders.chk_total",
+				Disposition:         "skipped",
+				Reason:              `MySQL CHECK constraint "chk_total" is not migrated automatically.`,
+				RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
+			},
+		},
+		mysqlSrc,
+		cfg,
+		effectiveTypeMapping(cfg),
+	)
+
+	if len(report.SchemaSemanticWarnings) != 1 {
+		t.Fatalf("schema semantic warnings = %d, want 1", len(report.SchemaSemanticWarnings))
+	}
+	if got := report.SchemaSemanticWarnings[0].ObjectName; got != "orders.chk_total" {
+		t.Fatalf("object name = %q, want orders.chk_total", got)
+	}
+}
+
 func TestWritePlanText_Empty(t *testing.T) {
 	report := &PlanReport{}
 	var buf bytes.Buffer
@@ -113,6 +184,16 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		},
 		UnsupportedColumns: []PlanUnsupportedColumn{
 			{Table: "mystery", Column: "payload", SourceType: "geometry", Reason: "unsupported MySQL type \"geometry\""},
+		},
+		SchemaSemanticWarnings: []SchemaSemanticWarning{
+			{
+				Category:            "defaults",
+				ObjectType:          "column",
+				ObjectName:          "events.created_at",
+				Disposition:         "skipped",
+				Reason:              `SQLite default "(datetime('now'))" is not recreated automatically and will be omitted from the PostgreSQL column definition.`,
+				RecommendedFollowUp: "Recreate the PostgreSQL DEFAULT manually if future inserts depend on it.",
+			},
 		},
 		GeneratedColumns: []PlanGeneratedColumn{
 			{Table: "orders", Column: "total", Expression: "VIRTUAL GENERATED"},
@@ -147,6 +228,10 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		"after_all",
 		"## Unsupported Columns (1)",
 		"mystery.payload",
+		"## Schema Semantic Warnings (1)",
+		"Defaults (1):",
+		`events.created_at [skipped]`,
+		`SQLite default "(datetime('now'))"`,
 		"## Generated Columns (1)",
 		"orders.total",
 		"after_data",
@@ -173,6 +258,16 @@ func TestWritePlanJSON(t *testing.T) {
 		SourceObjects: PlanSourceObjects{
 			Views:    []string{"v_users"},
 			Routines: []string{"FUNCTION foo"},
+		},
+		SchemaSemanticWarnings: []SchemaSemanticWarning{
+			{
+				Category:            "constraints",
+				ObjectType:          "constraint",
+				ObjectName:          "orders.chk_total",
+				Disposition:         "skipped",
+				Reason:              `MySQL CHECK constraint "chk_total" is not migrated automatically. Definition: total >= 0`,
+				RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
+			},
 		},
 		GeneratedColumns: []PlanGeneratedColumn{
 			{Table: "t1", Column: "c1", Expression: "STORED GENERATED"},
@@ -213,6 +308,9 @@ func TestWritePlanJSON(t *testing.T) {
 	}
 	if len(decoded.GeneratedColumns) != 1 {
 		t.Errorf("generated columns = %d", len(decoded.GeneratedColumns))
+	}
+	if len(decoded.SchemaSemanticWarnings) != 1 {
+		t.Errorf("schema semantic warnings = %d", len(decoded.SchemaSemanticWarnings))
 	}
 	if len(decoded.SkippedIndexes) != 1 {
 		t.Errorf("skipped indexes = %d", len(decoded.SkippedIndexes))
@@ -356,7 +454,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views should be empty, got %v", report.SourceObjects.Views)
@@ -372,7 +470,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	var buf bytes.Buffer
 	if err := writePlanJSON(&buf, report); err != nil {
@@ -415,7 +513,7 @@ func TestBuildPlanReport_RequiredExtensionsAndUnsupportedColumns(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(report.RequiredExtensions) != 2 {
 		t.Fatalf("required extensions = %d, want 2", len(report.RequiredExtensions))
 	}
@@ -440,7 +538,7 @@ func TestBuildPlanReport_PostGISDisabledMarksSpatialUnsupported(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(report.UnsupportedColumns) != 1 {
 		t.Fatalf("unsupported columns = %d, want 1", len(report.UnsupportedColumns))
 	}
@@ -471,7 +569,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQL(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 4 {
 		t.Fatalf("temporal warnings = %d, want 4", len(report.TemporalWarnings))
@@ -512,7 +610,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQLIntervalMode(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 1 {
 		t.Fatalf("temporal warnings = %d, want 1", len(report.TemporalWarnings))
@@ -543,7 +641,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQLTextModeSuppressesTimeWarning(t *
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 0 {
 		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))
@@ -568,7 +666,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQLDatetimeAsTimestamptz(t *testing.
 		},
 	}
 
-	report := buildPlanReport(schema, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 2 {
 		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
@@ -601,7 +699,7 @@ func TestBuildPlanReport_TemporalWarnings_MariaDB(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, &mariadbSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, &mariadbSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	gotCategories := make([]string, 0, len(report.TemporalWarnings))
 	for _, warning := range report.TemporalWarnings {
@@ -639,7 +737,7 @@ func TestBuildPlanReport_TemporalWarnings_MSSQL(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 2 {
 		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
@@ -673,7 +771,7 @@ func TestBuildPlanReport_TemporalWarnings_MSSQLDatetimeAsTimestamptz(t *testing.
 		},
 	}
 
-	report := buildPlanReport(schema, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 1 {
 		t.Fatalf("temporal warnings = %d, want 1", len(report.TemporalWarnings))
@@ -700,7 +798,7 @@ func TestBuildPlanReport_TemporalWarnings_SQLiteNone(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 0 {
 		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))

@@ -48,6 +48,19 @@ What you get:
 - warnings in `plan` output
 - a clear signal that you may need an `after_data` or `after_all` follow-up step
 
+## Reported semantic drift
+
+`pgferry plan` also reports schema semantics that do not necessarily block the migration but still need review because pgferry skips or leaves them behind.
+
+Current examples include:
+
+- skipped source defaults that cannot be recreated automatically
+- source `CHECK` constraints that are not recreated
+- table and column comments / extended properties that are not migrated
+- source partitioning metadata that is detected but not rebuilt in PostgreSQL
+
+Treat these as cutover work items, not as noise. They are usually the difference between a load that completed and a schema that still behaves the way the source system did.
+
 ## Unsupported objects and features
 
 pgferry reports these rather than silently faking them:

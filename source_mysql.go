@@ -102,6 +102,10 @@ func (m *mysqlSourceDB) IntrospectSourceObjects(db *sql.DB, dbName string) (*Sou
 	return introspectMySQLSourceObjects(db, dbName)
 }
 
+func (m *mysqlSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, dbName string) ([]SchemaSemanticWarning, error) {
+	return introspectMySQLFamilySchemaSemanticWarnings(db, dbName, m.identName, "MySQL")
+}
+
 func (m *mysqlSourceDB) MapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	return mysqlMapType(col, typeMap)
 }
@@ -133,6 +137,10 @@ func (m *mariadbSourceDB) Name() string { return "MariaDB" }
 
 func (m *mariadbSourceDB) IntrospectSchema(db *sql.DB, dbName string) (*Schema, error) {
 	return introspectMariaDBSchema(db, dbName, m.identName)
+}
+
+func (m *mariadbSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, dbName string) ([]SchemaSemanticWarning, error) {
+	return introspectMySQLFamilySchemaSemanticWarnings(db, dbName, m.identName, "MariaDB")
 }
 
 func (m *mariadbSourceDB) MapType(col Column, typeMap TypeMappingConfig) (string, error) {
@@ -297,6 +305,203 @@ func mariaDBJSONAliasColumnFromCheckClause(clause string) string {
 
 func normalizeMariaDBAliasKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func introspectMySQLFamilySchemaSemanticWarnings(db *sql.DB, dbName string, identName func(string) string, sourceName string) ([]SchemaSemanticWarning, error) {
+	var warnings []SchemaSemanticWarning
+
+	checkWarnings, err := introspectMySQLFamilyCheckConstraintWarnings(db, dbName, identName, sourceName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect %s CHECK constraints for schema %s: %w", sourceName, dbName, err)
+	}
+	warnings = append(warnings, checkWarnings...)
+
+	commentWarnings, err := introspectMySQLFamilyCommentWarnings(db, dbName, identName, sourceName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect %s comments for schema %s: %w", sourceName, dbName, err)
+	}
+	warnings = append(warnings, commentWarnings...)
+
+	partitionWarnings, err := introspectMySQLFamilyPartitionWarnings(db, dbName, identName, sourceName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect %s partitioning for schema %s: %w", sourceName, dbName, err)
+	}
+	warnings = append(warnings, partitionWarnings...)
+
+	return warnings, nil
+}
+
+func introspectMySQLFamilyCheckConstraintWarnings(db *sql.DB, dbName string, identName func(string) string, sourceName string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(
+		`SELECT tc.TABLE_NAME, tc.CONSTRAINT_NAME, cc.CHECK_CLAUSE
+		 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+		 JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+		   ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA
+		  AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+		 WHERE tc.TABLE_SCHEMA = ?
+		   AND tc.CONSTRAINT_TYPE = 'CHECK'
+		 ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME`,
+		dbName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, constraintName string
+		var clause sql.NullString
+		if err := rows.Scan(&tableName, &constraintName, &clause); err != nil {
+			return nil, err
+		}
+		reason := fmt.Sprintf("%s CHECK constraint %q is not migrated automatically.", sourceName, constraintName)
+		if clause.Valid && strings.TrimSpace(clause.String) != "" {
+			reason += " Definition: " + compactSemanticDetail(clause.String)
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:            "constraints",
+			ObjectType:          "constraint",
+			ObjectName:          identName(tableName) + "." + identName(constraintName),
+			Disposition:         "skipped",
+			Reason:              reason,
+			RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
+		})
+	}
+	return warnings, rows.Err()
+}
+
+func introspectMySQLFamilyCommentWarnings(db *sql.DB, dbName string, identName func(string) string, sourceName string) ([]SchemaSemanticWarning, error) {
+	var warnings []SchemaSemanticWarning
+
+	tableRows, err := db.Query(
+		`SELECT TABLE_NAME, TABLE_COMMENT
+		 FROM INFORMATION_SCHEMA.TABLES
+		 WHERE TABLE_SCHEMA = ?
+		   AND TABLE_TYPE = 'BASE TABLE'
+		   AND COALESCE(TABLE_COMMENT, '') <> ''
+		 ORDER BY TABLE_NAME`,
+		dbName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer tableRows.Close()
+
+	for tableRows.Next() {
+		var tableName, comment string
+		if err := tableRows.Scan(&tableName, &comment); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:    "comments",
+			ObjectType:  "table",
+			ObjectName:  identName(tableName),
+			Disposition: "skipped",
+			Reason: fmt.Sprintf(
+				"%s table comment %q is not migrated automatically.",
+				sourceName,
+				compactSemanticDetail(comment),
+			),
+			RecommendedFollowUp: "Recreate the comment with PostgreSQL COMMENT ON statements if operators rely on it.",
+		})
+	}
+	if err := tableRows.Err(); err != nil {
+		return nil, err
+	}
+
+	columnRows, err := db.Query(
+		`SELECT TABLE_NAME, COLUMN_NAME, COLUMN_COMMENT
+		 FROM INFORMATION_SCHEMA.COLUMNS
+		 WHERE TABLE_SCHEMA = ?
+		   AND COALESCE(COLUMN_COMMENT, '') <> ''
+		 ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+		dbName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer columnRows.Close()
+
+	for columnRows.Next() {
+		var tableName, columnName, comment string
+		if err := columnRows.Scan(&tableName, &columnName, &comment); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:    "comments",
+			ObjectType:  "column",
+			ObjectName:  identName(tableName) + "." + identName(columnName),
+			Disposition: "skipped",
+			Reason: fmt.Sprintf(
+				"%s column comment %q is not migrated automatically.",
+				sourceName,
+				compactSemanticDetail(comment),
+			),
+			RecommendedFollowUp: "Recreate the comment with PostgreSQL COMMENT ON statements if operators rely on it.",
+		})
+	}
+	if err := columnRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return warnings, nil
+}
+
+func introspectMySQLFamilyPartitionWarnings(db *sql.DB, dbName string, identName func(string) string, sourceName string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(
+		`SELECT DISTINCT
+		        TABLE_NAME,
+		        COALESCE(PARTITION_METHOD, ''),
+		        COALESCE(PARTITION_EXPRESSION, ''),
+		        COALESCE(SUBPARTITION_METHOD, ''),
+		        COALESCE(SUBPARTITION_EXPRESSION, '')
+		 FROM INFORMATION_SCHEMA.PARTITIONS
+		 WHERE TABLE_SCHEMA = ?
+		   AND PARTITION_NAME IS NOT NULL
+		 ORDER BY TABLE_NAME`,
+		dbName,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, method, expr, subMethod, subExpr string
+		if err := rows.Scan(&tableName, &method, &expr, &subMethod, &subExpr); err != nil {
+			return nil, err
+		}
+
+		detail := method
+		if detail == "" {
+			detail = "partitioned"
+		}
+		if compactExpr := compactSemanticDetail(expr); compactExpr != "" {
+			detail += " on " + compactExpr
+		}
+		if compactSubMethod := compactSemanticDetail(subMethod); compactSubMethod != "" {
+			detail += "; subpartition " + compactSubMethod
+			if compactSubExpr := compactSemanticDetail(subExpr); compactSubExpr != "" {
+				detail += " on " + compactSubExpr
+			}
+		}
+
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:    "partitioning",
+			ObjectType:  "table",
+			ObjectName:  identName(tableName),
+			Disposition: "skipped",
+			Reason: fmt.Sprintf(
+				"%s partitioning metadata detected (%s). PostgreSQL partitioning is not recreated automatically.",
+				sourceName,
+				detail,
+			),
+			RecommendedFollowUp: "Recreate the PostgreSQL partitioned table layout manually if the source design matters for performance or maintenance.",
+		})
+	}
+	return warnings, rows.Err()
 }
 
 func introspectMySQLTables(db *sql.DB, dbName string, identName func(string) string) ([]Table, error) {

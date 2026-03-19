@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -103,6 +104,34 @@ func (s *mssqlIntrospectionStub) query(query string, args []driver.NamedValue) (
 	s.mu.Unlock()
 
 	switch {
+	case strings.Contains(normalized, "FROM sys.check_constraints cc"):
+		return &mssqlStubRows{
+			columns: []string{"name", "name", "definition"},
+			data: [][]driver.Value{
+				{"OrderVersions", "CHK_OrderVersions_StatusText", "([StatusText]<>'')"},
+			},
+		}, nil
+	case strings.Contains(normalized, "FROM sys.tables t") && strings.Contains(normalized, "MS_Description"):
+		return &mssqlStubRows{
+			columns: []string{"name", "comment"},
+			data: [][]driver.Value{
+				{"OrderVersions", "Keeps version history"},
+			},
+		}, nil
+	case strings.Contains(normalized, "FROM sys.columns c") && strings.Contains(normalized, "MS_Description"):
+		return &mssqlStubRows{
+			columns: []string{"table_name", "column_name", "comment"},
+			data: [][]driver.Value{
+				{"OrderVersions", "StatusText", "Current workflow state"},
+			},
+		}, nil
+	case strings.Contains(normalized, "JOIN sys.partition_schemes ps"):
+		return &mssqlStubRows{
+			columns: []string{"table_name", "scheme_name", "column_name"},
+			data: [][]driver.Value{
+				{"AuditTrail", "ps_audit_created_at", "CreatedAt"},
+			},
+		}, nil
 	case strings.Contains(normalized, "FROM sys.tables t"):
 		return &mssqlStubRows{
 			columns: []string{"name"},
@@ -254,5 +283,39 @@ func TestMSSQLIntrospectSchemaBatchesSchemaQueries(t *testing.T) {
 	}
 	if got := auditTrail.ForeignKeys[1].UpdateRule + "/" + auditTrail.ForeignKeys[1].DeleteRule; got != "CASCADE/CASCADE" {
 		t.Fatalf("FK_AuditTrail_OrderVersions rules = %s, want CASCADE/CASCADE", got)
+	}
+}
+
+func TestMSSQLIntrospectSchemaSemanticWarnings(t *testing.T) {
+	db, stub := openMSSQLIntrospectionStubDB(t)
+	defer db.Close()
+
+	src := &mssqlSourceDB{snakeCaseIDs: true, sourceSchema: "dbo"}
+	warnings, err := src.IntrospectSchemaSemanticWarnings(db, "")
+	if err != nil {
+		t.Fatalf("IntrospectSchemaSemanticWarnings: %v", err)
+	}
+
+	if len(stub.queries) != 4 {
+		t.Fatalf("query count = %d, want 4", len(stub.queries))
+	}
+	if len(warnings) != 4 {
+		t.Fatalf("warnings = %d, want 4", len(warnings))
+	}
+
+	wantObjects := []string{
+		"order_versions.chk_order_versions_status_text",
+		"order_versions",
+		"order_versions.status_text",
+		"audit_trail",
+	}
+	gotObjects := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		gotObjects = append(gotObjects, warning.ObjectName)
+	}
+	for _, want := range wantObjects {
+		if !slices.Contains(gotObjects, want) {
+			t.Fatalf("missing semantic warning for %q in %v", want, gotObjects)
+		}
 	}
 }

@@ -8,6 +8,7 @@ description: Treat pgferry plan output as a worklist, not a warning dump.
 ## Pay attention to these sections first
 
 - unsupported source column types
+- schema semantic warnings for skipped or lossy defaults, CHECK constraints, comments, and partitioning
 - generated columns
 - skipped or unsupported indexes
 - views, routines, and source triggers
@@ -19,6 +20,7 @@ description: Treat pgferry plan output as a worklist, not a warning dump.
 | Plan output | Usual response |
 | --- | --- |
 | unsupported type | decide on a type-mapping override or stop and redesign |
+| schema semantic warning | decide whether to recreate the behavior with PostgreSQL DDL or hook SQL |
 | generated column warning | recreate the expression later with hooks or application DDL |
 | unsupported index warning | decide whether PostgreSQL needs an equivalent or a different design |
 | view/routine/trigger warning | write `after_all` hook SQL or separate DDL |
