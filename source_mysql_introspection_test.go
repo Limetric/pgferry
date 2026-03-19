@@ -4,11 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type mysqlIntrospectionStub struct {
@@ -103,6 +107,34 @@ func (s *mysqlIntrospectionStub) query(query string, args []driver.NamedValue) (
 	s.mu.Unlock()
 
 	switch {
+	case strings.Contains(normalized, "FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS"):
+		return &mysqlStubRows{
+			columns: []string{"TABLE_NAME", "CONSTRAINT_NAME", "CHECK_CLAUSE"},
+			data: [][]driver.Value{
+				{"OrderVersions", "chk_status_code", "`StatusCode` in ('new','done')"},
+			},
+		}, nil
+	case strings.Contains(normalized, "TABLE_COMMENT"):
+		return &mysqlStubRows{
+			columns: []string{"TABLE_NAME", "TABLE_COMMENT"},
+			data: [][]driver.Value{
+				{"OrderVersions", "Keeps version history"},
+			},
+		}, nil
+	case strings.Contains(normalized, "COLUMN_COMMENT"):
+		return &mysqlStubRows{
+			columns: []string{"TABLE_NAME", "COLUMN_NAME", "COLUMN_COMMENT"},
+			data: [][]driver.Value{
+				{"OrderVersions", "StatusCode", "Current workflow state"},
+			},
+		}, nil
+	case strings.Contains(normalized, "FROM INFORMATION_SCHEMA.PARTITIONS"):
+		return &mysqlStubRows{
+			columns: []string{"TABLE_NAME", "PARTITION_METHOD", "PARTITION_EXPRESSION", "SUBPARTITION_METHOD", "SUBPARTITION_EXPRESSION"},
+			data: [][]driver.Value{
+				{"AuditTrail", "RANGE", "to_days(`CreatedAt`)", "", ""},
+			},
+		}, nil
 	case strings.Contains(normalized, "FROM INFORMATION_SCHEMA.TABLES"):
 		return &mysqlStubRows{
 			columns: []string{"TABLE_NAME"},
@@ -302,5 +334,105 @@ func TestMySQLIntrospectSchemaBatchesSchemaQueries(t *testing.T) {
 	}
 	if auditTrail.ForeignKeys[1].UpdateRule != "CASCADE" || auditTrail.ForeignKeys[1].DeleteRule != "CASCADE" {
 		t.Fatalf("fk_audit_order rules = %q/%q, want CASCADE/CASCADE", auditTrail.ForeignKeys[1].UpdateRule, auditTrail.ForeignKeys[1].DeleteRule)
+	}
+}
+
+func TestMySQLIntrospectSchemaSemanticWarnings(t *testing.T) {
+	db, _ := openMySQLIntrospectionStubDB(t)
+	defer db.Close()
+
+	src := &mysqlSourceDB{snakeCaseIDs: true}
+	warnings, err := src.IntrospectSchemaSemanticWarnings(db, "appdb")
+	if err != nil {
+		t.Fatalf("IntrospectSchemaSemanticWarnings: %v", err)
+	}
+
+	if len(warnings) != 4 {
+		t.Fatalf("warnings = %d, want 4", len(warnings))
+	}
+
+	wantObjects := []string{
+		"order_versions.chk_status_code",
+		"order_versions",
+		"order_versions.status_code",
+		"audit_trail",
+	}
+	gotObjects := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		gotObjects = append(gotObjects, warning.ObjectName)
+	}
+	for _, want := range wantObjects {
+		if !slices.Contains(gotObjects, want) {
+			t.Fatalf("missing semantic warning for %q in %v", want, gotObjects)
+		}
+	}
+}
+
+func TestMySQLCheckConstraintMetadataUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "mysql unknown table",
+			err:  &mysql.MySQLError{Number: 1109, Message: "Unknown table 'CHECK_CONSTRAINTS'"},
+			want: true,
+		},
+		{
+			name: "mysql table missing",
+			err:  &mysql.MySQLError{Number: 1146, Message: "Table 'information_schema.CHECK_CONSTRAINTS' doesn't exist"},
+			want: true,
+		},
+		{
+			name: "string fallback",
+			err:  errors.New("Table 'information_schema.CHECK_CONSTRAINTS' doesn't exist"),
+			want: false,
+		},
+		{
+			name: "other error",
+			err:  errors.New("permission denied"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mySQLCheckConstraintMetadataUnavailable(tt.err); got != tt.want {
+				t.Fatalf("mySQLCheckConstraintMetadataUnavailable(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMySQLPartitionMetadataUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "mysql unknown table",
+			err:  &mysql.MySQLError{Number: 1109, Message: "Unknown table 'PARTITIONS'"},
+			want: true,
+		},
+		{
+			name: "mysql table missing",
+			err:  &mysql.MySQLError{Number: 1146, Message: "Table 'information_schema.PARTITIONS' doesn't exist"},
+			want: true,
+		},
+		{
+			name: "other error",
+			err:  errors.New("permission denied"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mySQLPartitionMetadataUnavailable(tt.err); got != tt.want {
+				t.Fatalf("mySQLPartitionMetadataUnavailable(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
 	}
 }

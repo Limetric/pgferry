@@ -42,6 +42,7 @@ type PlanReport struct {
 	RequiredExtensions      []PlanRequiredExtension      `json:"required_extensions"`
 	SourceObjects           PlanSourceObjects            `json:"source_objects"`
 	UnsupportedColumns      []PlanUnsupportedColumn      `json:"unsupported_columns"`
+	SchemaSemanticWarnings  []SchemaSemanticWarning      `json:"schema_semantic_warnings"`
 	GeneratedColumns        []PlanGeneratedColumn        `json:"generated_columns"`
 	SkippedIndexes          []PlanSkippedIndex           `json:"skipped_indexes"`
 	OrphanCleanupCandidates []PlanOrphanCleanupCandidate `json:"orphan_cleanup_candidates"`
@@ -174,7 +175,11 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	}
 
 	typeMap := effectiveTypeMapping(cfg)
-	report := buildPlanReport(schema, sourceObjects, src, cfg, typeMap)
+	semanticWarnings, err := introspectSourceSchemaSemanticWarnings(sourceDB, src, dbName)
+	if err != nil {
+		return fmt.Errorf("introspect schema semantics: %w", err)
+	}
+	report := buildPlanReport(schema, sourceObjects, semanticWarnings, src, cfg, typeMap)
 
 	if format == "json" {
 		if err := writePlanJSON(out, report); err != nil {
@@ -194,10 +199,11 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	return nil
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
 		RequiredExtensions:      []PlanRequiredExtension{},
 		UnsupportedColumns:      []PlanUnsupportedColumn{},
+		SchemaSemanticWarnings:  []SchemaSemanticWarning{},
 		GeneratedColumns:        []PlanGeneratedColumn{},
 		SkippedIndexes:          []PlanSkippedIndex{},
 		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{},
@@ -242,6 +248,12 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, src SourceDB,
 			}
 		}
 	}
+
+	preserveDefaults := false
+	if cfg != nil {
+		preserveDefaults = cfg.PreserveDefaults
+	}
+	report.SchemaSemanticWarnings = collectSchemaSemanticWarnings(schema, src, preserveDefaults, typeMap, semanticWarnings)
 
 	// Generated columns
 	for _, t := range schema.Tables {
@@ -367,6 +379,23 @@ func writePlanText(w io.Writer, report *PlanReport) {
 			fmt.Fprintf(w, "  - %s.%s (%s): %s\n", uc.Table, uc.Column, uc.SourceType, uc.Reason)
 		}
 		fmt.Fprintln(w)
+	}
+
+	if len(report.SchemaSemanticWarnings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Schema Semantic Warnings (%d)\n\n", len(report.SchemaSemanticWarnings))
+		fmt.Fprintf(w, "These items do not stop the migration, but pgferry will skip source semantics or leave them for manual recreation.\n\n")
+		byCategory := groupSchemaSemanticWarningsByCategory(report.SchemaSemanticWarnings)
+		for _, category := range orderedSchemaSemanticWarningCategories(report.SchemaSemanticWarnings) {
+			fmt.Fprintf(w, "%s (%d):\n", schemaSemanticWarningCategoryTitle(category), len(byCategory[category]))
+			for _, warning := range byCategory[category] {
+				fmt.Fprintf(w, "  - %s [%s]: %s\n", warning.ObjectName, warning.Disposition, warning.Reason)
+				if warning.RecommendedFollowUp != "" {
+					fmt.Fprintf(w, "    Follow-up: %s\n", warning.RecommendedFollowUp)
+				}
+			}
+			fmt.Fprintln(w)
+		}
 	}
 
 	// Generated columns
@@ -591,4 +620,38 @@ func sortedGeneratedColumnTables(m map[string][]PlanGeneratedColumn) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func orderedSchemaSemanticWarningCategories(warnings []SchemaSemanticWarning) []string {
+	seen := make(map[string]bool)
+	categories := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		if seen[warning.Category] {
+			continue
+		}
+		seen[warning.Category] = true
+		categories = append(categories, warning.Category)
+	}
+	sort.Slice(categories, func(i, j int) bool {
+		return schemaSemanticWarningCategoryRank(categories[i]) < schemaSemanticWarningCategoryRank(categories[j])
+	})
+	return categories
+}
+
+func countSchemaSemanticWarningsByCategory(warnings []SchemaSemanticWarning, category string) int {
+	count := 0
+	for _, warning := range warnings {
+		if warning.Category == category {
+			count++
+		}
+	}
+	return count
+}
+
+func groupSchemaSemanticWarningsByCategory(warnings []SchemaSemanticWarning) map[string][]SchemaSemanticWarning {
+	grouped := make(map[string][]SchemaSemanticWarning)
+	for _, warning := range warnings {
+		grouped[warning.Category] = append(grouped[warning.Category], warning)
+	}
+	return grouped
 }

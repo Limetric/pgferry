@@ -136,6 +136,30 @@ func (m *mssqlSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	return nil
 }
 
+func (m *mssqlSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, _ string) ([]SchemaSemanticWarning, error) {
+	var warnings []SchemaSemanticWarning
+
+	checkWarnings, err := introspectMSSQLCheckConstraintWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL CHECK constraints for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, checkWarnings...)
+
+	commentWarnings, err := introspectMSSQLCommentWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL extended properties for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, commentWarnings...)
+
+	partitionWarnings, err := introspectMSSQLPartitionWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL partitioning for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, partitionWarnings...)
+
+	return warnings, nil
+}
+
 // --- Schema introspection ---
 
 func (m *mssqlSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error) {
@@ -308,6 +332,177 @@ func introspectMSSQLColumnsByTable(db *sql.DB, schema string, identName func(str
 		colsByTable[tableName] = append(colsByTable[tableName], col)
 	}
 	return colsByTable, rows.Err()
+}
+
+func introspectMSSQLCheckConstraintWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(`
+		SELECT t.name, cc.name, cc.definition
+		FROM sys.check_constraints cc
+		JOIN sys.tables t ON cc.parent_object_id = t.object_id
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		WHERE s.name = @p1
+		ORDER BY t.name, cc.name`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, constraintName, definition string
+		if err := rows.Scan(&tableName, &constraintName, &definition); err != nil {
+			return nil, err
+		}
+		reason := fmt.Sprintf("MSSQL CHECK constraint %q is not migrated automatically.", constraintName)
+		if detail := compactSemanticDetail(definition); detail != "" {
+			reason += " Definition: " + detail
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:            "constraints",
+			ObjectType:          "constraint",
+			ObjectName:          identName(tableName) + "." + identName(constraintName),
+			Disposition:         "skipped",
+			Reason:              reason,
+			RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
+		})
+	}
+	return warnings, rows.Err()
+}
+
+func introspectMSSQLCommentWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	var warnings []SchemaSemanticWarning
+
+	tableRows, err := db.Query(`
+		SELECT t.name, CAST(ep.value AS nvarchar(max))
+		FROM sys.tables t
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		JOIN sys.extended_properties ep
+		  ON ep.major_id = t.object_id
+		 AND ep.minor_id = 0
+		 AND ep.name = 'MS_Description'
+		WHERE s.name = @p1
+		ORDER BY t.name`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer tableRows.Close()
+
+	for tableRows.Next() {
+		var tableName, comment string
+		if err := tableRows.Scan(&tableName, &comment); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:    "comments",
+			ObjectType:  "table",
+			ObjectName:  identName(tableName),
+			Disposition: "skipped",
+			Reason: fmt.Sprintf(
+				"MSSQL table extended property %q is not migrated automatically.",
+				compactSemanticDetail(comment),
+			),
+			RecommendedFollowUp: "Recreate the comment with PostgreSQL COMMENT ON statements if operators rely on it.",
+		})
+	}
+	if err := tableRows.Err(); err != nil {
+		return nil, err
+	}
+
+	columnRows, err := db.Query(`
+		SELECT t.name, c.name, CAST(ep.value AS nvarchar(max))
+		FROM sys.columns c
+		JOIN sys.tables t ON c.object_id = t.object_id
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		JOIN sys.extended_properties ep
+		  ON ep.major_id = c.object_id
+		 AND ep.minor_id = c.column_id
+		 AND ep.name = 'MS_Description'
+		WHERE s.name = @p1
+		ORDER BY t.name, c.column_id`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer columnRows.Close()
+
+	for columnRows.Next() {
+		var tableName, columnName, comment string
+		if err := columnRows.Scan(&tableName, &columnName, &comment); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:    "comments",
+			ObjectType:  "column",
+			ObjectName:  identName(tableName) + "." + identName(columnName),
+			Disposition: "skipped",
+			Reason: fmt.Sprintf(
+				"MSSQL column extended property %q is not migrated automatically.",
+				compactSemanticDetail(comment),
+			),
+			RecommendedFollowUp: "Recreate the comment with PostgreSQL COMMENT ON statements if operators rely on it.",
+		})
+	}
+	if err := columnRows.Err(); err != nil {
+		return nil, err
+	}
+
+	return warnings, nil
+}
+
+func introspectMSSQLPartitionWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(`
+		SELECT DISTINCT
+			t.name,
+			ps.name,
+			COALESCE(c.name, '')
+		FROM sys.tables t
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		JOIN sys.indexes i
+		  ON t.object_id = i.object_id
+		 AND i.index_id IN (0, 1)
+		JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id
+		JOIN sys.partition_schemes ps ON ds.data_space_id = ps.data_space_id
+		LEFT JOIN sys.index_columns ic
+		  ON i.object_id = ic.object_id
+		 AND i.index_id = ic.index_id
+		 AND ic.partition_ordinal = 1
+		LEFT JOIN sys.columns c
+		  ON ic.object_id = c.object_id
+		 AND ic.column_id = c.column_id
+		WHERE s.name = @p1
+		ORDER BY t.name`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, schemeName, columnName string
+		if err := rows.Scan(&tableName, &schemeName, &columnName); err != nil {
+			return nil, err
+		}
+		detail := fmt.Sprintf(`partition scheme "%s"`, compactSemanticDetail(schemeName))
+		if columnName != "" {
+			detail += fmt.Sprintf(" on %s", identName(columnName))
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:            "partitioning",
+			ObjectType:          "table",
+			ObjectName:          identName(tableName),
+			Disposition:         "skipped",
+			Reason:              "MSSQL partitioning metadata detected (" + detail + "). PostgreSQL partitioning is not recreated automatically.",
+			RecommendedFollowUp: "Recreate the PostgreSQL partitioned table layout manually if the source design matters for performance or maintenance.",
+		})
+	}
+	return warnings, rows.Err()
 }
 
 type mssqlIndexesForTable struct {

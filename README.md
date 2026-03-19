@@ -8,7 +8,7 @@ Introspects your source schema, creates matching PostgreSQL tables, streams data
 - Interactive `pgferry wizard` that can generate, plan, and start a migration in one flow
 - Fast parallel `COPY` loads with range-based chunking for large tables
 - Clear stage and row-copy progress logs, so long runs do not look frozen
-- Preflight `plan` command reports views, routines, triggers, generated columns, skipped indexes, orphan-cleanup candidates, required extensions, and collation warnings before PostgreSQL is touched
+- Preflight `plan` command reports views, routines, triggers, generated columns, skipped indexes, semantic-drift warnings (defaults, CHECK constraints, comments, partitioning), orphan-cleanup candidates, required extensions, and collation warnings before PostgreSQL is touched
 - Resumable chunked migrations, so failures do not send you back to zero
 - Consistent-snapshot mode for migrating live source databases safely
 - Built for messy real-world schemas with hooks, orphan cleanup, generated-column reporting, and unsupported-index warnings
