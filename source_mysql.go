@@ -638,6 +638,11 @@ func introspectMySQLColumnsByTable(db *sql.DB, dbName string, identName func(str
 			c.Default = &dflt.String
 		}
 		c.DataType = strings.ToLower(c.DataType)
+		if c.DataType == "bit" {
+			if n, ok := mysqlColumnTypeLength(c.ColumnType, "bit"); ok && n > 0 {
+				c.MySQLBitWidth = int(n)
+			}
+		}
 		colsByTable[tableName] = append(colsByTable[tableName], c)
 	}
 	return colsByTable, rows.Err()
@@ -1126,20 +1131,28 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		if !ok {
 			return nil, fmt.Errorf("expected []byte for BIT value, got %T", val)
 		}
-		// Determine bit width from column type
-		bitWidth, wOk := mysqlColumnTypeLength(col.ColumnType, "bit")
-		if !wOk {
-			bitWidth = col.Precision
+		bitWidth := int64(col.MySQLBitWidth)
+		if bitWidth <= 0 {
+			var wOk bool
+			bitWidth, wOk = mysqlColumnTypeLength(col.ColumnType, "bit")
+			if !wOk {
+				bitWidth = col.Precision
+			}
 		}
 		if bitWidth <= 0 {
 			bitWidth = int64(len(b)) * 8
 		}
-		// Convert bytes to binary string, then truncate to the actual bit width
-		var sb strings.Builder
+		buf := make([]byte, 0, len(b)*8)
 		for _, byt := range b {
-			fmt.Fprintf(&sb, "%08b", byt)
+			for i := 7; i >= 0; i-- {
+				if byt&(1<<uint(i)) != 0 {
+					buf = append(buf, '1')
+				} else {
+					buf = append(buf, '0')
+				}
+			}
 		}
-		bits := sb.String()
+		bits := string(buf)
 		// MySQL may send more bytes than needed; take the rightmost bitWidth bits
 		if int64(len(bits)) > bitWidth {
 			bits = bits[len(bits)-int(bitWidth):]
