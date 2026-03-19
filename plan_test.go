@@ -94,8 +94,9 @@ func TestBuildPlanReport_Full(t *testing.T) {
 
 func TestBuildPlanReport_CollectsDefaultSemanticWarnings(t *testing.T) {
 	cfg := &MigrationConfig{
-		Source:      SourceConfig{Type: "sqlite"},
-		TypeMapping: defaultTypeMappingConfig(),
+		Source:           SourceConfig{Type: "sqlite"},
+		PreserveDefaults: true,
+		TypeMapping:      defaultTypeMappingConfig(),
 	}
 	defaultExpr := "(datetime('now'))"
 	schema := &Schema{
@@ -129,6 +130,90 @@ func TestBuildPlanReport_CollectsDefaultSemanticWarnings(t *testing.T) {
 	}
 	if !strings.Contains(got.Reason, "datetime('now')") {
 		t.Fatalf("reason = %q, want skipped default detail", got.Reason)
+	}
+}
+
+func TestBuildPlanReport_SuppressesDefaultSemanticWarningsWhenPreserveDefaultsDisabled(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "sqlite"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	defaultExpr := "(datetime('now'))"
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{
+						SourceName: "created_at",
+						PGName:     "created_at",
+						DataType:   "datetime",
+						ColumnType: "DATETIME",
+						Default:    &defaultExpr,
+					},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.SchemaSemanticWarnings) != 0 {
+		t.Fatalf("schema semantic warnings = %d, want 0", len(report.SchemaSemanticWarnings))
+	}
+}
+
+func TestCollectDefaultSemanticWarning_EdgeCases(t *testing.T) {
+	type testCase struct {
+		name    string
+		col     Column
+		wantOK  bool
+		wantRaw string
+	}
+
+	defaultExpr := "(datetime('now'))"
+	emptyDefault := ""
+	nullDefault := "null"
+
+	tests := []testCase{
+		{
+			name:   "nil default",
+			col:    Column{SourceName: "created_at", PGName: "created_at", DataType: "datetime", ColumnType: "DATETIME"},
+			wantOK: false,
+		},
+		{
+			name:   "empty default",
+			col:    Column{SourceName: "created_at", PGName: "created_at", DataType: "datetime", ColumnType: "DATETIME", Default: &emptyDefault},
+			wantOK: false,
+		},
+		{
+			name:   "null default",
+			col:    Column{SourceName: "created_at", PGName: "created_at", DataType: "datetime", ColumnType: "DATETIME", Default: &nullDefault},
+			wantOK: false,
+		},
+		{
+			name:    "expression default",
+			col:     Column{SourceName: "created_at", PGName: "created_at", DataType: "datetime", ColumnType: "DATETIME", Default: &defaultExpr},
+			wantOK:  true,
+			wantRaw: "datetime('now')",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := collectDefaultSemanticWarning(
+				Table{PGName: "events"},
+				tt.col,
+				&sqliteSourceDB{},
+				defaultTypeMappingConfig(),
+			)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %t, want %t", ok, tt.wantOK)
+			}
+			if tt.wantRaw != "" && !strings.Contains(got.Reason, tt.wantRaw) {
+				t.Fatalf("reason = %q, want %q", got.Reason, tt.wantRaw)
+			}
+		})
 	}
 }
 

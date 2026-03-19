@@ -4,12 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type mysqlIntrospectionStub struct {
@@ -365,5 +368,42 @@ func TestMySQLIntrospectSchemaSemanticWarnings(t *testing.T) {
 		if !slices.Contains(gotObjects, want) {
 			t.Fatalf("missing semantic warning for %q in %v", want, gotObjects)
 		}
+	}
+}
+
+func TestMySQLCheckConstraintMetadataUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "mysql unknown table",
+			err:  &mysql.MySQLError{Number: 1109, Message: "Unknown table 'CHECK_CONSTRAINTS'"},
+			want: true,
+		},
+		{
+			name: "mysql table missing",
+			err:  &mysql.MySQLError{Number: 1146, Message: "Table 'information_schema.CHECK_CONSTRAINTS' doesn't exist"},
+			want: true,
+		},
+		{
+			name: "string fallback",
+			err:  errors.New("Table 'information_schema.CHECK_CONSTRAINTS' doesn't exist"),
+			want: true,
+		},
+		{
+			name: "other error",
+			err:  errors.New("permission denied"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mySQLCheckConstraintMetadataUnavailable(tt.err); got != tt.want {
+				t.Fatalf("mySQLCheckConstraintMetadataUnavailable(%v) = %t, want %t", tt.err, got, tt.want)
+			}
+		})
 	}
 }

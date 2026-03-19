@@ -34,18 +34,20 @@ func introspectSourceSchemaSemanticWarnings(db *sql.DB, src SourceDB, dbName str
 	return ensureSchemaSemanticWarnings(warnings), nil
 }
 
-func collectSchemaSemanticWarnings(schema *Schema, src SourceDB, typeMap TypeMappingConfig, introspected []SchemaSemanticWarning) []SchemaSemanticWarning {
+func collectSchemaSemanticWarnings(schema *Schema, src SourceDB, preserveDefaults bool, typeMap TypeMappingConfig, introspected []SchemaSemanticWarning) []SchemaSemanticWarning {
 	warnings := append([]SchemaSemanticWarning{}, introspected...)
 	if schema == nil || src == nil {
 		sortSchemaSemanticWarnings(warnings)
 		return warnings
 	}
 
-	for _, table := range schema.Tables {
-		for _, col := range table.Columns {
-			warning, ok := collectDefaultSemanticWarning(table, col, src, typeMap)
-			if ok {
-				warnings = append(warnings, warning)
+	if preserveDefaults {
+		for _, table := range schema.Tables {
+			for _, col := range table.Columns {
+				warning, ok := collectDefaultSemanticWarning(table, col, src, typeMap)
+				if ok {
+					warnings = append(warnings, warning)
+				}
 			}
 		}
 	}
@@ -97,7 +99,16 @@ func ensureSchemaSemanticWarnings(warnings []SchemaSemanticWarning) []SchemaSema
 }
 
 func compactSemanticDetail(detail string) string {
-	return strings.Join(strings.Fields(strings.TrimSpace(detail)), " ")
+	const maxSemanticDetailLen = 120
+
+	compacted := strings.Join(strings.Fields(strings.TrimSpace(detail)), " ")
+	if len(compacted) <= maxSemanticDetailLen {
+		return compacted
+	}
+	if maxSemanticDetailLen <= 3 {
+		return compacted[:maxSemanticDetailLen]
+	}
+	return compacted[:maxSemanticDetailLen-3] + "..."
 }
 
 func sortSchemaSemanticWarnings(warnings []SchemaSemanticWarning) {

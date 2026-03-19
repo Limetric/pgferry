@@ -3,7 +3,9 @@ package main
 import (
 	"database/sql"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -344,6 +346,10 @@ func introspectMySQLFamilyCheckConstraintWarnings(db *sql.DB, dbName string, ide
 		dbName,
 	)
 	if err != nil {
+		if mySQLCheckConstraintMetadataUnavailable(err) {
+			log.Printf("WARN: skipping %s CHECK constraint semantic introspection: %v", sourceName, err)
+			return []SchemaSemanticWarning{}, nil
+		}
 		return nil, err
 	}
 	defer rows.Close()
@@ -369,6 +375,22 @@ func introspectMySQLFamilyCheckConstraintWarnings(db *sql.DB, dbName string, ide
 		})
 	}
 	return warnings, rows.Err()
+}
+
+func mySQLCheckConstraintMetadataUnavailable(err error) bool {
+	var myErr *mysql.MySQLError
+	if errors.As(err, &myErr) {
+		switch myErr.Number {
+		case 1109, 1146:
+			return true
+		}
+	}
+
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "check_constraints") &&
+		(strings.Contains(lower, "doesn't exist") ||
+			strings.Contains(lower, "does not exist") ||
+			strings.Contains(lower, "unknown table"))
 }
 
 func introspectMySQLFamilyCommentWarnings(db *sql.DB, dbName string, identName func(string) string, sourceName string) ([]SchemaSemanticWarning, error) {

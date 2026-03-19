@@ -249,7 +249,11 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		}
 	}
 
-	report.SchemaSemanticWarnings = collectSchemaSemanticWarnings(schema, src, typeMap, semanticWarnings)
+	preserveDefaults := true
+	if cfg != nil {
+		preserveDefaults = cfg.PreserveDefaults
+	}
+	report.SchemaSemanticWarnings = collectSchemaSemanticWarnings(schema, src, preserveDefaults, typeMap, semanticWarnings)
 
 	// Generated columns
 	for _, t := range schema.Tables {
