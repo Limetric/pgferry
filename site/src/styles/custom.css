@@ -273,6 +273,7 @@ body {
 .config-compare-col {
 	display: flex;
 	flex-direction: column;
+	margin-top: 0;
 }
 
 .config-compare-label {
