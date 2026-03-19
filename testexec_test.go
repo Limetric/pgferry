@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -26,7 +27,7 @@ type fakeDDLSource struct {
 	defaultByColumn map[string]string
 }
 
-func (f fakeDDLSource) OpenDB(string) (*sql.DB, error) { return nil, nil }
+func (f fakeDDLSource) OpenDB(string) (*sql.DB, error) { return nil, errors.New("not implemented") }
 
 func (f fakeDDLSource) MapType(col Column, _ TypeMappingConfig) (string, error) {
 	if pgType, ok := f.pgTypeByColumn[col.PGName]; ok {

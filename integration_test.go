@@ -975,6 +975,10 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 		t.Fatalf("buildCheckpointCompatibility: %v", err)
 	}
 
+	// This test needs to stop after the first data-phase failure, inspect the
+	// checkpoint file, repair the source row, then resume from that checkpoint.
+	// Exercising those checkpoints directly is more precise than wrapping the
+	// whole flow in runMigrationFromConfig.
 	if err := createTables(ctx, pgPool, schema, pgSchema, false, cfg.PreserveDefaults, typeMap, src); err != nil {
 		t.Fatalf("createTables: %v", err)
 	}
@@ -1484,6 +1488,13 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 
 func seedMySQLResumeFixture(t *testing.T, db *sql.DB) {
 	t.Helper()
+	ctx := context.Background()
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatalf("acquire mysql conn: %v", err)
+	}
+	defer conn.Close()
 
 	stmts := []string{
 		"SET SESSION sql_mode = ''",
@@ -1501,7 +1512,7 @@ func seedMySQLResumeFixture(t *testing.T, db *sql.DB) {
 	}
 
 	for _, stmt := range stmts {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("seed mysql resume fixture %q: %v", stmt[:min(len(stmt), 60)], err)
 		}
 	}
