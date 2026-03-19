@@ -67,7 +67,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `schema` | string | required | Target PostgreSQL schema name. |
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
-| `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. |
+| `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
 | `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
 | `snake_case_identifiers` | bool | `true` | Convert source names to `snake_case`. When false, pgferry lowercases only. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
@@ -206,4 +206,5 @@ The `database` parameter is required because pgferry extracts the DB name for in
 - Use `unlogged_tables = false` whenever you also need `resume = true`.
 - Use `source_snapshot_mode = "single_tx"` when the source stays live during the migration and you need one consistent read view.
 - Keep `on_schema_exists = "error"` for the first production dry runs so you do not destroy previous target state by mistake.
+- Expect `data_only` to fail early on PostgreSQL roles that cannot run `ALTER TABLE ... DISABLE/ENABLE TRIGGER ALL`; rehearse that path with the real target role before cutover.
 - Prefer hooks for views, routines, cleanup SQL, or post-load validation queries that are specific to your application.
