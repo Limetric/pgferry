@@ -7,22 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/jackc/pgx/v5/pgconn"
 )
-
-type recordingStatementExecutor struct {
-	calls      []string
-	errByQuery map[string]error
-}
-
-func (r *recordingStatementExecutor) Exec(_ context.Context, sql string, _ ...any) (pgconn.CommandTag, error) {
-	r.calls = append(r.calls, sql)
-	if err := r.errByQuery[sql]; err != nil {
-		return pgconn.CommandTag{}, err
-	}
-	return pgconn.NewCommandTag("EXECUTE 1"), nil
-}
 
 func TestLoadAndExecSQLFiles_ResolvesRelativePathsAndSubstitutesSchema(t *testing.T) {
 	dir := t.TempDir()

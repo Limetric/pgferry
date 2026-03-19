@@ -40,9 +40,14 @@ type fakeExtensionExecutor struct {
 	statusByName map[string]fakeExtensionStatusRow
 	execCalls    []string
 	execErrBySQL map[string]error
+	querySQLs    []string
 }
 
-func (f *fakeExtensionExecutor) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
+func (f *fakeExtensionExecutor) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	f.querySQLs = append(f.querySQLs, sql)
+	if !strings.Contains(sql, "FROM pg_extension") || !strings.Contains(sql, "FROM pg_available_extensions") {
+		return fakeExtensionStatusRow{err: errors.New("unexpected extension status query")}
+	}
 	if len(args) != 1 {
 		return fakeExtensionStatusRow{err: errors.New("expected extension name argument")}
 	}
@@ -81,6 +86,9 @@ func TestEnsureRequiredExtensions_InstalledSkipsCreation(t *testing.T) {
 	}
 	if len(exec.execCalls) != 0 {
 		t.Fatalf("exec calls = %v, want none", exec.execCalls)
+	}
+	if len(exec.querySQLs) != 1 {
+		t.Fatalf("query calls = %d, want 1", len(exec.querySQLs))
 	}
 }
 

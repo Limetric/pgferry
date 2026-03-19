@@ -35,6 +35,8 @@ func TestCreateEnumTypes_DeduplicatesIdenticalValueSets(t *testing.T) {
 	if len(exec.calls) != 2 {
 		t.Fatalf("exec calls = %d, want 2", len(exec.calls))
 	}
+	// createEnumTypes iterates schema.Tables and Columns in slice order, so the
+	// first distinct enum encountered is orders.status and the second is invoices.kind.
 	if !strings.Contains(exec.calls[0], `AS ENUM ('paid', 'pending')`) {
 		t.Fatalf("first enum SQL = %q, want sorted identical-value enum", exec.calls[0])
 	}
@@ -64,5 +66,44 @@ func TestCreateEnumTypes_InvalidEnumDefinitionReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "parse enum values") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCreateTables_ExecutesGeneratedDDL(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "users",
+				Columns: []Column{
+					{PGName: "id", Nullable: false},
+					{PGName: "name", Nullable: false},
+				},
+			},
+		},
+	}
+	src := fakeDDLSource{
+		fakeNamedSource: fakeNamedSource{name: "MySQL"},
+		pgTypeByColumn: map[string]string{
+			"id":   "bigint",
+			"name": "text",
+		},
+	}
+	exec := &recordingStatementExecutor{}
+
+	if err := createTables(context.Background(), exec, schema, "app", false, true, defaultTypeMappingConfig(), src); err != nil {
+		t.Fatalf("createTables() error: %v", err)
+	}
+
+	if len(exec.calls) != 1 {
+		t.Fatalf("exec calls = %d, want 1", len(exec.calls))
+	}
+	if !strings.Contains(exec.calls[0], `CREATE TABLE "app"."users"`) {
+		t.Fatalf("create table SQL = %q, want schema-qualified users table", exec.calls[0])
+	}
+	if !strings.Contains(exec.calls[0], `"id" bigint NOT NULL`) {
+		t.Fatalf("create table SQL = %q, want id column", exec.calls[0])
+	}
+	if !strings.Contains(exec.calls[0], `"name" text NOT NULL`) {
+		t.Fatalf("create table SQL = %q, want name column", exec.calls[0])
 	}
 }
