@@ -255,6 +255,13 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 			log.Printf("  WARN: %s", w)
 		}
 	}
+	if !cfg.SchemaOnly {
+		if copyRisks, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
+			log.Printf("WARN: copy risk analysis skipped: %v", err)
+		} else {
+			logCopyRiskFindings(copyRisks, cfg.ChunkSize)
+		}
+	}
 	if typeErrs := collectUnsupportedTypeErrors(schema, typeMap, src.MapType); len(typeErrs) > 0 {
 		var b strings.Builder
 		b.WriteString("unsupported source column types detected:\n")

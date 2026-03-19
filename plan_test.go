@@ -322,6 +322,23 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		RequiredExtensions: []PlanRequiredExtension{
 			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
 		},
+		CopyRiskFindings: []PlanCopyRiskFinding{
+			{
+				Category:            "poor_range_density",
+				Severity:            "medium",
+				Table:               "sessions",
+				Chunkable:           true,
+				ChunkKey:            "id",
+				ChunkKeyType:        "bigint",
+				Reason:              "The chunk key range 1..1000000 spans 1000000 possible values for 1000 rows (0.10% density), so many chunks may be mostly empty.",
+				EstimatedRows:       1000,
+				MinPK:               int64Ptr(1),
+				MaxPK:               int64Ptr(1_000_000),
+				EstimatedChunkCount: 100,
+				RangeDensity:        0.001,
+				Recommendation:      "Validate throughput on production-like data.",
+			},
+		},
 		SourceObjects: PlanSourceObjects{
 			Views: []string{"v_users"},
 		},
@@ -366,6 +383,12 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		"## Required Extensions (1)",
 		"citext",
 		"create it if missing",
+		"## Copy Risk Findings (1)",
+		"sessions [MEDIUM] Poor Range Density",
+		"eligible on id (bigint)",
+		"estimated_chunks=100",
+		"density=0.10%",
+		"Validate throughput on production-like data.",
 		"## Source Objects",
 		"v_users",
 		"after_all",
@@ -397,6 +420,23 @@ func TestWritePlanJSON(t *testing.T) {
 	report := &PlanReport{
 		RequiredExtensions: []PlanRequiredExtension{
 			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+		},
+		CopyRiskFindings: []PlanCopyRiskFinding{
+			{
+				Category:            "high_chunk_count",
+				Severity:            "high",
+				Table:               "events",
+				Chunkable:           true,
+				ChunkKey:            "id",
+				ChunkKeyType:        "int",
+				Reason:              "The current chunk plan is estimated to create 200 chunks across 20000000 rows for PK range 1..20000000.",
+				EstimatedRows:       20_000_000,
+				MinPK:               int64Ptr(1),
+				MaxPK:               int64Ptr(20_000_000),
+				EstimatedChunkCount: 200,
+				RangeDensity:        1,
+				Recommendation:      "Benchmark the table separately.",
+			},
 		},
 		SourceObjects: PlanSourceObjects{
 			Views:    []string{"v_users"},
@@ -448,6 +488,9 @@ func TestWritePlanJSON(t *testing.T) {
 	}
 	if len(decoded.RequiredExtensions) != 1 {
 		t.Errorf("required extensions = %d", len(decoded.RequiredExtensions))
+	}
+	if len(decoded.CopyRiskFindings) != 1 {
+		t.Errorf("copy risk findings = %d", len(decoded.CopyRiskFindings))
 	}
 	if len(decoded.GeneratedColumns) != 1 {
 		t.Errorf("generated columns = %d", len(decoded.GeneratedColumns))
