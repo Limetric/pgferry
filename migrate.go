@@ -44,7 +44,7 @@ func migrateData(ctx context.Context, cfg migrateDataConfig) error {
 
 func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 	// Plan chunks for each table
-	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize)
+	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize, cfg.TypeMap)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 			if item.ChunkKey == nil {
 				return migrateTableFromSourceFull(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap)
 			}
-			return migrateChunkFromSource(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, *item.ChunkKey, item.Chunk)
+			return migrateChunkFromSource(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, *item.ChunkKey, item.Chunk, item.ColumnSelectList)
 		},
 	); err != nil {
 		// Flush partial progress so a resumed run can skip completed work.
@@ -95,10 +95,11 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 }
 
 type migrationWorkItem struct {
-	Table      Table
-	ChunkKey   *ChunkKey
-	Chunk      Chunk
-	ChunkCount int
+	Table              Table
+	ChunkKey           *ChunkKey
+	Chunk              Chunk
+	ChunkCount         int
+	ColumnSelectList   string // pre-joined SELECT list for chunked reads; empty for full-table items
 }
 
 type migrationWorkerSource interface {
@@ -125,10 +126,11 @@ func buildParallelMigrationWorkItems(plans []ChunkPlan, mgr checkpointManager) [
 				continue
 			}
 			workItems = append(workItems, migrationWorkItem{
-				Table:      plan.Table,
-				ChunkKey:   plan.ChunkKey,
-				Chunk:      chunk,
-				ChunkCount: len(plan.Chunks),
+				Table:            plan.Table,
+				ChunkKey:         plan.ChunkKey,
+				Chunk:            chunk,
+				ChunkCount:       len(plan.Chunks),
+				ColumnSelectList: plan.ColumnSelectList,
 			})
 		}
 	}
@@ -348,12 +350,13 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 		}
 
 		chunks := planChunks(min, max, cfg.ChunkSize)
+		colSelectList := buildColumnSelectList(cfg.Src, t, cfg.TypeMap)
 		log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
 		for _, chunk := range chunks {
 			if mgr.IsChunkCompleted(t.SourceName, chunk.Index) {
 				continue
 			}
-			count, copyErr := migrateChunkFromSource(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, *key, chunk)
+			count, copyErr := migrateChunkFromSource(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, *key, chunk, colSelectList)
 			if copyErr != nil {
 				return fmt.Errorf("table %s chunk %d: %w", t.SourceName, chunk.Index, copyErr)
 			}
@@ -402,10 +405,10 @@ func migrateTableFromSourceFull(ctx context.Context, src SourceDB, source dbQuer
 }
 
 // migrateChunkFromSource copies a single chunk using an existing source querier.
-func migrateChunkFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, key ChunkKey, chunk Chunk) (int64, error) {
+func migrateChunkFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, key ChunkKey, chunk Chunk, columnSelectList string) (int64, error) {
 	log.Printf("  [%s] chunk %d starting", table.SourceName, chunk.Index)
 
-	query := buildChunkedSelectQuery(src, table, key, chunk, typeMap)
+	query := buildChunkedSelectQuery(src, table, key, chunk, columnSelectList)
 	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query)
 	if err != nil {
 		return 0, err
@@ -449,7 +452,7 @@ func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, t
 }
 
 // buildChunkPlans creates chunk plans for all tables by querying MIN/MAX on chunkable tables.
-func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64) ([]ChunkPlan, error) {
+func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64, typeMap TypeMappingConfig) ([]ChunkPlan, error) {
 	srcDB, err := openMigrationSourceDB(src, srcDSN)
 	if err != nil {
 		return nil, fmt.Errorf("open source for chunk planning: %w", err)
@@ -475,10 +478,11 @@ func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *S
 		if !hasRows {
 			// Empty table — single empty plan
 			plans = append(plans, ChunkPlan{
-				Table:     t,
-				ChunkKey:  key,
-				Chunks:    []Chunk{{Index: 0, IsLast: true}},
-				ChunkSize: chunkSize,
+				Table:            t,
+				ChunkKey:         key,
+				Chunks:           []Chunk{{Index: 0, IsLast: true}},
+				ChunkSize:        chunkSize,
+				ColumnSelectList: buildColumnSelectList(src, t, typeMap),
 			})
 			chunkable++
 			totalChunks++
@@ -487,10 +491,11 @@ func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *S
 
 		chunks := planChunks(min, max, chunkSize)
 		plans = append(plans, ChunkPlan{
-			Table:     t,
-			ChunkKey:  key,
-			Chunks:    chunks,
-			ChunkSize: chunkSize,
+			Table:            t,
+			ChunkKey:         key,
+			Chunks:           chunks,
+			ChunkSize:        chunkSize,
+			ColumnSelectList: buildColumnSelectList(src, t, typeMap),
 		})
 		chunkable++
 		totalChunks += len(chunks)

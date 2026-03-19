@@ -2,6 +2,7 @@ package main
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -147,10 +148,12 @@ func TestBuildChunkedSelectQuery_MySQL(t *testing.T) {
 		},
 	}
 	key := ChunkKey{SourceColumn: "id", PGColumn: "id"}
+	tm := defaultTypeMappingConfig()
+	colList := buildColumnSelectList(src, table, tm)
 
 	// Middle chunk (not last)
 	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 100, IsLast: false}
-	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	got := buildChunkedSelectQuery(src, table, key, chunk, colList)
 	want := "SELECT `id`, `name` FROM `users` WHERE `id` >= 1 AND `id` < 100 ORDER BY `id`"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -158,7 +161,7 @@ func TestBuildChunkedSelectQuery_MySQL(t *testing.T) {
 
 	// Last chunk
 	chunk = Chunk{Index: 1, LowerBound: 100, UpperBound: 150, IsLast: true}
-	got = buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	got = buildChunkedSelectQuery(src, table, key, chunk, colList)
 	want = "SELECT `id`, `name` FROM `users` WHERE `id` >= 100 AND `id` <= 150 ORDER BY `id`"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -175,9 +178,10 @@ func TestBuildChunkedSelectQuery_SQLite(t *testing.T) {
 		},
 	}
 	key := ChunkKey{SourceColumn: "rowid", PGColumn: "rowid"}
+	colList := buildColumnSelectList(src, table, defaultTypeMappingConfig())
 
 	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 50, IsLast: true}
-	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	got := buildChunkedSelectQuery(src, table, key, chunk, colList)
 	want := `SELECT "rowid", "value" FROM "items" WHERE "rowid" >= 1 AND "rowid" <= 50 ORDER BY "rowid"`
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
@@ -195,11 +199,37 @@ func TestBuildChunkedSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
 	}
 	key := ChunkKey{SourceColumn: "id", PGColumn: "id"}
 	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 100, IsLast: false}
+	colList := buildColumnSelectList(src, table, defaultTypeMappingConfig())
 
-	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	got := buildChunkedSelectQuery(src, table, key, chunk, colList)
 	want := "SELECT [id], [customer_id] FROM [sales].[orders] WHERE [id] >= 1 AND [id] < 100 ORDER BY [id]"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+func TestBuildChunkedSelectQuery_ColumnListSharedAcrossChunks(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "users",
+		Columns: []Column{
+			{SourceName: "id"},
+			{SourceName: "name"},
+		},
+	}
+	key := ChunkKey{SourceColumn: "id", PGColumn: "id"}
+	tm := defaultTypeMappingConfig()
+	colList := buildColumnSelectList(src, table, tm)
+
+	q0 := buildChunkedSelectQuery(src, table, key, Chunk{Index: 0, LowerBound: 1, UpperBound: 100, IsLast: false}, colList)
+	q1 := buildChunkedSelectQuery(src, table, key, Chunk{Index: 1, LowerBound: 100, UpperBound: 200, IsLast: true}, colList)
+
+	prefix := func(q string) string { return strings.Split(q, " FROM ")[0] }
+	if prefix(q0) != prefix(q1) {
+		t.Fatalf("SELECT list prefix differs:\n%q\n%q", prefix(q0), prefix(q1))
+	}
+	if q0 == q1 {
+		t.Fatal("expected WHERE bounds to differ between chunks")
 	}
 }
 
