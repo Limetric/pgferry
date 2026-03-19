@@ -95,12 +95,12 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 }
 
 type migrationWorkItem struct {
-	Table              Table
-	ChunkKey           *ChunkKey
-	Chunk              Chunk
-	ChunkCount         int
-	ColumnSelectList   string   // pre-joined SELECT list for chunked reads; empty for full-table items
-	PGCopyColumns      []string // PG column names for COPY; same order as table.Columns
+	Table            Table
+	ChunkKey         *ChunkKey
+	Chunk            Chunk
+	ChunkCount       int
+	ColumnSelectList string   // pre-joined SELECT list for chunked reads; empty for full-table items
+	PGCopyColumns    []string // PG column names for COPY; same order as table.Columns
 }
 
 type migrationWorkerSource interface {
