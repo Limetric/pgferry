@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -285,6 +286,47 @@ func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.
 		if item.ChunkCount != len(findPlanByTable(plans, item.Table.SourceName).Chunks) {
 			t.Fatalf("chunk count for %s = %d, want %d", item.Table.SourceName, item.ChunkCount, len(findPlanByTable(plans, item.Table.SourceName).Chunks))
 		}
+	}
+}
+
+func TestTablePGCopyColumns_OrderMatchesColumns(t *testing.T) {
+	table := Table{
+		Columns: []Column{
+			{PGName: "user_id"},
+			{PGName: "created_at"},
+			{PGName: "meta"},
+		},
+	}
+	got := tablePGCopyColumns(table)
+	want := []string{"user_id", "created_at", "meta"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("tablePGCopyColumns() = %v, want %v", got, want)
+	}
+}
+
+func TestBuildParallelMigrationWorkItems_ChunksSharePGCopyColumnsSlice(t *testing.T) {
+	chunkKey := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
+	table := Table{
+		SourceName: "orders",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id"},
+			{SourceName: "total", PGName: "total"},
+		},
+	}
+	pgCols := tablePGCopyColumns(table)
+	plans := []ChunkPlan{{
+		Table:         table,
+		ChunkKey:      chunkKey,
+		Chunks:        []Chunk{{Index: 0}, {Index: 1}},
+		PGCopyColumns: pgCols,
+	}}
+	items := buildParallelMigrationWorkItems(plans, &fakeMigrationCheckpointManager{})
+	if len(items) != 2 {
+		t.Fatalf("work items = %d, want 2", len(items))
+	}
+	a, b := items[0].PGCopyColumns, items[1].PGCopyColumns
+	if reflect.ValueOf(a).Pointer() != reflect.ValueOf(b).Pointer() {
+		t.Fatal("expected same PGCopyColumns backing slice for all chunks of one table plan")
 	}
 }
 

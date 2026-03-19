@@ -31,6 +31,9 @@ type ChunkPlan struct {
 	// ColumnSelectList is the pre-joined SELECT list (columnSelectExpr per column)
 	// for chunked reads. Empty when ChunkKey is nil.
 	ColumnSelectList string
+	// PGCopyColumns is the ordered list of PostgreSQL column names for COPY,
+	// one per table.Columns entry. Populated for every plan.
+	PGCopyColumns []string
 }
 
 // estimatedChunkCount returns how many chunks planChunks produces for [min, max]
