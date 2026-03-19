@@ -564,15 +564,15 @@ func TestSQLiteIsNumericLiteral_EdgeCases(t *testing.T) {
 		{"+42", true},
 		{"3.14", true},
 		{"-3.14", true},
-		{"1.2.3", false},  // multiple dots
-		{"-", false},      // sign only
-		{"+", false},      // sign only
-		{"-.5", true},     // valid: sign + dot + digits
-		{".5", true},      // dot then digits is valid numeric literal
-		{"007", true},     // leading zeros
+		{"1.2.3", false}, // multiple dots
+		{"-", false},     // sign only
+		{"+", false},     // sign only
+		{"-.5", true},    // valid: sign + dot + digits
+		{".5", true},     // dot then digits is valid numeric literal
+		{"007", true},    // leading zeros
 		{"abc", false},
-		{"1e5", false},    // no scientific notation support
-		{"1 2", false},    // space
+		{"1e5", false}, // no scientific notation support
+		{"1 2", false}, // space
 	}
 
 	for _, tt := range tests {
@@ -698,4 +698,3 @@ func TestSQLiteMapDefault_SpecialFunctions(t *testing.T) {
 		}
 	}
 }
-

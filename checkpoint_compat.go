@@ -190,22 +190,7 @@ func hashCheckpointTable(table Table) (string, error) {
 		snapshot.PrimaryKey = append(snapshot.PrimaryKey, table.PrimaryKey.Columns...)
 	}
 	for _, col := range table.Columns {
-		snapshot.Columns = append(snapshot.Columns, checkpointColumn{
-			SourceName:           col.SourceName,
-			PGName:               col.PGName,
-			DataType:             col.DataType,
-			ColumnType:           col.ColumnType,
-			CharMaxLen:           col.CharMaxLen,
-			Precision:            col.Precision,
-			Scale:                col.Scale,
-			Nullable:             col.Nullable,
-			Default:              col.Default,
-			Extra:                col.Extra,
-			GenerationExpression: col.GenerationExpression,
-			OrdinalPos:           col.OrdinalPos,
-			Charset:              col.Charset,
-			Collation:            col.Collation,
-		})
+		snapshot.Columns = append(snapshot.Columns, checkpointColumn(col))
 	}
 
 	data, err := json.Marshal(snapshot)

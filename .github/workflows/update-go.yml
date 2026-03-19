@@ -65,7 +65,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Unformatted Go files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
           go vet ./...
+          staticcheck ./...
           go test ./... -count=1
 
       - name: Create pull request
@@ -83,5 +92,7 @@ jobs:
             - Latest stable: `${{ steps.version.outputs.latest }}`
 
             Validation run in this workflow:
+            - `gofmt -l .`
             - `go vet ./...`
+            - `staticcheck ./...`
             - `go test ./... -count=1`

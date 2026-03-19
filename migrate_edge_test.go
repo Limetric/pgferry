@@ -213,4 +213,3 @@ func TestRecordMigrationWorkResult_Chunk(t *testing.T) {
 		t.Fatalf("recorded chunk = %v, want [orders:3]", mgr.recordedChunk)
 	}
 }
-

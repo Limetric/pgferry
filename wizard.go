@@ -1086,11 +1086,6 @@ func (w *wizardPrompter) promptBoolGuided(label string, defaultValue bool, guide
 	return w.promptBoolInline("Answer", defaultValue)
 }
 
-func (w *wizardPrompter) promptInt(label string, defaultValue, min int) (int, error) {
-	w.startBlock()
-	return w.promptIntInline(label, defaultValue, min)
-}
-
 func (w *wizardPrompter) promptIntInline(label string, defaultValue, min int) (int, error) {
 	for {
 		fmt.Fprintf(w.out, "%s [%d]: ", w.styles.prompt(label), defaultValue)

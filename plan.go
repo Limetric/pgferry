@@ -300,7 +300,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		}
 	}
 
-	if cfg.CleanOrphans {
+	if cfg != nil && cfg.CleanOrphans {
 		for _, t := range schema.Tables {
 			for _, fk := range t.ForeignKeys {
 				report.OrphanCleanupCandidates = append(report.OrphanCleanupCandidates, PlanOrphanCleanupCandidate{
@@ -679,16 +679,6 @@ func orderedSchemaSemanticWarningCategories(warnings []SchemaSemanticWarning) []
 		return schemaSemanticWarningCategoryRank(categories[i]) < schemaSemanticWarningCategoryRank(categories[j])
 	})
 	return categories
-}
-
-func countSchemaSemanticWarningsByCategory(warnings []SchemaSemanticWarning, category string) int {
-	count := 0
-	for _, warning := range warnings {
-		if warning.Category == category {
-			count++
-		}
-	}
-	return count
 }
 
 func groupSchemaSemanticWarningsByCategory(warnings []SchemaSemanticWarning) map[string][]SchemaSemanticWarning {

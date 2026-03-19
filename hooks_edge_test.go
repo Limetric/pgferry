@@ -97,10 +97,10 @@ func TestSplitStatements_DollarQuoteInSingleQuote(t *testing.T) {
 
 func TestParseDollarTag_ValidTags(t *testing.T) {
 	tests := []struct {
-		sql  string
-		i    int
-		tag  string
-		ok   bool
+		sql string
+		i   int
+		tag string
+		ok  bool
 	}{
 		{"$$body$$", 0, "$$", true},
 		{"$fn$body$fn$", 0, "$fn$", true},
@@ -120,10 +120,10 @@ func TestParseDollarTag_InvalidTags(t *testing.T) {
 		sql string
 		i   int
 	}{
-		{"$123$body", 0},      // starts with digit
-		{"$", 0},              // lone dollar
-		{"abc", 0},            // no dollar
-		{"$-tag$body", 0},     // hyphen not allowed
+		{"$123$body", 0},  // starts with digit
+		{"$", 0},          // lone dollar
+		{"abc", 0},        // no dollar
+		{"$-tag$body", 0}, // hyphen not allowed
 	}
 	for _, tt := range tests {
 		_, ok := parseDollarTag(tt.sql, tt.i)
