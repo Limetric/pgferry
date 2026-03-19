@@ -4,7 +4,10 @@ Source database to PostgreSQL migration CLI. Supports MySQL, MariaDB, SQLite, an
 
 ## Commands
 
+**Go code must be formatted before every commit** (CI and reviewers expect standard `gofmt` output). Run `go fmt ./...` on the module root, or format in your editor with the official Go formatter, and verify the working tree has no leftover diffs from formatting.
+
 ```bash
+go fmt ./...                   # Format all packages — run before commit
 go build -o build/pgferry .          # Build binary
 go vet ./...                   # Lint
 go test ./... -count=1         # Unit tests (no DB required)
