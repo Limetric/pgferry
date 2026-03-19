@@ -1094,18 +1094,18 @@ func mssqlTransformValue(val any, col Column, _ TypeMappingConfig) (any, error) 
 		// Strip null bytes
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", ""), nil
+			return stripNULBytesToString(v), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", ""), nil
+			return stripNULString(v), nil
 		}
 		return val, nil
 
 	case "json":
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", ""), nil
+			return stripNULBytesToString(v), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", ""), nil
+			return stripNULString(v), nil
 		}
 		return val, nil
 

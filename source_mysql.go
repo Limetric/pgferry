@@ -1077,9 +1077,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 	case col.DataType == "json" && typeMap.SanitizeJSONNullBytes:
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", ""), nil
+			return stripNULBytesToString(v), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", ""), nil
+			return stripNULString(v), nil
 		}
 		return val, nil
 
@@ -1113,13 +1113,12 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		var raw string
 		switch v := val.(type) {
 		case []byte:
-			raw = string(v)
+			raw = stripNULBytesToString(v)
 		case string:
-			raw = v
+			raw = stripNULString(v)
 		default:
 			return nil, fmt.Errorf("cannot coerce set value of type %T to text[]", val)
 		}
-		raw = strings.ReplaceAll(raw, "\x00", "")
 		if raw == "" {
 			return []string{}, nil
 		}
@@ -1245,9 +1244,9 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		col.DataType == "enum" || col.DataType == "set":
 		switch v := val.(type) {
 		case []byte:
-			return strings.ReplaceAll(string(v), "\x00", ""), nil
+			return stripNULBytesToString(v), nil
 		case string:
-			return strings.ReplaceAll(v, "\x00", ""), nil
+			return stripNULString(v), nil
 		}
 		return val, nil
 
