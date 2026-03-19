@@ -70,12 +70,6 @@ go build -o build/pgferry .
 ./build/pgferry version
 ```
 
-## What the binary expects
-
-- A source DSN for MySQL, MariaDB, SQLite, or MSSQL.
-- A target PostgreSQL DSN.
-- A TOML config file describing schema, type mapping, and migration behavior.
-
 ## Next step
 
 Move to [Quick Start](/get-started/quick-start/) to create a minimal config and run your first migration.
