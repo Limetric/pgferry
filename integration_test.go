@@ -997,6 +997,8 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 		t.Fatalf("unexpected migrateData error: %v", err)
 	}
 
+	// chunk 0 (ids 1-2) commits; chunk 1 (ids 3-4) fails on the zero datetime
+	// value for id 4, so only the first chunk should be present after failure.
 	assertRowCount(t, pgPool, pgSchema, "events", 2)
 
 	cpPath := checkpointPath(tmpDir)
@@ -1030,6 +1032,21 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 	}
 
 	assertRowCount(t, pgPool, pgSchema, "events", 5)
+
+	seqName := generatedSequenceName(Table{PGName: "events"}, Column{PGName: "id"})
+	var (
+		lastValue int64
+		isCalled  bool
+	)
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("SELECT last_value, is_called FROM %s", pgQualifiedIdent(pgSchema, seqName)),
+	).Scan(&lastValue, &isCalled)
+	if err != nil {
+		t.Fatalf("query resumed sequence state: %v", err)
+	}
+	if lastValue != 6 || isCalled {
+		t.Fatalf("sequence state after resume = last_value:%d is_called:%t, want last_value:6 is_called:false", lastValue, isCalled)
+	}
 
 	var nextID int64
 	err = pgPool.QueryRow(ctx,
@@ -1464,11 +1481,6 @@ func seedMySQLResumeFixture(t *testing.T, db *sql.DB) {
 	stmts := []string{
 		"SET SESSION sql_mode = ''",
 		"DROP TABLE IF EXISTS events",
-		"DROP TABLE IF EXISTS places_optional",
-		"DROP TABLE IF EXISTS places",
-		"DROP TABLE IF EXISTS comments",
-		"DROP TABLE IF EXISTS posts",
-		"DROP TABLE IF EXISTS users",
 		`CREATE TABLE events (
 			id INT AUTO_INCREMENT PRIMARY KEY,
 			happened_at DATETIME NOT NULL,
