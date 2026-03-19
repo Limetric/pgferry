@@ -180,9 +180,15 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("introspect schema semantics: %w", err)
 	}
-	copyRisks, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize)
-	if err != nil {
-		return fmt.Errorf("analyze copy risk: %w", err)
+	copyRisks := []PlanCopyRiskFinding{}
+	if cfg.CopyRiskAnalysis {
+		if findings, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
+			log.Printf("WARN: copy risk analysis skipped: %v", err)
+		} else {
+			copyRisks = findings
+		}
+	} else {
+		log.Printf("copy risk analysis disabled: copy_risk_analysis=false")
 	}
 	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, src, cfg, typeMap)
 
@@ -207,7 +213,7 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
 		RequiredExtensions:      []PlanRequiredExtension{},
-		CopyRiskFindings:        ensureCopyRiskSlice(copyRisks),
+		CopyRiskFindings:        []PlanCopyRiskFinding{},
 		UnsupportedColumns:      []PlanUnsupportedColumn{},
 		SchemaSemanticWarnings:  []SchemaSemanticWarning{},
 		GeneratedColumns:        []PlanGeneratedColumn{},
@@ -215,6 +221,9 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{},
 		TemporalWarnings:        []PlanTemporalWarning{},
 		CollationWarnings:       []string{},
+	}
+	if copyRisks != nil {
+		report.CopyRiskFindings = copyRisks
 	}
 
 	for _, req := range collectRequiredExtensions(schema, src, cfg, typeMap) {
@@ -318,13 +327,6 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 	}
 
 	return report
-}
-
-func ensureCopyRiskSlice(findings []PlanCopyRiskFinding) []PlanCopyRiskFinding {
-	if findings == nil {
-		return []PlanCopyRiskFinding{}
-	}
-	return findings
 }
 
 func ensureStringSlice(s []string) []string {

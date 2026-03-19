@@ -93,6 +93,30 @@ func TestAnalyzeCopyRiskTable_PoorRangeDensity(t *testing.T) {
 	}
 }
 
+func TestAnalyzeCopyRiskTable_PoorRangeDensity_NegativePKRange(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "sessions",
+		PGName:     "sessions",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "int", ColumnType: "int"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
+
+	findings := analyzeCopyRiskTable(table, src, 100, 1000, key, -50_000, 50_000)
+	if len(findings) != 1 {
+		t.Fatalf("findings = %d, want 1", len(findings))
+	}
+	if findings[0].EstimatedChunkCount != 101 {
+		t.Fatalf("estimated chunk count = %d, want 101", findings[0].EstimatedChunkCount)
+	}
+	if findings[0].RangeDensity <= 0 || findings[0].RangeDensity >= 0.01 {
+		t.Fatalf("range density = %f, want small positive density", findings[0].RangeDensity)
+	}
+}
+
 func TestAnalyzeCopyRiskTable_DenseChunkableTableHasNoWarning(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{
@@ -111,7 +135,7 @@ func TestAnalyzeCopyRiskTable_DenseChunkableTableHasNoWarning(t *testing.T) {
 	}
 }
 
-func TestAnalyzeCopyRiskTable_SuspiciousBigintChunkKey(t *testing.T) {
+func TestAnalyzeCopyRiskTable_BigintPoorDensityAddsRecommendation(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{
 		SourceName: "ledger",
@@ -124,22 +148,25 @@ func TestAnalyzeCopyRiskTable_SuspiciousBigintChunkKey(t *testing.T) {
 	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 
 	findings := analyzeCopyRiskTable(table, src, 8_000_000, 100000, key, 1, 100_000_000)
-	if len(findings) < 2 {
-		t.Fatalf("findings = %d, want at least 2", len(findings))
+	if len(findings) != 2 {
+		t.Fatalf("findings = %d, want 2", len(findings))
 	}
 
-	var sawSuspicious bool
+	var sawPoorDensity bool
 	for _, finding := range findings {
-		if finding.Category == "suspicious_chunk_key_type" {
-			sawSuspicious = true
+		if finding.Category == "poor_range_density" {
+			sawPoorDensity = true
+			if !strings.Contains(finding.Recommendation, "bigint key") {
+				t.Fatalf("recommendation = %q, want bigint-specific guidance", finding.Recommendation)
+			}
 		}
 	}
-	if !sawSuspicious {
-		t.Fatalf("missing suspicious_chunk_key_type in %+v", findings)
+	if !sawPoorDensity {
+		t.Fatalf("missing poor_range_density in %+v", findings)
 	}
 }
 
-func TestAnalyzeCopyRiskTable_DenseBigintTableDoesNotTriggerSuspiciousType(t *testing.T) {
+func TestAnalyzeCopyRiskTable_DenseBigintTableDoesNotAddWarning(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{
 		SourceName: "ledger",

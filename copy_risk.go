@@ -15,7 +15,6 @@ const (
 	copyRiskPoorDensityThreshold    float64 = 0.10
 	copyRiskPoorDensityMinChunks            = 16
 	copyRiskBigintRowsThreshold     int64   = 5_000_000
-	copyRiskBigintChunkThreshold            = 64
 )
 
 // PlanCopyRiskFinding describes a table whose runtime COPY behavior is likely
@@ -145,6 +144,10 @@ func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize i
 	}
 
 	if chunkCount >= copyRiskPoorDensityMinChunks && density < copyRiskPoorDensityThreshold {
+		recommendation := "chunk_size controls key-range width, not rows per chunk. Validate throughput on production-like data, or isolate this table so sparse ranges do not surprise cutover timing."
+		if isBigintChunkKeyType(chunkKeyType) && rowCount >= copyRiskBigintRowsThreshold && chunkCount >= copyRiskHighChunkCountThreshold {
+			recommendation += " Because this table is chunkable on a bigint key, review deleted-row patterns and long-lived keyspace growth before relying on chunk-level restart behavior."
+		}
 		findings = append(findings, PlanCopyRiskFinding{
 			Category:            "poor_range_density",
 			Severity:            "medium",
@@ -158,25 +161,7 @@ func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize i
 			MaxPK:               int64Ptr(maxPK),
 			EstimatedChunkCount: chunkCount,
 			RangeDensity:        density,
-			Recommendation:      "chunk_size controls key-range width, not rows per chunk. Validate throughput on production-like data, or isolate this table so sparse ranges do not surprise cutover timing.",
-		})
-	}
-
-	if strings.EqualFold(chunkKeyType, "bigint") && rowCount >= copyRiskBigintRowsThreshold && chunkCount >= copyRiskBigintChunkThreshold && density < copyRiskPoorDensityThreshold {
-		findings = append(findings, PlanCopyRiskFinding{
-			Category:            "suspicious_chunk_key_type",
-			Severity:            "medium",
-			Table:               table.PGName,
-			Chunkable:           true,
-			ChunkKey:            key.PGColumn,
-			ChunkKeyType:        chunkKeyType,
-			Reason:              fmt.Sprintf("The table is technically chunkable on bigint key %s, but large bigint keyspaces can hide operational cliffs when ids are sparse or heavily deleted.", key.PGColumn),
-			EstimatedRows:       rowCount,
-			MinPK:               int64Ptr(minPK),
-			MaxPK:               int64Ptr(maxPK),
-			EstimatedChunkCount: chunkCount,
-			RangeDensity:        density,
-			Recommendation:      "Review the observed range and density before relying on chunk-level restart behavior. If this table is critical, benchmark it separately with production-like data.",
+			Recommendation:      recommendation,
 		})
 	}
 
@@ -217,6 +202,10 @@ func chunkKeyDataType(table Table, key *ChunkKey) string {
 	return ""
 }
 
+func isBigintChunkKeyType(chunkKeyType string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(chunkKeyType)), "bigint")
+}
+
 func normalizedChunkSize(chunkSize int64) int64 {
 	if chunkSize <= 0 {
 		return 100000
@@ -225,12 +214,12 @@ func normalizedChunkSize(chunkSize int64) int64 {
 }
 
 func estimateChunkCount(minPK, maxPK, chunkSize int64) int {
-	chunkSize = normalizedChunkSize(chunkSize)
-	if maxPK < minPK {
+	rangeWidth := keyRangeWidth(minPK, maxPK)
+	if rangeWidth == 0 {
 		return 0
 	}
-	diff := uint64(maxPK) - uint64(minPK)
-	count := diff/uint64(chunkSize) + 1
+	chunkSize = normalizedChunkSize(chunkSize)
+	count := (rangeWidth-1)/uint64(chunkSize) + 1
 	maxInt := int(^uint(0) >> 1)
 	if count > uint64(maxInt) {
 		return maxInt
@@ -239,6 +228,11 @@ func estimateChunkCount(minPK, maxPK, chunkSize int64) int {
 }
 
 func keyRangeWidth(minPK, maxPK int64) uint64 {
+	if maxPK < minPK {
+		return 0
+	}
+	// For valid signed ranges, modular uint64 subtraction preserves the exact
+	// distance even when the range crosses zero or touches int64 extremes.
 	diff := uint64(maxPK) - uint64(minPK)
 	if diff == ^uint64(0) {
 		return ^uint64(0)
@@ -307,8 +301,6 @@ func copyRiskCategoryTitle(category string) string {
 		return "High Chunk Count"
 	case "poor_range_density":
 		return "Poor Range Density"
-	case "suspicious_chunk_key_type":
-		return "Suspicious Chunk Key Type"
 	default:
 		return category
 	}

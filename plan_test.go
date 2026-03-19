@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -679,6 +680,48 @@ func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	}
 	if _, ok := decoded["source_objects"]; !ok {
 		t.Error("missing source_objects key")
+	}
+}
+
+func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-copy-risk.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, payload) VALUES (1, 'a'), (1000000, 'b')`); err != nil {
+		t.Fatalf("insert rows: %v", err)
+	}
+
+	prevFormat := planFormat
+	planFormat = "json"
+	t.Cleanup(func() {
+		planFormat = prevFormat
+	})
+
+	cfg := &MigrationConfig{
+		Schema:           "app",
+		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
+		CopyRiskAnalysis: false,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &buf); err != nil {
+		t.Fatalf("runPlanWithConfig() error: %v", err)
+	}
+
+	var report PlanReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if len(report.CopyRiskFindings) != 0 {
+		t.Fatalf("copy risk findings = %d, want 0", len(report.CopyRiskFindings))
 	}
 }
 
