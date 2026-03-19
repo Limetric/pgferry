@@ -1560,6 +1560,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.Validation != "none" {
 		t.Errorf("default Validation = %q, want %q", cfg.Validation, "none")
 	}
+	if !cfg.CopyRiskAnalysis {
+		t.Errorf("default CopyRiskAnalysis = %t, want true", cfg.CopyRiskAnalysis)
+	}
 }
 
 func TestLoadConfig_ChunkingExplicit(t *testing.T) {
@@ -1574,6 +1577,7 @@ resume = true
 validation = "row_count"
 clean_orphans_mode = "report"
 clean_orphans_max_rows = 12
+copy_risk_analysis = false
 
 [source]
 type = "mysql"
@@ -1605,6 +1609,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.CleanOrphansMaxRows != 12 {
 		t.Errorf("CleanOrphansMaxRows = %d, want 12", cfg.CleanOrphansMaxRows)
+	}
+	if cfg.CopyRiskAnalysis {
+		t.Errorf("CopyRiskAnalysis = %t, want false", cfg.CopyRiskAnalysis)
 	}
 }
 

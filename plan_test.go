@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -14,7 +15,7 @@ func TestBuildPlanReport_Empty(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views = %d, want 0", len(report.SourceObjects.Views))
@@ -57,7 +58,7 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig(), CleanOrphans: true}
 
-	report := buildPlanReport(schema, objs, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, objs, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 1 || report.SourceObjects.Views[0] != "v_active_users" {
 		t.Errorf("views = %v, want [v_active_users]", report.SourceObjects.Views)
@@ -116,7 +117,7 @@ func TestBuildPlanReport_CollectsDefaultSemanticWarnings(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SchemaSemanticWarnings) != 1 {
 		t.Fatalf("schema semantic warnings = %d, want 1", len(report.SchemaSemanticWarnings))
@@ -156,7 +157,7 @@ func TestBuildPlanReport_SuppressesDefaultSemanticWarningsWhenPreserveDefaultsDi
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SchemaSemanticWarnings) != 0 {
 		t.Fatalf("schema semantic warnings = %d, want 0", len(report.SchemaSemanticWarnings))
@@ -239,6 +240,7 @@ func TestBuildPlanReport_MergesIntrospectedSchemaSemanticWarnings(t *testing.T) 
 				RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
 			},
 		},
+		nil,
 		mysqlSrc,
 		cfg,
 		effectiveTypeMapping(cfg),
@@ -290,6 +292,7 @@ func TestBuildPlanReport_FiltersSchemaSemanticWarningsToSelectedTables(t *testin
 				RecommendedFollowUp: "Review source CHECK constraints manually if the schema relies on them.",
 			},
 		},
+		nil,
 		mysqlSrc,
 		cfg,
 		effectiveTypeMapping(cfg),
@@ -321,6 +324,23 @@ func TestWritePlanText_WithContent(t *testing.T) {
 	report := &PlanReport{
 		RequiredExtensions: []PlanRequiredExtension{
 			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+		},
+		CopyRiskFindings: []PlanCopyRiskFinding{
+			{
+				Category:            "poor_range_density",
+				Severity:            "medium",
+				Table:               "sessions",
+				Chunkable:           true,
+				ChunkKey:            "id",
+				ChunkKeyType:        "bigint",
+				Reason:              "The chunk key range 1..1000000 spans 1000000 possible values for 1000 rows (0.10% density), so many chunks may be mostly empty.",
+				EstimatedRows:       1000,
+				MinPK:               int64Ptr(1),
+				MaxPK:               int64Ptr(1_000_000),
+				EstimatedChunkCount: 100,
+				RangeDensity:        0.001,
+				Recommendation:      "Validate throughput on production-like data.",
+			},
 		},
 		SourceObjects: PlanSourceObjects{
 			Views: []string{"v_users"},
@@ -366,6 +386,12 @@ func TestWritePlanText_WithContent(t *testing.T) {
 		"## Required Extensions (1)",
 		"citext",
 		"create it if missing",
+		"## Copy Risk Findings (1)",
+		"sessions [MEDIUM] Poor Range Density",
+		"eligible on id (bigint)",
+		"estimated_chunks=100",
+		"density=0.10%",
+		"Validate throughput on production-like data.",
 		"## Source Objects",
 		"v_users",
 		"after_all",
@@ -397,6 +423,23 @@ func TestWritePlanJSON(t *testing.T) {
 	report := &PlanReport{
 		RequiredExtensions: []PlanRequiredExtension{
 			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+		},
+		CopyRiskFindings: []PlanCopyRiskFinding{
+			{
+				Category:            "high_chunk_count",
+				Severity:            "high",
+				Table:               "events",
+				Chunkable:           true,
+				ChunkKey:            "id",
+				ChunkKeyType:        "int",
+				Reason:              "The current chunk plan is estimated to create 200 chunks across 20000000 rows for PK range 1..20000000.",
+				EstimatedRows:       20_000_000,
+				MinPK:               int64Ptr(1),
+				MaxPK:               int64Ptr(20_000_000),
+				EstimatedChunkCount: 200,
+				RangeDensity:        1,
+				Recommendation:      "Benchmark the table separately.",
+			},
 		},
 		SourceObjects: PlanSourceObjects{
 			Views:    []string{"v_users"},
@@ -448,6 +491,9 @@ func TestWritePlanJSON(t *testing.T) {
 	}
 	if len(decoded.RequiredExtensions) != 1 {
 		t.Errorf("required extensions = %d", len(decoded.RequiredExtensions))
+	}
+	if len(decoded.CopyRiskFindings) != 1 {
+		t.Errorf("copy risk findings = %d", len(decoded.CopyRiskFindings))
 	}
 	if len(decoded.GeneratedColumns) != 1 {
 		t.Errorf("generated columns = %d", len(decoded.GeneratedColumns))
@@ -597,7 +643,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.SourceObjects.Views) != 0 {
 		t.Errorf("views should be empty, got %v", report.SourceObjects.Views)
@@ -613,7 +659,7 @@ func TestBuildPlanReport_NilSourceObjects(t *testing.T) {
 func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	var buf bytes.Buffer
 	if err := writePlanJSON(&buf, report); err != nil {
@@ -637,6 +683,48 @@ func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	}
 }
 
+func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-copy-risk.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, payload) VALUES (1, 'a'), (1000000, 'b')`); err != nil {
+		t.Fatalf("insert rows: %v", err)
+	}
+
+	prevFormat := planFormat
+	planFormat = "json"
+	t.Cleanup(func() {
+		planFormat = prevFormat
+	})
+
+	cfg := &MigrationConfig{
+		Schema:           "app",
+		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
+		CopyRiskAnalysis: false,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &buf); err != nil {
+		t.Fatalf("runPlanWithConfig() error: %v", err)
+	}
+
+	var report PlanReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("decode report: %v", err)
+	}
+	if len(report.CopyRiskFindings) != 0 {
+		t.Fatalf("copy risk findings = %d, want 0", len(report.CopyRiskFindings))
+	}
+}
+
 func TestBuildPlanReport_RequiredExtensionsAndUnsupportedColumns(t *testing.T) {
 	cfg := &MigrationConfig{
 		TypeMapping: defaultTypeMappingConfig(),
@@ -656,7 +744,7 @@ func TestBuildPlanReport_RequiredExtensionsAndUnsupportedColumns(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(report.RequiredExtensions) != 2 {
 		t.Fatalf("required extensions = %d, want 2", len(report.RequiredExtensions))
 	}
@@ -681,7 +769,7 @@ func TestBuildPlanReport_PostGISDisabledMarksSpatialUnsupported(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 	if len(report.UnsupportedColumns) != 1 {
 		t.Fatalf("unsupported columns = %d, want 1", len(report.UnsupportedColumns))
 	}
@@ -712,7 +800,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQL(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 4 {
 		t.Fatalf("temporal warnings = %d, want 4", len(report.TemporalWarnings))
@@ -753,7 +841,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQLIntervalMode(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 1 {
 		t.Fatalf("temporal warnings = %d, want 1", len(report.TemporalWarnings))
@@ -784,7 +872,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQLTextModeSuppressesTimeWarning(t *
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 0 {
 		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))
@@ -809,7 +897,7 @@ func TestBuildPlanReport_TemporalWarnings_MySQLDatetimeAsTimestamptz(t *testing.
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 2 {
 		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
@@ -842,7 +930,7 @@ func TestBuildPlanReport_TemporalWarnings_MariaDB(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, &mariadbSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, &mariadbSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	gotCategories := make([]string, 0, len(report.TemporalWarnings))
 	for _, warning := range report.TemporalWarnings {
@@ -880,7 +968,7 @@ func TestBuildPlanReport_TemporalWarnings_MSSQL(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 2 {
 		t.Fatalf("temporal warnings = %d, want 2", len(report.TemporalWarnings))
@@ -914,7 +1002,7 @@ func TestBuildPlanReport_TemporalWarnings_MSSQLDatetimeAsTimestamptz(t *testing.
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, &mssqlSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 1 {
 		t.Fatalf("temporal warnings = %d, want 1", len(report.TemporalWarnings))
@@ -941,7 +1029,7 @@ func TestBuildPlanReport_TemporalWarnings_SQLiteNone(t *testing.T) {
 		},
 	}
 
-	report := buildPlanReport(schema, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+	report := buildPlanReport(schema, nil, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
 
 	if len(report.TemporalWarnings) != 0 {
 		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))

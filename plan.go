@@ -40,6 +40,7 @@ func init() {
 // PlanReport holds all findings from the plan analysis.
 type PlanReport struct {
 	RequiredExtensions      []PlanRequiredExtension      `json:"required_extensions"`
+	CopyRiskFindings        []PlanCopyRiskFinding        `json:"copy_risk_findings"`
 	SourceObjects           PlanSourceObjects            `json:"source_objects"`
 	UnsupportedColumns      []PlanUnsupportedColumn      `json:"unsupported_columns"`
 	SchemaSemanticWarnings  []SchemaSemanticWarning      `json:"schema_semantic_warnings"`
@@ -179,7 +180,16 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("introspect schema semantics: %w", err)
 	}
-	report := buildPlanReport(schema, sourceObjects, semanticWarnings, src, cfg, typeMap)
+	copyRisks := []PlanCopyRiskFinding{}
+	if cfg.CopyRiskAnalysis {
+		logCopyRiskProbeStart(len(schema.Tables))
+		if findings, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
+			log.Printf("WARN: copy risk analysis skipped: %v", err)
+		} else {
+			copyRisks = findings
+		}
+	}
+	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, src, cfg, typeMap)
 
 	if format == "json" {
 		if err := writePlanJSON(out, report); err != nil {
@@ -199,9 +209,10 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	return nil
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
 		RequiredExtensions:      []PlanRequiredExtension{},
+		CopyRiskFindings:        []PlanCopyRiskFinding{},
 		UnsupportedColumns:      []PlanUnsupportedColumn{},
 		SchemaSemanticWarnings:  []SchemaSemanticWarning{},
 		GeneratedColumns:        []PlanGeneratedColumn{},
@@ -209,6 +220,9 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{},
 		TemporalWarnings:        []PlanTemporalWarning{},
 		CollationWarnings:       []string{},
+	}
+	if copyRisks != nil {
+		report.CopyRiskFindings = copyRisks
 	}
 
 	for _, req := range collectRequiredExtensions(schema, src, cfg, typeMap) {
@@ -339,6 +353,35 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				action = "pgferry will create it if missing"
 			}
 			fmt.Fprintf(w, "  - %s (%s): %s\n", req.Name, req.Feature, action)
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(report.CopyRiskFindings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Copy Risk Findings (%d)\n\n", len(report.CopyRiskFindings))
+		fmt.Fprintf(w, "These tables are likely runtime hotspots during COPY. chunk_size is key-range width, not a promise of rows per chunk.\n\n")
+		for _, risk := range report.CopyRiskFindings {
+			fmt.Fprintf(w, "  - %s [%s] %s: %s\n", risk.Table, strings.ToUpper(risk.Severity), copyRiskCategoryTitle(risk.Category), risk.Reason)
+			if risk.Chunkable {
+				fmt.Fprintf(w, "    Chunking: eligible on %s", risk.ChunkKey)
+				if risk.ChunkKeyType != "" {
+					fmt.Fprintf(w, " (%s)", risk.ChunkKeyType)
+				}
+				if risk.MinPK != nil && risk.MaxPK != nil {
+					fmt.Fprintf(w, "; range=%d..%d", *risk.MinPK, *risk.MaxPK)
+				}
+				if risk.EstimatedChunkCount > 0 {
+					fmt.Fprintf(w, "; estimated_chunks=%d", risk.EstimatedChunkCount)
+				}
+				if risk.RangeDensity > 0 {
+					fmt.Fprintf(w, "; density=%.2f%%", risk.RangeDensity*100)
+				}
+				fmt.Fprintf(w, "; rows=%d\n", risk.EstimatedRows)
+			} else {
+				fmt.Fprintf(w, "    Chunking: not eligible; rows=%d\n", risk.EstimatedRows)
+			}
+			fmt.Fprintf(w, "    Recommendation: %s\n", risk.Recommendation)
 		}
 		fmt.Fprintln(w)
 	}

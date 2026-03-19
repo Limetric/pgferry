@@ -145,7 +145,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d resume=%t validation=%s",
+		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
 		mode,
 		cfg.Workers,
 		cfg.IndexWorkers,
@@ -161,6 +161,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		cfg.SnakeCaseIdentifiers,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 		cfg.ChunkSize,
+		cfg.CopyRiskAnalysis,
 		cfg.Resume,
 		cfg.Validation,
 	)
@@ -253,6 +254,18 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 		log.Printf("charset/collation report:")
 		for _, w := range warnings {
 			log.Printf("  WARN: %s", w)
+		}
+	}
+	if !cfg.SchemaOnly && cfg.CopyRiskAnalysis {
+		logCopyRiskProbeStart(len(schema.Tables))
+		// Startup copy-risk probing is advisory only during live migrations.
+		// Operators still get signal when probes succeed, but transient source
+		// errors here should not block a migration whose core semantics are
+		// otherwise unchanged.
+		if copyRisks, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
+			log.Printf("WARN: copy risk analysis skipped: %v", err)
+		} else {
+			logCopyRiskFindings(copyRisks, cfg.ChunkSize)
 		}
 	}
 	if typeErrs := collectUnsupportedTypeErrors(schema, typeMap, src.MapType); len(typeErrs) > 0 {
