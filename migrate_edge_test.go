@@ -147,10 +147,12 @@ func TestRunParallelMigrationWorkers_ContextCancellationDuringEnqueue(t *testing
 	if err == nil {
 		t.Fatal("expected error after failure")
 	}
-	// With 1 worker, only 1 item should be processed before the error
-	// cancels the context and breaks the enqueue loop.
-	if n := processed.Load(); n >= int64(len(items)) {
-		t.Fatalf("processed all %d items despite cancellation, want early stop", n)
+	// With 1 worker, at most a couple of items can be processed before the
+	// error cancels the context and the enqueue loop breaks. The select in
+	// the worker loop may non-deterministically pick workCh over ctx.Done()
+	// once, so allow a small margin rather than asserting exactly 1.
+	if n := processed.Load(); n > 3 {
+		t.Fatalf("processed %d items despite cancellation, want at most a few", n)
 	}
 }
 

@@ -252,21 +252,19 @@ func TestValidateCheckpointCompatibility_MaxReasonsLimited(t *testing.T) {
 	compat := testCheckpointCompatibility()
 	state := newCheckpointStateWithCompatibility(&compat)
 
-	// Intentionally set mutually exclusive fields (schema_only + data_only) to
-	// produce > 8 diff reasons. This config is unreachable in production (blocked
-	// by finalizeConfig), but validateCheckpointCompatibility operates on raw
-	// summaries, so it's valid to stress the truncation logic this way.
+	// Change 10 individually valid fields to produce > 8 diff reasons,
+	// exercising the truncation logic that caps output at maxReasons.
 	changed := *compat.Summary
 	changed.SourceType = "mssql"
 	changed.SourceDBName = "otherdb"
+	changed.SourceSchema = "sales"
 	changed.TargetSchema = "other"
 	changed.SourceSnapshotMode = "single_tx"
 	changed.ChunkSize = 1
 	changed.SnakeCaseIdentifiers = true
-	changed.SchemaOnly = true
-	changed.DataOnly = true
 	changed.UnloggedTables = true
 	changed.TypeMapping.TinyInt1AsBoolean = true
+	changed.TypeMapping.Binary16AsUUID = true
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
 	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)

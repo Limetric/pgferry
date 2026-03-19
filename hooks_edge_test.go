@@ -65,6 +65,10 @@ func TestSplitStatements_EscapedDoubleQuotes(t *testing.T) {
 }
 
 func TestSplitStatements_NestedDollarQuoteWithSemicolon(t *testing.T) {
+	// PostgreSQL doesn't actually support nested dollar quoting — $inner$ inside
+	// $outer$ is literal text in the outer block. This tests the parser's behavior
+	// on pathological input: it should still correctly find the outer closing tag
+	// and split statements at the top-level semicolons.
 	sql := "DO $outer$ BEGIN DO $inner$SELECT 1;$inner$; END; $outer$; SELECT 2;"
 	got := splitStatements(sql)
 	if len(got) != 2 {
