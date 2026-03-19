@@ -29,3 +29,4 @@ jobs:
           # github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
             --model claude-sonnet-4-6
+            --mcp-config .mcp.json

@@ -49,6 +49,10 @@ jobs:
             IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
 
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+          
+          claude_args: |
+            --model claude-opus-4-6
+            --mcp-config .mcp.json
 
           additional_permissions: |
             actions: read
