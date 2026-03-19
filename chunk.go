@@ -28,6 +28,12 @@ type ChunkPlan struct {
 	ChunkKey  *ChunkKey // nil means the table is not chunkable
 	Chunks    []Chunk
 	ChunkSize int64
+	// ColumnSelectList is the pre-joined SELECT list (columnSelectExpr per column)
+	// for chunked reads. Empty when ChunkKey is nil.
+	ColumnSelectList string
+	// PGCopyColumns is the ordered list of PostgreSQL column names for COPY,
+	// one per table.Columns entry. Populated for every plan.
+	PGCopyColumns []string
 }
 
 // estimatedChunkCount returns how many chunks planChunks produces for [min, max]
@@ -98,25 +104,31 @@ func planChunks(min, max, chunkSize int64) []Chunk {
 	return chunks
 }
 
-// buildChunkedSelectQuery builds a SELECT query for a single chunk of a table.
-func buildChunkedSelectQuery(src SourceDB, table Table, key ChunkKey, chunk Chunk, typeMap TypeMappingConfig) string {
+// buildColumnSelectList returns the comma-separated SELECT list for table.Columns
+// (same expressions as full-table SELECT). Built once per chunkable table.
+func buildColumnSelectList(src SourceDB, table Table, typeMap TypeMappingConfig) string {
 	cols := make([]string, len(table.Columns))
 	for i, col := range table.Columns {
 		cols[i] = columnSelectExpr(src, col, typeMap)
 	}
+	return strings.Join(cols, ", ")
+}
 
+// buildChunkedSelectQuery builds a SELECT query for a single chunk of a table.
+// columnSelectList must be buildColumnSelectList(src, table, typeMap) for correct semantics.
+func buildChunkedSelectQuery(src SourceDB, table Table, key ChunkKey, chunk Chunk, columnSelectList string) string {
 	quotedKey := src.QuoteIdentifier(key.SourceColumn)
 	tableName := src.SourceTableRef(table)
 
 	if chunk.IsLast {
 		return fmt.Sprintf("SELECT %s FROM %s WHERE %s >= %d AND %s <= %d ORDER BY %s",
-			strings.Join(cols, ", "), tableName,
+			columnSelectList, tableName,
 			quotedKey, chunk.LowerBound,
 			quotedKey, chunk.UpperBound,
 			quotedKey)
 	}
 	return fmt.Sprintf("SELECT %s FROM %s WHERE %s >= %d AND %s < %d ORDER BY %s",
-		strings.Join(cols, ", "), tableName,
+		columnSelectList, tableName,
 		quotedKey, chunk.LowerBound,
 		quotedKey, chunk.UpperBound,
 		quotedKey)

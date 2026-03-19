@@ -862,16 +862,18 @@ func TestBuildChunkedSelectQuery_MSSQL(t *testing.T) {
 		},
 	}
 	key := ChunkKey{SourceColumn: "id", PGColumn: "id"}
+	tm := defaultTypeMappingConfig()
+	colList := buildColumnSelectList(src, table, tm)
 
 	chunk := Chunk{Index: 0, LowerBound: 1, UpperBound: 100, IsLast: false}
-	got := buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	got := buildChunkedSelectQuery(src, table, key, chunk, colList)
 	want := "SELECT [id], [name] FROM [users] WHERE [id] >= 1 AND [id] < 100 ORDER BY [id]"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
 	}
 
 	chunk = Chunk{Index: 1, LowerBound: 100, UpperBound: 150, IsLast: true}
-	got = buildChunkedSelectQuery(src, table, key, chunk, defaultTypeMappingConfig())
+	got = buildChunkedSelectQuery(src, table, key, chunk, colList)
 	want = "SELECT [id], [name] FROM [users] WHERE [id] >= 100 AND [id] <= 150 ORDER BY [id]"
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
