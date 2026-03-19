@@ -44,8 +44,14 @@ If you prefer to create the config yourself, the minimum shape looks like this:
 schema = "app"
 
 [source]
-type = "mysql" # or "mariadb" / "sqlite" / "mssql"
+type = "mysql"
 dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+# type = "mariadb"
+# dsn = "root:root@tcp(127.0.0.1:3306)/source_db"
+# type = "sqlite"
+# dsn = "/path/to/source.db"
+# type = "mssql"
+# dsn = "sqlserver://sa:pass@127.0.0.1:1433?database=source_db"
 
 [target]
 dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
