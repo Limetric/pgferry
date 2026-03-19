@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type extensionRequirement struct {
@@ -98,9 +96,9 @@ func sourceIsMySQL(cfg *MigrationConfig, src SourceDB) bool {
 	return sourceTypeForDB(src) == "mysql"
 }
 
-func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []extensionRequirement) error {
+func ensureRequiredExtensions(ctx context.Context, exec queryExecutor, reqs []extensionRequirement) error {
 	for _, req := range reqs {
-		installed, available, err := queryExtensionStatus(ctx, pool, req.Name)
+		installed, available, err := queryExtensionStatus(ctx, exec, req.Name)
 		if err != nil {
 			return fmt.Errorf("check extension %s: %w", req.Name, err)
 		}
@@ -121,7 +119,7 @@ func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []ex
 		}
 
 		log.Printf("creating PostgreSQL extension %s for %s...", req.Name, req.Feature)
-		if _, err := pool.Exec(ctx, fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS %s", pgIdent(req.Name))); err != nil {
+		if _, err := exec.Exec(ctx, fmt.Sprintf("CREATE EXTENSION IF NOT EXISTS %s", pgIdent(req.Name))); err != nil {
 			return fmt.Errorf("create extension %s for %s: %w", req.Name, req.Feature, err)
 		}
 		log.Printf("extension %s created (%s)", req.Name, req.Feature)
@@ -130,8 +128,8 @@ func ensureRequiredExtensions(ctx context.Context, pool *pgxpool.Pool, reqs []ex
 	return nil
 }
 
-func queryExtensionStatus(ctx context.Context, pool *pgxpool.Pool, name string) (installed bool, available bool, err error) {
-	err = pool.QueryRow(ctx, `
+func queryExtensionStatus(ctx context.Context, exec queryExecutor, name string) (installed bool, available bool, err error) {
+	err = exec.QueryRow(ctx, `
 		SELECT
 			EXISTS(SELECT 1 FROM pg_extension WHERE extname = $1),
 			EXISTS(SELECT 1 FROM pg_available_extensions WHERE name = $1)

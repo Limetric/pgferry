@@ -7,20 +7,18 @@ import (
 	"log"
 	"sort"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // createTables generates and executes CREATE TABLE DDL for all tables.
 // Tables are created with no PKs, FKs, or indexes for speed.
-func createTables(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, unlogged bool, preserveDefaults bool, typeMap TypeMappingConfig, src SourceDB) error {
+func createTables(ctx context.Context, exec statementExecutor, schema *Schema, pgSchema string, unlogged bool, preserveDefaults bool, typeMap TypeMappingConfig, src SourceDB) error {
 	for _, t := range schema.Tables {
 		ddl, err := generateCreateTable(t, pgSchema, unlogged, preserveDefaults, typeMap, src)
 		if err != nil {
 			return fmt.Errorf("build create table %s: %w", t.PGName, err)
 		}
 		log.Printf("  creating %s.%s", pgSchema, t.PGName)
-		if _, err := pool.Exec(ctx, ddl); err != nil {
+		if _, err := exec.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("create table %s: %w\nDDL: %s", t.PGName, err, ddl)
 		}
 	}
@@ -129,7 +127,7 @@ func pgEnumTypeName(values []string) string {
 
 // createEnumTypes creates PostgreSQL enum types for all enum columns in the schema.
 // Identical enum definitions (same value sets) share the same PG type.
-func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, typeMap TypeMappingConfig, sourceType string) error {
+func createEnumTypes(ctx context.Context, exec statementExecutor, schema *Schema, pgSchema string, typeMap TypeMappingConfig, sourceType string) error {
 	typeMap = effectiveTypeMappingForSource(typeMap, sourceType)
 	if typeMap.EnumMode != "native" {
 		return nil
@@ -164,7 +162,7 @@ func createEnumTypes(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pg
 			q := fmt.Sprintf(
 				"DO $$ BEGIN CREATE TYPE %s.%s AS ENUM (%s); EXCEPTION WHEN duplicate_object THEN NULL; END $$",
 				pgIdent(pgSchema), pgIdent(typeName), strings.Join(lits, ", "))
-			if _, err := pool.Exec(ctx, q); err != nil {
+			if _, err := exec.Exec(ctx, q); err != nil {
 				return fmt.Errorf("create enum type %s: %w\nSQL: %s", typeName, err, q)
 			}
 			created[typeName] = true

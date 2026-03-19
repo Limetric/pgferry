@@ -6,12 +6,10 @@ import (
 	"log"
 	"os"
 	"strings"
-
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // loadAndExecSQLFiles reads each SQL file, expands {{schema}}, and executes every statement.
-func loadAndExecSQLFiles(ctx context.Context, pool *pgxpool.Pool, cfg *MigrationConfig, files []string, phase string) error {
+func loadAndExecSQLFiles(ctx context.Context, exec statementExecutor, cfg *MigrationConfig, files []string, phase string) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -29,7 +27,7 @@ func loadAndExecSQLFiles(ctx context.Context, pool *pgxpool.Pool, cfg *Migration
 
 		log.Printf("    %s: %d statements", f, len(stmts))
 		for i, stmt := range stmts {
-			if _, err := pool.Exec(ctx, stmt); err != nil {
+			if _, err := exec.Exec(ctx, stmt); err != nil {
 				return fmt.Errorf("hook %s: %s: statement %d: %w\nSQL: %s", phase, f, i+1, err, stmt)
 			}
 		}

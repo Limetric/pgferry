@@ -678,6 +678,371 @@ dsn = %q
 	}
 }
 
+func TestIntegration_MySQL_SingleTx(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_single_tx")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 4
+chunk_size = 2
+source_snapshot_mode = "single_tx"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+	assertPKExists(t, pgPool, pgSchema, "users")
+	assertFKExists(t, pgPool, pgSchema, "posts", "users")
+
+	var name string
+	err = pgPool.QueryRow(ctx, fmt.Sprintf("SELECT name FROM %s.users WHERE id = 1", pgIdent(pgSchema))).Scan(&name)
+	if err != nil {
+		t.Fatalf("query migrated user: %v", err)
+	}
+	if name != "Alice" {
+		t.Fatalf("name = %q, want Alice", name)
+	}
+}
+
+func TestIntegration_MySQL_ValidationRowCount(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_validate_rows")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+validation = "row_count"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+}
+
+func TestIntegration_MySQL_ValidationRowCountMismatchAfterHook(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_validate_rows_fail")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "after_data.sql"), []byte(`DELETE FROM {{schema}}.users WHERE id = 1;`), 0644); err != nil {
+		t.Fatalf("write after_data hook: %v", err)
+	}
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+validation = "row_count"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+
+[hooks]
+after_data = ["after_data.sql"]
+`, pgSchema, mysqlDSN, pgDSN))
+
+	err = runMigrationFromConfigExpectError(t, cfgPath)
+	if !strings.Contains(err.Error(), "row count mismatch") || !strings.Contains(err.Error(), "users") {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestIntegration_MySQL_ValidationSampledHash(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_validate_hash")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+validation = "sampled_hash"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+}
+
+func TestIntegration_MySQL_ValidationSampledHashMismatchAfterHook(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_validate_hash_fail")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "after_data.sql"), []byte(`UPDATE {{schema}}.users SET name = 'Mallory' WHERE id = 1;`), 0644); err != nil {
+		t.Fatalf("write after_data hook: %v", err)
+	}
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+validation = "sampled_hash"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+
+[hooks]
+after_data = ["after_data.sql"]
+`, pgSchema, mysqlDSN, pgDSN))
+
+	err = runMigrationFromConfigExpectError(t, cfgPath)
+	if !strings.Contains(err.Error(), "sampled_hash mismatch") || !strings.Contains(err.Error(), "users") {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLResumeFixture(t, mysqlDB)
+
+	src := &mysqlSourceDB{}
+	src.SetSnakeCaseIdentifiers(true)
+
+	sourceDB, err := src.OpenDB(mysqlDSN)
+	if err != nil {
+		t.Fatalf("open mysql for introspection: %v", err)
+	}
+	defer sourceDB.Close()
+	sourceDB.SetMaxOpenConns(1)
+
+	dbName, err := src.ExtractDBName(mysqlDSN)
+	if err != nil {
+		t.Fatalf("extract db name: %v", err)
+	}
+	schema, err := src.IntrospectSchema(sourceDB, dbName)
+	if err != nil {
+		t.Fatalf("introspect schema: %v", err)
+	}
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_resume")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(pgSchema))); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	cfg := &MigrationConfig{
+		Source:               SourceConfig{Type: "mysql", DSN: mysqlDSN},
+		Target:               TargetConfig{DSN: pgDSN},
+		Schema:               pgSchema,
+		Workers:              1,
+		ChunkSize:            2,
+		Resume:               true,
+		UnloggedTables:       false,
+		PreserveDefaults:     true,
+		OnSchemaExists:       "error",
+		SourceSnapshotMode:   "none",
+		SnakeCaseIdentifiers: true,
+		Validation:           "none",
+		TypeMapping:          defaultTypeMappingConfig(),
+		configDir:            tmpDir,
+	}
+	cfg.TypeMapping.ZeroDateMode = "error"
+	typeMap := effectiveTypeMapping(cfg)
+	compat, err := buildCheckpointCompatibility(cfg, schema, src, dbName, typeMap)
+	if err != nil {
+		t.Fatalf("buildCheckpointCompatibility: %v", err)
+	}
+
+	if err := createTables(ctx, pgPool, schema, pgSchema, false, cfg.PreserveDefaults, typeMap, src); err != nil {
+		t.Fatalf("createTables: %v", err)
+	}
+
+	dataCfg := migrateDataConfig{
+		Src:                 src,
+		SrcDSN:              mysqlDSN,
+		Pool:                pgPool,
+		Schema:              schema,
+		PGSchema:            pgSchema,
+		Workers:             1,
+		TypeMap:             typeMap,
+		SourceSnapshotMode:  "none",
+		ChunkSize:           2,
+		Resume:              true,
+		ConfigDir:           tmpDir,
+		ResumeCompatibility: compat,
+	}
+
+	err = migrateData(ctx, dataCfg)
+	if err == nil {
+		t.Fatal("expected migrateData to fail on zero datetime chunk")
+	}
+	if !strings.Contains(err.Error(), "zero date/time value") {
+		t.Fatalf("unexpected migrateData error: %v", err)
+	}
+
+	assertRowCount(t, pgPool, pgSchema, "events", 2)
+
+	cpPath := checkpointPath(tmpDir)
+	state, err := loadCheckpoint(cpPath)
+	if err != nil {
+		t.Fatalf("loadCheckpoint: %v", err)
+	}
+	if state == nil || state.Tables["events"] == nil {
+		t.Fatalf("checkpoint state = %+v, want events progress", state)
+	}
+	if !state.isChunkCompleted("events", 0) {
+		t.Fatalf("checkpoint should mark first chunk completed: %+v", state.Tables["events"])
+	}
+	if state.isChunkCompleted("events", 1) {
+		t.Fatalf("checkpoint should not mark failed chunk completed: %+v", state.Tables["events"])
+	}
+
+	if _, err := mysqlDB.Exec(`UPDATE events SET happened_at = '2024-01-04 04:05:06' WHERE id = 4`); err != nil {
+		t.Fatalf("fix source row: %v", err)
+	}
+
+	if err := migrateData(ctx, dataCfg); err != nil {
+		t.Fatalf("resume migrateData: %v", err)
+	}
+	if _, err := os.Stat(cpPath); !os.IsNotExist(err) {
+		t.Fatalf("checkpoint file should be removed after successful resume, stat err=%v", err)
+	}
+
+	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
+		t.Fatalf("postMigrate: %v", err)
+	}
+
+	assertRowCount(t, pgPool, pgSchema, "events", 5)
+
+	var nextID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.events (happened_at, note) VALUES ('2024-01-06 06:07:08', 'after-resume') RETURNING id", pgIdent(pgSchema)),
+	).Scan(&nextID)
+	if err != nil {
+		t.Fatalf("insert after resume: %v", err)
+	}
+	if nextID != 6 {
+		t.Fatalf("next inserted id after resume = %d, want 6", nextID)
+	}
+}
+
 func TestIntegration_MySQL_PostGIS(t *testing.T) {
 	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
 	ctx := context.Background()
@@ -1089,6 +1454,36 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("seed mysql without orphans %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
+func seedMySQLResumeFixture(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		"SET SESSION sql_mode = ''",
+		"DROP TABLE IF EXISTS events",
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
+		"DROP TABLE IF EXISTS comments",
+		"DROP TABLE IF EXISTS posts",
+		"DROP TABLE IF EXISTS users",
+		`CREATE TABLE events (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			happened_at DATETIME NOT NULL,
+			note VARCHAR(100) NOT NULL
+		)`,
+		"INSERT INTO events (happened_at, note) VALUES ('2024-01-01 01:02:03', 'one')",
+		"INSERT INTO events (happened_at, note) VALUES ('2024-01-02 02:03:04', 'two')",
+		"INSERT INTO events (happened_at, note) VALUES ('2024-01-03 03:04:05', 'three')",
+		"INSERT INTO events (happened_at, note) VALUES ('0000-00-00 00:00:00', 'bad-four')",
+		"INSERT INTO events (happened_at, note) VALUES ('2024-01-05 05:06:07', 'five')",
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql resume fixture %q: %v", stmt[:min(len(stmt), 60)], err)
 		}
 	}
 }
@@ -1852,6 +2247,17 @@ func runMigrationFromConfig(t *testing.T, cfgPath string) {
 	if err := runMigration(nil, []string{cfgPath}); err != nil {
 		t.Fatalf("runMigration(%s): %v", cfgPath, err)
 	}
+}
+
+func runMigrationFromConfigExpectError(t *testing.T, cfgPath string) error {
+	t.Helper()
+
+	configPath = ""
+	err := runMigration(nil, []string{cfgPath})
+	if err == nil {
+		t.Fatalf("runMigration(%s): expected error", cfgPath)
+	}
+	return err
 }
 
 func introspectMySQLSchemaForTest(t *testing.T, mysqlDSN string) (*mysqlSourceDB, *Schema) {
