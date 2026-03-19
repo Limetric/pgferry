@@ -224,9 +224,6 @@ func truncateGeneratedIdentifierWithSuffix(base, suffix string) string {
 // execSQL is a helper that runs a single statement and logs errors with context.
 func execSQL(ctx context.Context, exec statementExecutor, desc, query string) error {
 	if _, err := exec.Exec(ctx, query); err != nil {
-		if desc == "" {
-			return fmt.Errorf("%w\nSQL: %s", err, query)
-		}
 		return fmt.Errorf("%s: %w\nSQL: %s", desc, err, query)
 	}
 	return nil
@@ -705,7 +702,7 @@ func setTriggers(ctx context.Context, exec statementExecutor, schema *Schema, pg
 	for _, t := range schema.Tables {
 		if err := setTableTriggers(ctx, exec, pgSchema, t.PGName, enable); err != nil {
 			if enable {
-				return fmt.Errorf("%w. pgferry attempted to restore trigger state; inspect %s.%s and verify triggers are enabled before retrying", err, pgSchema, t.PGName)
+				return fmt.Errorf("%w. pgferry attempted to restore trigger state after the data_only load path; verify the affected table's triggers are enabled before retrying", err)
 			}
 			return fmt.Errorf("%w. data_only requires permission to disable and re-enable triggers on the existing target tables; rerun with a role that can ALTER TABLE ... DISABLE/ENABLE TRIGGER ALL or use a full migration/schema_only workflow instead", err)
 		}
@@ -746,8 +743,9 @@ func setTableTriggers(ctx context.Context, exec statementExecutor, pgSchema, tab
 		action = "ENABLE"
 	}
 	q := fmt.Sprintf("ALTER TABLE %s.%s %s TRIGGER ALL", pgIdent(pgSchema), pgIdent(table), action)
-	if err := execSQL(ctx, exec, "", q); err != nil {
-		return fmt.Errorf("table %s.%s: %w", pgSchema, table, err)
+	desc := fmt.Sprintf("table %s.%s", pgSchema, table)
+	if err := execSQL(ctx, exec, desc, q); err != nil {
+		return err
 	}
 	return nil
 }

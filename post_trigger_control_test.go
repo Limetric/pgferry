@@ -175,10 +175,13 @@ func TestSetTriggers_EnableFailureIncludesInspectionGuidance(t *testing.T) {
 	for _, want := range []string{
 		`table app.users`,
 		"attempted to restore trigger state",
-		"verify triggers are enabled before retrying",
+		"triggers are enabled before retrying",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q missing %q", err, want)
 		}
+	}
+	if strings.Contains(err.Error(), "inspect app.users") {
+		t.Fatalf("error %q should not repeat the table name in the guidance text", err)
 	}
 }
