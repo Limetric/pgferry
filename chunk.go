@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -29,6 +30,29 @@ type ChunkPlan struct {
 	ChunkSize int64
 }
 
+// estimatedChunkCount returns how many chunks planChunks produces for [min, max]
+// with the given positive chunkSize. For rangeSize < chunkSize it returns 1 (single
+// chunk path). Returns 0 if the count does not fit in int or would overflow int64
+// arithmetic (caller should skip preallocation).
+func estimatedChunkCount(min, max, chunkSize int64) int {
+	if chunkSize <= 0 {
+		return 0
+	}
+	rangeSize := max - min
+	if rangeSize < chunkSize {
+		return 1
+	}
+	q := rangeSize / chunkSize
+	if q > math.MaxInt64-1 {
+		return 0
+	}
+	n := q + 1
+	if n < 0 || n > int64(math.MaxInt) {
+		return 0
+	}
+	return int(n)
+}
+
 // planChunks divides the [min, max] key range into chunks of approximately chunkSize.
 // Returns a single chunk covering the full range if the range is smaller than chunkSize.
 func planChunks(min, max, chunkSize int64) []Chunk {
@@ -49,6 +73,11 @@ func planChunks(min, max, chunkSize int64) []Chunk {
 	}
 
 	var chunks []Chunk
+	if wantCap := estimatedChunkCount(min, max, chunkSize); wantCap > 0 {
+		chunks = make([]Chunk, 0, wantCap)
+	} else {
+		chunks = make([]Chunk, 0)
+	}
 	for lower := min; lower <= max; {
 		upper := lower + chunkSize
 		isLast := upper > max
