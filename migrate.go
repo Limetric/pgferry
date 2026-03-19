@@ -149,7 +149,16 @@ func runParallelMigrationWorkers(ctx context.Context, workers int, openSource fu
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	workCh := make(chan migrationWorkItem)
+	// Buffered channel decouples enqueue from workers; size is bounded by work list
+	// and a small multiple of workers for light prefetch (correctness unchanged).
+	bufSize := workers * 2
+	if bufSize > len(workItems) {
+		bufSize = len(workItems)
+	}
+	if bufSize < 1 {
+		bufSize = 1
+	}
+	workCh := make(chan migrationWorkItem, bufSize)
 	var wg sync.WaitGroup
 
 	var firstErr error

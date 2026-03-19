@@ -1,6 +1,45 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
+
+func TestEstimatedChunkCount(t *testing.T) {
+	tests := []struct {
+		min, max, chunkSize int64
+		want                int
+	}{
+		{1, 100, 1000, 1},
+		{1, 300, 100, 3},
+		{1, 250, 100, 3},
+		{42, 42, 100, 1},
+		{0, 999999, 100000, 10},
+		{-50, 50, 100, 2},
+		{1, 101, 100, 2},
+		{0, 200, 100, 3},
+		{0, 0, 1, 1},
+		{1, 10, 0, 0},
+	}
+	for _, tt := range tests {
+		got := estimatedChunkCount(tt.min, tt.max, tt.chunkSize)
+		if got != tt.want {
+			t.Errorf("estimatedChunkCount(%d,%d,%d) = %d, want %d", tt.min, tt.max, tt.chunkSize, got, tt.want)
+		}
+		if tt.chunkSize > 0 {
+			if len(planChunks(tt.min, tt.max, tt.chunkSize)) != got {
+				t.Errorf("len(planChunks(%d,%d,%d)) != estimatedChunkCount = %d", tt.min, tt.max, tt.chunkSize, got)
+			}
+		}
+	}
+}
+
+func TestEstimatedChunkCount_OverflowReturnsZero(t *testing.T) {
+	// q+1 would overflow int64; must not preallocate with a bogus cap.
+	if got := estimatedChunkCount(0, math.MaxInt64, 1); got != 0 {
+		t.Fatalf("estimatedChunkCount(0, MaxInt64, 1) = %d, want 0", got)
+	}
+}
 
 func TestPlanChunks_SingleChunkWhenSmall(t *testing.T) {
 	chunks := planChunks(1, 100, 1000)
