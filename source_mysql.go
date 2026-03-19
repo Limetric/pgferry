@@ -1145,14 +1145,16 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		if bitWidth <= 0 {
 			bitWidth = int64(len(b)) * 8
 		}
-		buf := make([]byte, 0, len(b)*8)
+		buf := make([]byte, len(b)*8)
+		pos := 0
 		for _, byt := range b {
 			for i := 7; i >= 0; i-- {
 				if byt&(1<<uint(i)) != 0 {
-					buf = append(buf, '1')
+					buf[pos] = '1'
 				} else {
-					buf = append(buf, '0')
+					buf[pos] = '0'
 				}
+				pos++
 			}
 		}
 		bits := string(buf)

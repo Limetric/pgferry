@@ -485,6 +485,11 @@ func TestTransformValue_BitToBitString(t *testing.T) {
 		{"bit(1) true", Column{DataType: "bit", ColumnType: "bit(1)", Precision: 1}, []byte{0x01}, "1"},
 		{"bit(1) false", Column{DataType: "bit", ColumnType: "bit(1)", Precision: 1}, []byte{0x00}, "0"},
 		{"bit(16)", Column{DataType: "bit", ColumnType: "bit(16)", Precision: 16}, []byte{0xAB, 0xCD}, "1010101111001101"},
+		// Introspection populates MySQLBitWidth; ColumnType/Precision may be unset in tests/stubs.
+		{"cached width bit(8)", Column{DataType: "bit", MySQLBitWidth: 8, ColumnType: "", Precision: 0}, []byte{0xFF}, "11111111"},
+		{"cached width bit(1)", Column{DataType: "bit", MySQLBitWidth: 1, ColumnType: "", Precision: 0}, []byte{0x01}, "1"},
+		// No MySQLBitWidth / COLUMN_TYPE / precision: derive width from payload byte length (8 bits per byte).
+		{"fallback width from payload length", Column{DataType: "bit", ColumnType: "", Precision: 0, MySQLBitWidth: 0}, []byte{0x01}, "00000001"},
 	}
 
 	for _, tt := range tests {

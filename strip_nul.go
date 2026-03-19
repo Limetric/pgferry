@@ -19,5 +19,5 @@ func stripNULBytesToString(b []byte) string {
 	if bytes.IndexByte(b, 0) < 0 {
 		return string(b)
 	}
-	return strings.ReplaceAll(string(b), "\x00", "")
+	return string(bytes.ReplaceAll(b, []byte{0}, nil))
 }

@@ -4,20 +4,40 @@ import "testing"
 
 func TestStripNULString(t *testing.T) {
 	t.Parallel()
-	if s := stripNULString("hello"); s != "hello" {
-		t.Fatalf("no NUL: got %q", s)
+	tests := []struct {
+		in, want string
+	}{
+		{"hello", "hello"},
+		{"", ""},
+		{"\x00", ""},
+		{"a\x00b", "ab"},
+		{"\x00\x00", ""},
 	}
-	if s := stripNULString("a\x00b"); s != "ab" {
-		t.Fatalf("with NUL: got %q", s)
+	for _, tt := range tests {
+		if got := stripNULString(tt.in); got != tt.want {
+			t.Errorf("stripNULString(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 
 func TestStripNULBytesToString(t *testing.T) {
 	t.Parallel()
-	if s := stripNULBytesToString([]byte("hello")); s != "hello" {
-		t.Fatalf("no NUL: got %q", s)
+	tests := []struct {
+		name string
+		in   []byte
+		want string
+	}{
+		{"no NUL", []byte("hello"), "hello"},
+		{"nil", nil, ""},
+		{"empty", []byte{}, ""},
+		{"only NUL", []byte{0}, ""},
+		{"with NUL", []byte("a\x00b"), "ab"},
 	}
-	if s := stripNULBytesToString([]byte("a\x00b")); s != "ab" {
-		t.Fatalf("with NUL: got %q", s)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := stripNULBytesToString(tt.in); got != tt.want {
+				t.Fatalf("stripNULBytesToString() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
