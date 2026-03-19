@@ -10,6 +10,8 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+const defaultChunkSize int64 = 100000
+
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
 	Source                            SourceConfig      `toml:"source"`
@@ -156,7 +158,7 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		cfg.IndexWorkers = cfg.Workers
 	}
 	if cfg.ChunkSize <= 0 {
-		cfg.ChunkSize = 100000
+		cfg.ChunkSize = defaultChunkSize
 	}
 	if cfg.Validation == "" {
 		cfg.Validation = "none"

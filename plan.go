@@ -182,13 +182,12 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 	}
 	copyRisks := []PlanCopyRiskFinding{}
 	if cfg.CopyRiskAnalysis {
+		logCopyRiskProbeStart(len(schema.Tables))
 		if findings, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
 			log.Printf("WARN: copy risk analysis skipped: %v", err)
 		} else {
 			copyRisks = findings
 		}
-	} else {
-		log.Printf("copy risk analysis disabled: copy_risk_analysis=false")
 	}
 	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, src, cfg, typeMap)
 

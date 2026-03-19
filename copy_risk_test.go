@@ -38,6 +38,23 @@ func TestAnalyzeCopyRiskTable_LargeNonChunkable(t *testing.T) {
 	}
 }
 
+func TestNonChunkableTableReason_PKColumnMissing(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "audit_log",
+		PGName:     "audit_log",
+		Columns: []Column{
+			{SourceName: "payload", PGName: "payload", DataType: "text", ColumnType: "text"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+
+	got := nonChunkableTableReason(table, src)
+	if !strings.Contains(got, `Primary key column id was not found`) {
+		t.Fatalf("reason = %q, want missing PK column detail", got)
+	}
+}
+
 func TestAnalyzeCopyRiskTable_HighChunkCount(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{

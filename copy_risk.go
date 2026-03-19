@@ -208,7 +208,7 @@ func isBigintChunkKeyType(chunkKeyType string) bool {
 
 func normalizedChunkSize(chunkSize int64) int64 {
 	if chunkSize <= 0 {
-		return 100000
+		return defaultChunkSize
 	}
 	return chunkSize
 }
@@ -243,8 +243,9 @@ func keyRangeWidth(minPK, maxPK int64) uint64 {
 func sortCopyRiskFindings(findings []PlanCopyRiskFinding) {
 	sort.Slice(findings, func(i, j int) bool {
 		left, right := findings[i], findings[j]
-		if copyRiskSeverityRank(left.Severity) != copyRiskSeverityRank(right.Severity) {
-			return copyRiskSeverityRank(left.Severity) < copyRiskSeverityRank(right.Severity)
+		leftRank, rightRank := copyRiskSeverityRank(left.Severity), copyRiskSeverityRank(right.Severity)
+		if leftRank != rightRank {
+			return leftRank < rightRank
 		}
 		if left.Table != right.Table {
 			return left.Table < right.Table
@@ -308,4 +309,8 @@ func copyRiskCategoryTitle(category string) string {
 
 func int64Ptr(v int64) *int64 {
 	return &v
+}
+
+func logCopyRiskProbeStart(tableCount int) {
+	log.Printf("copy risk analysis: probing %d table(s) with COUNT(*) and eligible PK MIN/MAX checks", tableCount)
 }
