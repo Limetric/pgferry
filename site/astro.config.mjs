@@ -36,6 +36,9 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'pgferry',
+			logo: {
+				src: '/public/favicon.svg',
+			},
 			description: 'Reliable MySQL, SQLite, and MSSQL migrations into PostgreSQL.',
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/Limetric/pgferry' }],
 			editLink: {
