@@ -222,8 +222,8 @@ func TestMariaDBTransformValue_UUIDColumn(t *testing.T) {
 }
 
 func TestMariaDBTransformValue_JSONColumnTypeAlias(t *testing.T) {
-	// MariaDB stores JSON as longtext with ColumnType="json" alias
-	col := Column{DataType: "longtext", ColumnType: "json"}
+	// Introspection normalizes json alias columns to DataType=json (see normalizeMariaDBSchemaColumns).
+	col := Column{DataType: "json", ColumnType: "json"}
 	tm := defaultTypeMappingConfig()
 	tm.SanitizeJSONNullBytes = true
 

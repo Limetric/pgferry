@@ -88,6 +88,22 @@ func TestAnnotateMariaDBJSONColumns(t *testing.T) {
 	}
 }
 
+func TestNormalizeMariaDBSchemaColumns_JSONColumnType(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				Columns: []Column{
+					{SourceName: "j", DataType: "longtext", ColumnType: "  JSON "},
+				},
+			},
+		},
+	}
+	normalizeMariaDBSchemaColumns(schema)
+	if got := schema.Tables[0].Columns[0].DataType; got != "json" {
+		t.Fatalf("DataType = %q, want json", got)
+	}
+}
+
 func TestMySQLForeignKeysByTableQueryJoinsReferentialConstraintsOnTableName(t *testing.T) {
 	if !strings.Contains(mysqlForeignKeysByTableQuery, "AND kcu.TABLE_NAME = rc.TABLE_NAME") {
 		t.Fatalf("mysqlForeignKeysByTableQuery must join REFERENTIAL_CONSTRAINTS on TABLE_NAME to avoid duplicating same-named foreign keys across tables")

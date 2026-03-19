@@ -226,8 +226,21 @@ func introspectMariaDBSchema(db *sql.DB, dbName string, identName func(string) s
 		return nil, fmt.Errorf("introspect MariaDB JSON aliases for schema %s: %w", dbName, err)
 	}
 	annotateMariaDBJSONColumns(schema, jsonAliases)
+	normalizeMariaDBSchemaColumns(schema)
 
 	return schema, nil
+}
+
+func normalizeMariaDBSchemaColumns(schema *Schema) {
+	if schema == nil {
+		return
+	}
+	for ti := range schema.Tables {
+		t := &schema.Tables[ti]
+		for ci := range t.Columns {
+			t.Columns[ci] = normalizeMariaDBColumn(t.Columns[ci])
+		}
+	}
 }
 
 func introspectMariaDBJSONAliases(db *sql.DB, dbName string) (map[string]map[string]bool, error) {
@@ -1231,7 +1244,6 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 }
 
 func mariadbTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, error) {
-	col = normalizeMariaDBColumn(col)
 	if col.DataType == "uuid" {
 		return normalizeUUIDStringValue(val, "MariaDB uuid")
 	}

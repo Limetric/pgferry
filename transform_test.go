@@ -152,7 +152,8 @@ func TestMariaDBTransformValue_UUIDAndJSONAlias(t *testing.T) {
 	}
 
 	jsonInput := "hello\x00world"
-	got, err = mariadbTransformValue(jsonInput, Column{DataType: "longtext", ColumnType: "json"}, defaultTypeMappingConfig())
+	// After MariaDB introspection, json alias columns have DataType normalized to json.
+	got, err = mariadbTransformValue(jsonInput, Column{DataType: "json", ColumnType: "json"}, defaultTypeMappingConfig())
 	if err != nil {
 		t.Fatalf("mariadbTransformValue(json alias) error: %v", err)
 	}
