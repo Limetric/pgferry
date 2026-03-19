@@ -72,9 +72,8 @@ jobs:
             exit 1
           fi
 
-          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
           go vet ./...
-          staticcheck ./...
+          go tool staticcheck ./...
           go test ./... -count=1
 
       - name: Create pull request
@@ -94,5 +93,5 @@ jobs:
             Validation run in this workflow:
             - `gofmt -l .`
             - `go vet ./...`
-            - `staticcheck ./...`
+            - `go tool staticcheck ./...`
             - `go test ./... -count=1`
