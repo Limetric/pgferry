@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"math"
@@ -1284,19 +1283,7 @@ func mssqlTransformValue(val any, col Column, _ TypeMappingConfig) (any, error) 
 		switch v := val.(type) {
 		case []byte:
 			if len(v) == 16 {
-				// SQL Server stores UUIDs in mixed-endian format:
-				// bytes 0-3: data1 (little-endian uint32)
-				// bytes 4-5: data2 (little-endian uint16)
-				// bytes 6-7: data3 (little-endian uint16)
-				// bytes 8-15: data4+data5 (big-endian)
-				d1 := binary.LittleEndian.Uint32(v[0:4])
-				d2 := binary.LittleEndian.Uint16(v[4:6])
-				d3 := binary.LittleEndian.Uint16(v[6:8])
-				return fmt.Sprintf("%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-					d1, d2, d3,
-					v[8], v[9],
-					v[10], v[11], v[12], v[13], v[14], v[15],
-				), nil
+				return formatMSSQLUniqueidentifier(v), nil
 			}
 			return string(v), nil
 		case string:

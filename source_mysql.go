@@ -1065,18 +1065,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		if !ok || len(b) != 16 {
 			return nil, fmt.Errorf("expected 16-byte binary UUID payload, got %T", val)
 		}
-		if typeMap.Binary16UUIDMode == "mysql_uuid_to_bin_swap" {
-			// MySQL UUID_TO_BIN(uuid, 1) swaps time_low and time_hi_and_version:
-			// Storage:  [time_hi(2)][time_mid(2)][time_low(4)][clock_seq(2)][node(6)]
-			// RFC 4122: [time_low(4)][time_mid(2)][time_hi(2)][clock_seq(2)][node(6)]
-			var unswapped [16]byte
-			copy(unswapped[0:4], b[4:8])   // time_low
-			copy(unswapped[4:6], b[2:4])   // time_mid
-			copy(unswapped[6:8], b[0:2])   // time_hi_and_version
-			copy(unswapped[8:16], b[8:16]) // clock_seq + node
-			b = unswapped[:]
-		}
-		return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+		return formatMySQLBinaryUUID(b, typeMap.Binary16UUIDMode == "mysql_uuid_to_bin_swap"), nil
 
 	case col.DataType == "json" && typeMap.SanitizeJSONNullBytes:
 		switch v := val.(type) {
@@ -1091,27 +1080,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		return normalizeUUIDStringValue(val, "string_uuid_as_uuid")
 
 	case isTinyInt1Column(col) && typeMap.TinyInt1AsBoolean:
-		switch v := val.(type) {
-		case int64:
-			if v == 0 {
-				return false, nil
-			}
-			if v == 1 {
-				return true, nil
-			}
-			return nil, fmt.Errorf("cannot coerce tinyint(1) value %d to boolean", v)
-		case []byte:
-			if string(v) == "0" {
-				return false, nil
-			}
-			if string(v) == "1" {
-				return true, nil
-			}
-			return nil, fmt.Errorf("cannot coerce tinyint(1) value %q to boolean", string(v))
-		case bool:
-			return v, nil
-		}
-		return nil, fmt.Errorf("cannot coerce tinyint(1) value of type %T to boolean", val)
+		return mysqlTinyIntBooleanTransformer(val)
 
 	case col.DataType == "set" && (typeMap.SetMode == "text_array" || typeMap.SetMode == "text_array_check"):
 		var raw string
@@ -1134,35 +1103,7 @@ func mysqlTransformValue(val any, col Column, typeMap TypeMappingConfig) (any, e
 		if !ok {
 			return nil, fmt.Errorf("expected []byte for BIT value, got %T", val)
 		}
-		bitWidth := int64(col.MySQLBitWidth)
-		if bitWidth <= 0 {
-			var wOk bool
-			bitWidth, wOk = mysqlColumnTypeLength(col.ColumnType, "bit")
-			if !wOk {
-				bitWidth = col.Precision
-			}
-		}
-		if bitWidth <= 0 {
-			bitWidth = int64(len(b)) * 8
-		}
-		buf := make([]byte, len(b)*8)
-		pos := 0
-		for _, byt := range b {
-			for i := 7; i >= 0; i-- {
-				if byt&(1<<uint(i)) != 0 {
-					buf[pos] = '1'
-				} else {
-					buf[pos] = '0'
-				}
-				pos++
-			}
-		}
-		bits := string(buf)
-		// MySQL may send more bytes than needed; take the rightmost bitWidth bits
-		if int64(len(bits)) > bitWidth {
-			bits = bits[len(bits)-int(bitWidth):]
-		}
-		return bits, nil
+		return mysqlBitString(b, mysqlBitWidth(col)), nil
 
 	case col.DataType == "year":
 		switch v := val.(type) {

@@ -533,17 +533,16 @@ func shouldSampleProgressLogTime(copied int64) bool {
 
 // rowSource implements pgx.CopyFromSource by reading from source rows.
 type rowSource struct {
-	rows        *sql.Rows
-	table       Table
-	scanDest    []any
-	scanPtrs    []any
-	values      []any
-	err         error
-	copied      int64
-	src         SourceDB
-	typeMapping TypeMappingConfig
-	tableName   string
-	lastLog     time.Time
+	rows         *sql.Rows
+	table        Table
+	scanDest     []any
+	scanPtrs     []any
+	transformers []valueTransformer
+	values       []any
+	err          error
+	copied       int64
+	tableName    string
+	lastLog      time.Time
 }
 
 func newRowSource(rows *sql.Rows, table Table, src SourceDB, typeMap TypeMappingConfig) *rowSource {
@@ -555,15 +554,14 @@ func newRowSource(rows *sql.Rows, table Table, src SourceDB, typeMap TypeMapping
 	}
 
 	return &rowSource{
-		rows:        rows,
-		table:       table,
-		scanDest:    scanDest,
-		scanPtrs:    scanPtrs,
-		values:      make([]any, numCols),
-		src:         src,
-		typeMapping: typeMap,
-		tableName:   table.SourceName,
-		lastLog:     time.Now(),
+		rows:         rows,
+		table:        table,
+		scanDest:     scanDest,
+		scanPtrs:     scanPtrs,
+		transformers: buildRowValueTransformers(table, src, typeMap),
+		values:       make([]any, numCols),
+		tableName:    table.SourceName,
+		lastLog:      time.Now(),
 	}
 }
 
@@ -579,7 +577,7 @@ func (r *rowSource) Next() bool {
 	}
 
 	for i, col := range r.table.Columns {
-		v, err := r.src.TransformValue(r.scanDest[i], col, r.typeMapping)
+		v, err := r.transformers[i](r.scanDest[i])
 		if err != nil {
 			r.err = fmt.Errorf("column %s: %w", col.SourceName, err)
 			return false
