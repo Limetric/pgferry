@@ -67,6 +67,10 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
+		var planFindings *PlanFindingsError
+		if errors.As(err, &planFindings) {
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -295,7 +295,7 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 	var gotCfg *MigrationConfig
 	var gotOut string
 	prevPlanner := generatedConfigPlanner
-	generatedConfigPlanner = func(cfg *MigrationConfig, out io.Writer) error {
+	generatedConfigPlanner = func(cfg *MigrationConfig, out io.Writer, _ PlanOptions) error {
 		gotCfg = cfg
 		gotOut = "plan ok\n"
 		_, err := out.Write([]byte(gotOut))

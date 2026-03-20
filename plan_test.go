@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -712,7 +713,7 @@ func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPlanWithConfig(cfg, &buf); err != nil {
+	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: planFormat}); err != nil {
 		t.Fatalf("runPlanWithConfig() error: %v", err)
 	}
 
@@ -722,6 +723,171 @@ func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
 	}
 	if len(report.CopyRiskFindings) != 0 {
 		t.Fatalf("copy risk findings = %d, want 0", len(report.CopyRiskFindings))
+	}
+}
+
+func TestRunPlanFailOnErrors(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-fail-on-errors.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE weird (id INTEGER PRIMARY KEY, x FROBNOZZ)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:      "app",
+		Source:      SourceConfig{Type: "sqlite", DSN: dbPath},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	err = runPlanWithConfig(cfg, &buf, PlanOptions{Format: "text", FailOn: "errors"})
+	var pf *PlanFindingsError
+	if !errors.As(err, &pf) {
+		t.Fatalf("runPlanWithConfig() error = %v, want *PlanFindingsError", err)
+	}
+	if pf.UnsupportedColumns != 1 {
+		t.Fatalf("UnsupportedColumns = %d, want 1", pf.UnsupportedColumns)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Unsupported Columns") || !strings.Contains(out, "FAIL: 1 unsupported column(s)") {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+}
+
+func TestRunPlanFailOnWarnings_CopyRiskHigh(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-fail-on-warnings.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, payload) VALUES (1, 'a'), (127001, 'b')`); err != nil {
+		t.Fatalf("insert rows: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:           "app",
+		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
+		CopyRiskAnalysis: true,
+		ChunkSize:        1000,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	err = runPlanWithConfig(cfg, &buf, PlanOptions{Format: "text", FailOn: "warnings"})
+	var pf *PlanFindingsError
+	if !errors.As(err, &pf) {
+		t.Fatalf("runPlanWithConfig() error = %v, want *PlanFindingsError", err)
+	}
+	if pf.HighSeverityRisks == 0 {
+		t.Fatalf("HighSeverityRisks = %d, want > 0", pf.HighSeverityRisks)
+	}
+	if !strings.Contains(buf.String(), "FAIL:") {
+		t.Fatalf("expected FAIL summary in output:\n%s", buf.String())
+	}
+}
+
+func TestRunPlanFailOnNone(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-fail-on-none.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE weird (id INTEGER PRIMARY KEY, x FROBNOZZ)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:      "app",
+		Source:      SourceConfig{Type: "sqlite", DSN: dbPath},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: "text", FailOn: "none"}); err != nil {
+		t.Fatalf("runPlanWithConfig() error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Unsupported Columns") {
+		t.Fatalf("expected unsupported section in output:\n%s", buf.String())
+	}
+	if strings.Contains(buf.String(), "FAIL:") {
+		t.Fatalf("did not want FAIL line:\n%s", buf.String())
+	}
+}
+
+func TestRunPlanFailOnErrors_IgnoresCopyRiskOnly(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-fail-on-errors-copy.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, payload) VALUES (1, 'a'), (127001, 'b')`); err != nil {
+		t.Fatalf("insert rows: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:           "app",
+		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
+		CopyRiskAnalysis: true,
+		ChunkSize:        1000,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: "text", FailOn: "errors"}); err != nil {
+		t.Fatalf("runPlanWithConfig() error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Copy Risk Findings") {
+		t.Fatalf("expected copy risk section:\n%s", buf.String())
+	}
+}
+
+func TestRunPlanFailOn_JSONWrittenBeforeError(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-fail-on-json.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE weird (id INTEGER PRIMARY KEY, x FROBNOZZ)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:      "app",
+		Source:      SourceConfig{Type: "sqlite", DSN: dbPath},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	err = runPlanWithConfig(cfg, &buf, PlanOptions{Format: "json", FailOn: "errors"})
+	var pf *PlanFindingsError
+	if !errors.As(err, &pf) {
+		t.Fatalf("runPlanWithConfig() error = %v, want *PlanFindingsError", err)
+	}
+	var report PlanReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("decode report JSON: %v", err)
+	}
+	if len(report.UnsupportedColumns) != 1 {
+		t.Fatalf("unsupported columns = %d, want 1", len(report.UnsupportedColumns))
 	}
 }
 
