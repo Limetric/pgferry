@@ -109,6 +109,8 @@ body {
 .hero {
 	position: relative;
 	padding-block-end: 1.5rem;
+	container-type: inline-size;
+	container-name: hero;
 }
 
 .hero::after {
@@ -120,8 +122,28 @@ body {
 	border-radius: 999px;
 }
 
+/* Title/tagline stay in the 7fr column; CTAs span the full hero row (both grid tracks) when there
+   is no hero image, so they align with the markdown width below. Skip when `> img` exists so we
+   don't run under the illustration. */
+.hero:not(:has(> img)) .actions {
+	width: 100cqw;
+	max-width: none;
+}
+
 .hero .actions {
-	flex-wrap: nowrap;
+	flex-wrap: wrap;
+	min-width: 0;
+	overflow-x: visible;
+	/* Starlight uses 1rem / 2rem gaps; tighter so four pills fit typical content width. */
+	gap: 1rem 1rem;
+}
+
+.hero:has(> img) .actions {
+	max-width: 100%;
+}
+
+.hero .actions > a.sl-link-button {
+	flex-shrink: 0;
 }
 
 .hero .tagline {
@@ -148,6 +170,9 @@ body {
 }
 
 .hero-band span {
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	border: 1px solid var(--sl-color-hairline);
 	background: linear-gradient(180deg, rgba(255, 250, 242, 0.72), rgba(232, 221, 200, 0.62));
 	border-radius: 999px;
@@ -257,10 +282,16 @@ body {
 .config-panel {
 	padding: 1rem 1.2rem;
 	background: rgba(255, 250, 242, 0.72);
+	min-width: 0;
 }
 
 .config-panel pre {
 	margin: 0;
+}
+
+.config-panel :is(figure, pre, .expressive-code) {
+	max-width: 100%;
+	overflow-x: auto;
 }
 
 .config-compare {
@@ -268,12 +299,14 @@ body {
 	grid-template-columns: 1fr 1fr;
 	gap: 1.5rem;
 	margin: 1.5rem 0 2.5rem;
+	min-width: 0;
 }
 
 .config-compare-col {
 	display: flex;
 	flex-direction: column;
 	margin-top: 0;
+	min-width: 0;
 }
 
 .config-compare-label {
@@ -418,6 +451,11 @@ body {
 
 .plan-terminal pre {
 	margin: 0;
+}
+
+.plan-terminal :is(figure, pre, .expressive-code) {
+	max-width: 100%;
+	overflow-x: auto;
 }
 
 .flow-grid {
