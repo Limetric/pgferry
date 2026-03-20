@@ -54,10 +54,13 @@ func TestMSSQLMapType(t *testing.T) {
 		// Date/time types
 		{"date→date", Column{DataType: "date"}, defaultTypeMappingConfig(), "date", false},
 		{"time→time", Column{DataType: "time"}, defaultTypeMappingConfig(), "time", false},
+		{"time(3)→time(3)", Column{DataType: "time", Scale: 3}, defaultTypeMappingConfig(), "time(3)", false},
 		{"datetime→timestamp", Column{DataType: "datetime"}, defaultTypeMappingConfig(), "timestamp", false},
 		{"datetime2→timestamp", Column{DataType: "datetime2"}, defaultTypeMappingConfig(), "timestamp", false},
+		{"datetime2(7)→timestamp(6) clamp", Column{DataType: "datetime2", Scale: 7}, defaultTypeMappingConfig(), "timestamp(6)", false},
 		{"datetime→timestamptz", Column{DataType: "datetime"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz", false},
 		{"datetime2→timestamptz", Column{DataType: "datetime2"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz", false},
+		{"datetime2(4)→timestamptz(4)", Column{DataType: "datetime2", Scale: 4}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz(4)", false},
 		{"smalldatetime→timestamp", Column{DataType: "smalldatetime"}, defaultTypeMappingConfig(), "timestamp", false},
 		{"smalldatetime→timestamptz", Column{DataType: "smalldatetime"}, func() TypeMappingConfig { t := defaultTypeMappingConfig(); t.DatetimeAsTimestamptz = true; return t }(), "timestamptz", false},
 		{"datetimeoffset→timestamptz", Column{DataType: "datetimeoffset"}, defaultTypeMappingConfig(), "timestamptz", false},
@@ -144,6 +147,9 @@ func TestMSSQLMapDefault(t *testing.T) {
 		// Bytea/JSON defaults not supported
 		{"bytea default", "0x00", "bytea", ""},
 		{"json default", "{}", "json", ""},
+
+		// Sequence defaults — omitted on PostgreSQL (see semantic warnings from introspection)
+		{"NEXT VALUE FOR", "(NEXT VALUE FOR [dbo].[MySeq])", "bigint", ""},
 	}
 
 	for _, tt := range tests {
@@ -934,7 +940,7 @@ func TestColumnSelectExpr_MSSQLSqlVariant(t *testing.T) {
 	src := &mssqlSourceDB{}
 	col := Column{SourceName: "val", DataType: "sql_variant"}
 	got := columnSelectExpr(src, col, defaultTypeMappingConfig())
-	want := "CAST([val] AS nvarchar(max)) AS [val]"
+	want := "TRY_CAST([val] AS nvarchar(max)) AS [val]"
 	if got != want {
 		t.Errorf("columnSelectExpr(sql_variant) = %q, want %q", got, want)
 	}

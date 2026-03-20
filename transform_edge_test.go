@@ -347,40 +347,22 @@ func TestMSSQLTransformValue_MoneyFromString(t *testing.T) {
 }
 
 func TestMSSQLTransformValue_MoneyInfinity(t *testing.T) {
-	// Known limitation: mssqlTransformValue passes Infinity through as "+Inf",
-	// which PostgreSQL's numeric type rejects during COPY. This test documents
-	// the current behavior so a future fix (returning an error) is detected.
 	col := Column{DataType: "money"}
-	got, err := mssqlTransformValue(math.Inf(1), col, defaultTypeMappingConfig())
-	if err != nil {
-		// If a future change makes this an error, that's the correct fix.
-		return
+	_, err := mssqlTransformValue(math.Inf(1), col, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected error for non-finite money float64")
 	}
-	s, ok := got.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", got)
-	}
-	if s != "+Inf" && s != "Inf" {
-		t.Fatalf("got %q for Infinity", s)
+	_, err = mssqlTransformValue(math.Inf(-1), col, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected error for -Inf money float64")
 	}
 }
 
 func TestMSSQLTransformValue_MoneyNaN(t *testing.T) {
-	// Known limitation: mssqlTransformValue passes NaN through as "NaN",
-	// which PostgreSQL's numeric type rejects during COPY. This test documents
-	// the current behavior so a future fix (returning an error) is detected.
 	col := Column{DataType: "money"}
-	got, err := mssqlTransformValue(math.NaN(), col, defaultTypeMappingConfig())
-	if err != nil {
-		// If a future change makes this an error, that's the correct fix.
-		return
-	}
-	s, ok := got.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", got)
-	}
-	if s != "NaN" {
-		t.Fatalf("got %q for NaN", s)
+	_, err := mssqlTransformValue(math.NaN(), col, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected error for NaN money float64")
 	}
 }
 

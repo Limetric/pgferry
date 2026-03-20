@@ -132,6 +132,26 @@ func (s *mssqlIntrospectionStub) query(query string, args []driver.NamedValue) (
 				{"AuditTrail", "ps_audit_created_at", "CreatedAt"},
 			},
 		}, nil
+	case strings.Contains(normalized, "t.temporal_type = 2"):
+		return &mssqlStubRows{
+			columns: []string{"name", "history_schema", "history_name"},
+			data:    [][]driver.Value{},
+		}, nil
+	case strings.Contains(normalized, "t.is_external = 1"):
+		return &mssqlStubRows{
+			columns: []string{"name"},
+			data:    [][]driver.Value{},
+		}, nil
+	case strings.Contains(normalized, "CHARINDEX('NEXT VALUE FOR'"):
+		return &mssqlStubRows{
+			columns: []string{"table_name", "column_name", "definition"},
+			data:    [][]driver.Value{},
+		}, nil
+	case strings.Contains(normalized, "= 'sql_variant'") && !strings.Contains(normalized, "default_constraints"):
+		return &mssqlStubRows{
+			columns: []string{"table_name", "column_name"},
+			data:    [][]driver.Value{},
+		}, nil
 	case strings.Contains(normalized, "FROM sys.tables t"):
 		return &mssqlStubRows{
 			columns: []string{"name"},
@@ -168,6 +188,7 @@ func (s *mssqlIntrospectionStub) query(query string, args []driver.NamedValue) (
 			},
 			data: [][]driver.Value{
 				{"Accounts", "PK_Accounts", true, true, "CLUSTERED", false, int64(1), "AccountID", false, false},
+				{"Accounts", "NCCI_Accounts", false, false, "NONCLUSTERED COLUMNSTORE", false, int64(1), "AccountID", false, false},
 				{"OrderVersions", "PK_OrderVersions", true, true, "CLUSTERED", false, int64(1), "OrderID", false, false},
 				{"OrderVersions", "PK_OrderVersions", true, true, "CLUSTERED", false, int64(2), "VersionNo", false, false},
 				{"OrderVersions", "IX_OrderVersions_Filtered", false, false, "NONCLUSTERED", true, int64(1), "AccountID", false, false},
@@ -243,6 +264,15 @@ func TestMSSQLIntrospectSchemaBatchesSchemaQueries(t *testing.T) {
 	}
 	if accounts.Columns[1].CharMaxLen != 64 {
 		t.Fatalf("Accounts.UserName CharMaxLen = %d, want 64", accounts.Columns[1].CharMaxLen)
+	}
+	if len(accounts.Indexes) != 1 {
+		t.Fatalf("Accounts secondary indexes = %d, want 1 (columnstore only)", len(accounts.Indexes))
+	}
+	if got := accounts.Indexes[0].Type; got != "NONCLUSTERED COLUMNSTORE" {
+		t.Fatalf("Accounts columnstore Type = %q, want NONCLUSTERED COLUMNSTORE", got)
+	}
+	if accounts.Indexes[0].HasExpression {
+		t.Fatal("columnstore index should not set HasExpression")
 	}
 
 	orderVersions := findSchemaTable(t, schema, "OrderVersions")

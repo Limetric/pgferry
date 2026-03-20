@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -157,6 +158,30 @@ func (m *mssqlSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, _ string) (
 	}
 	warnings = append(warnings, partitionWarnings...)
 
+	externalWarnings, err := introspectMSSQLExternalTableWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL external tables for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, externalWarnings...)
+
+	temporalWarnings, err := introspectMSSQLTemporalTableWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL temporal tables for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, temporalWarnings...)
+
+	seqDefaultWarnings, err := introspectMSSQLSequenceDefaultWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL sequence defaults for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, seqDefaultWarnings...)
+
+	sqlVariantWarnings, err := introspectMSSQLSqlVariantColumnWarnings(db, m.sourceSchema, m.identName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect MSSQL sql_variant columns for schema %s: %w", m.sourceSchema, err)
+	}
+	warnings = append(warnings, sqlVariantWarnings...)
+
 	return warnings, nil
 }
 
@@ -207,6 +232,7 @@ func introspectMSSQLTables(db *sql.DB, schema string, identName func(string) str
 		JOIN sys.schemas s ON t.schema_id = s.schema_id
 		WHERE s.name = @p1
 		  AND t.is_ms_shipped = 0
+		  AND t.is_external = 0
 		ORDER BY t.name`,
 		schema,
 	)
@@ -505,6 +531,165 @@ func introspectMSSQLPartitionWarnings(db *sql.DB, schema string, identName func(
 	return warnings, rows.Err()
 }
 
+func introspectMSSQLExternalTableWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(`
+		SELECT t.name
+		FROM sys.tables t
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		WHERE s.name = @p1
+		  AND t.is_ms_shipped = 0
+		  AND t.is_external = 1
+		ORDER BY t.name`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:            "tables",
+			ObjectType:          "table",
+			ObjectName:          identName(name),
+			Disposition:         "skipped",
+			Reason:              fmt.Sprintf("MSSQL external table %q is not migrated (PolyBase / linked data).", name),
+			RecommendedFollowUp: "Load from the underlying data source, point pgferry at real tables, or use hooks.",
+		})
+	}
+	return warnings, rows.Err()
+}
+
+func introspectMSSQLTemporalTableWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(`
+		SELECT
+			t.name,
+			OBJECT_SCHEMA_NAME(t.history_table_id),
+			OBJECT_NAME(t.history_table_id)
+		FROM sys.tables t
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		WHERE s.name = @p1
+		  AND t.is_ms_shipped = 0
+		  AND t.temporal_type = 2
+		ORDER BY t.name`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName string
+		var histSchema, histName sql.NullString
+		if err := rows.Scan(&tableName, &histSchema, &histName); err != nil {
+			return nil, err
+		}
+		reason := fmt.Sprintf("MSSQL system-versioned temporal table %q is migrated as a flat table only.", tableName)
+		if histSchema.Valid && histName.Valid && histName.String != "" {
+			reason += fmt.Sprintf(" History table: %s.%s.", histSchema.String, histName.String)
+		}
+		reason += " SYSTEM_TIME, retention, and history semantics are not recreated in PostgreSQL."
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:            "tables",
+			ObjectType:          "table",
+			ObjectName:          identName(tableName),
+			Disposition:         "manual",
+			Reason:              reason,
+			RecommendedFollowUp: "Plan PostgreSQL equivalents (partitioned history, triggers, or application versioning) and use hooks if needed.",
+		})
+	}
+	return warnings, rows.Err()
+}
+
+func introspectMSSQLSequenceDefaultWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(`
+		SELECT t.name, c.name, dc.definition
+		FROM sys.default_constraints dc
+		JOIN sys.columns c
+		  ON dc.parent_object_id = c.object_id
+		 AND dc.parent_column_id = c.column_id
+		JOIN sys.tables t ON c.object_id = t.object_id
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		WHERE s.name = @p1
+		  AND CHARINDEX('NEXT VALUE FOR', UPPER(dc.definition)) > 0
+		ORDER BY t.name, c.column_id`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, columnName, definition string
+		if err := rows.Scan(&tableName, &columnName, &definition); err != nil {
+			return nil, err
+		}
+		reason := fmt.Sprintf("MSSQL column default uses a sequence (NEXT VALUE FOR) on %q.%q; not translated to PostgreSQL.", tableName, columnName)
+		if detail := compactSemanticDetail(definition); detail != "" {
+			reason += " Definition: " + detail
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:            "defaults",
+			ObjectType:          "column",
+			ObjectName:          identName(tableName) + "." + identName(columnName),
+			Disposition:         "skipped",
+			Reason:              reason,
+			RecommendedFollowUp: "Create matching PostgreSQL sequences and set DEFAULT nextval(...) via manual DDL or hooks after sequences exist.",
+		})
+	}
+	return warnings, rows.Err()
+}
+
+func introspectMSSQLSqlVariantColumnWarnings(db *sql.DB, schema string, identName func(string) string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(`
+		SELECT t.name, c.name
+		FROM sys.columns c
+		JOIN sys.tables t ON c.object_id = t.object_id
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		JOIN sys.types ut ON c.user_type_id = ut.user_type_id
+		LEFT JOIN sys.types st ON ut.system_type_id = st.user_type_id
+			AND st.system_type_id = st.user_type_id
+		WHERE s.name = @p1
+		  AND c.is_hidden = 0
+		  AND LOWER(COALESCE(st.name, ut.name)) = 'sql_variant'
+		ORDER BY t.name, c.column_id`,
+		schema,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, columnName string
+		if err := rows.Scan(&tableName, &columnName); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, SchemaSemanticWarning{
+			Category:    "columns",
+			ObjectType:  "column",
+			ObjectName:  identName(tableName) + "." + identName(columnName),
+			Disposition: "manual",
+			Reason: fmt.Sprintf(
+				"MSSQL sql_variant column %q.%q is read with TRY_CAST to nvarchar(max); some embedded types may become NULL or lose fidelity.",
+				tableName, columnName,
+			),
+			RecommendedFollowUp: "Review values after migration; use hooks or a custom export if sql_variant holds binary or non-text-safe bases.",
+		})
+	}
+	return warnings, rows.Err()
+}
+
 type mssqlIndexesForTable struct {
 	indexMap map[string]*Index
 	order    []string
@@ -570,24 +755,28 @@ func introspectMSSQLIndexesByTable(db *sql.DB, schema string, identName func(str
 
 		idx, ok := group.indexMap[idxName]
 		if !ok {
+			idxType := mssqlIndexTypeFromTypeDesc(typeDesc)
 			idx = &Index{
 				Name:       identName(idxName),
 				SourceName: idxName,
 				Unique:     isUnique,
 				IsPrimary:  isPrimary,
-				Type:       "BTREE",
+				Type:       idxType,
 			}
 			group.indexMap[idxName] = idx
 			group.order = append(group.order, idxName)
 
-			// XML, SPATIAL, and FULLTEXT indexes → skip
+			// Non-B-tree families (columnstore, hash, XML, spatial, full-text catalog shapes, …) are not recreated on PostgreSQL.
 			switch typeDesc {
+			case "CLUSTERED", "NONCLUSTERED":
+				// normal B-tree
 			case "XML", "SPATIAL":
-				idx.HasExpression = true
-				log.Printf("    WARN: %s index %q on %s will be skipped (not supported in PostgreSQL)", typeDesc, idxName, tableName)
+				log.Printf("    WARN: %s index %q on %s will be skipped (type_desc=%s; not supported in PostgreSQL)", typeDesc, idxName, tableName, typeDesc)
+			default:
+				log.Printf("    WARN: index %q on %s will be skipped (type_desc=%s; not a B-tree index)", idxName, tableName, typeDesc)
 			}
 
-			// Filtered indexes → skip
+			// Filtered indexes → skip (predicate not migrated; type_desc is still NONCLUSTERED)
 			if hasFilter {
 				idx.HasExpression = true
 				log.Printf("    WARN: filtered index %q on %s will be skipped (WHERE clause not migrated)", idxName, tableName)
@@ -792,6 +981,28 @@ func isMSSQLSpatialType(dataType string) bool {
 	return dataType == "geography" || dataType == "geometry"
 }
 
+// mssqlIndexTypeFromTypeDesc maps sys.indexes.type_desc to a PostgreSQL-oriented index family label.
+func mssqlIndexTypeFromTypeDesc(typeDesc string) string {
+	switch typeDesc {
+	case "CLUSTERED", "NONCLUSTERED":
+		return "BTREE"
+	default:
+		return typeDesc
+	}
+}
+
+// mssqlPGTimestampOrTimeScale clamps MSSQL fractional-second scale to PostgreSQL's maximum (6).
+func mssqlPGTimestampOrTimeScale(scale int64) int {
+	if scale <= 0 {
+		return 0
+	}
+	n := int(scale)
+	if n > 6 {
+		n = 6
+	}
+	return n
+}
+
 func (m *mssqlSourceDB) MapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	return mssqlMapType(col, typeMap)
 }
@@ -869,8 +1080,24 @@ func mssqlMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case "date":
 		return "date", nil
 	case "time":
+		n := mssqlPGTimestampOrTimeScale(col.Scale)
+		if n > 0 {
+			return fmt.Sprintf("time(%d)", n), nil
+		}
 		return "time", nil
-	case "datetime", "datetime2":
+	case "datetime2":
+		n := mssqlPGTimestampOrTimeScale(col.Scale)
+		if typeMap.DatetimeAsTimestamptz {
+			if n > 0 {
+				return fmt.Sprintf("timestamptz(%d)", n), nil
+			}
+			return "timestamptz", nil
+		}
+		if n > 0 {
+			return fmt.Sprintf("timestamp(%d)", n), nil
+		}
+		return "timestamp", nil
+	case "datetime":
 		if typeMap.DatetimeAsTimestamptz {
 			return "timestamptz", nil
 		}
@@ -947,6 +1174,10 @@ func mssqlMapDefault(col Column, pgType string, _ TypeMappingConfig) (string, er
 	raw = mssqlStripParens(raw)
 
 	if strings.EqualFold(raw, "null") {
+		return "", nil
+	}
+
+	if strings.Contains(strings.ToUpper(raw), "NEXT VALUE FOR") {
 		return "", nil
 	}
 
@@ -1082,6 +1313,9 @@ func mssqlTransformValue(val any, col Column, _ TypeMappingConfig) (any, error) 
 		case string:
 			return v, nil
 		case float64:
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return nil, fmt.Errorf("MSSQL %s value is not finite (NaN/Inf cannot be copied to PostgreSQL numeric)", col.DataType)
+			}
 			return strconv.FormatFloat(v, 'f', 4, 64), nil
 		}
 		return val, nil
