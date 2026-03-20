@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -813,6 +814,16 @@ func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	}
 	if _, ok := decoded["source_objects"]; !ok {
 		t.Error("missing source_objects key")
+	}
+}
+
+func TestRunPlanWithConfig_InvalidFormat(t *testing.T) {
+	err := runPlanWithConfig(&MigrationConfig{}, io.Discard, PlanOptions{Format: "yaml"})
+	if err == nil {
+		t.Fatal("expected error for unsupported format")
+	}
+	if !strings.Contains(err.Error(), "text or json") {
+		t.Fatalf("error = %v, want mention of text or json", err)
 	}
 }
 
