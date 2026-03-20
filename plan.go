@@ -531,7 +531,7 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	}
 
 	// after_data: generated columns
-	if body := buildAfterDataSkeleton(report, schema); body != "" {
+	if body := buildAfterDataSkeleton(report); body != "" {
 		files = append(files, hookFile{"after_data.sql", body})
 	}
 
@@ -541,7 +541,7 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	}
 
 	// after_all: views, routines, triggers, skipped indexes
-	if body := buildAfterAllSkeleton(report, schema); body != "" {
+	if body := buildAfterAllSkeleton(report); body != "" {
 		files = append(files, hookFile{"after_all.sql", body})
 	}
 
@@ -570,13 +570,14 @@ func buildBeforeDataSkeleton(report *PlanReport) string {
 	b.WriteString("-- pgferry requires these extensions for the configured type mappings.\n")
 
 	for _, req := range report.RequiredExtensions {
+		feature := sanitizeSQLCommentText(req.Feature)
 		switch req.Mode {
 		case "create_if_missing":
-			fmt.Fprintf(&b, "CREATE EXTENSION IF NOT EXISTS %s; -- %s\n", pgIdent(req.Name), req.Feature)
+			fmt.Fprintf(&b, "CREATE EXTENSION IF NOT EXISTS %s; -- %s\n", pgIdent(req.Name), feature)
 		case "require_existing":
-			fmt.Fprintf(&b, "-- Extension %q must already exist before running pgferry. (%s)\n", req.Name, req.Feature)
+			fmt.Fprintf(&b, "-- Extension %s must already exist before running pgferry. (%s)\n", pgIdent(req.Name), feature)
 		default:
-			fmt.Fprintf(&b, "-- Extension %q is required for %s.\n", req.Name, req.Feature)
+			fmt.Fprintf(&b, "-- Extension %s is required for %s.\n", pgIdent(req.Name), feature)
 		}
 	}
 
@@ -589,7 +590,7 @@ func buildBeforeFkSkeleton() string {
 	return ""
 }
 
-func buildAfterDataSkeleton(report *PlanReport, schema string) string {
+func buildAfterDataSkeleton(report *PlanReport) string {
 	if len(report.GeneratedColumns) == 0 {
 		return ""
 	}
@@ -608,7 +609,9 @@ func buildAfterDataSkeleton(report *PlanReport, schema string) string {
 		fmt.Fprintf(&b, "-- Table: %s\n", table)
 		for _, gc := range cols {
 			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s\n", pgIdent("{{schema}}"), pgIdent(gc.Table))
-			fmt.Fprintf(&b, "--        ALTER COLUMN %s SET EXPRESSION AS (...);\n", pgIdent(gc.Column))
+			fmt.Fprintf(&b, "--        DROP COLUMN %s;\n", pgIdent(gc.Column))
+			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s\n", pgIdent("{{schema}}"), pgIdent(gc.Table))
+			fmt.Fprintf(&b, "--        ADD COLUMN %s <type> GENERATED ALWAYS AS (...) STORED;\n", pgIdent(gc.Column))
 			fmt.Fprintf(&b, "-- Source expression: %s\n", gc.Expression)
 		}
 		b.WriteByte('\n')
@@ -617,7 +620,7 @@ func buildAfterDataSkeleton(report *PlanReport, schema string) string {
 	return b.String()
 }
 
-func buildAfterAllSkeleton(report *PlanReport, schema string) string {
+func buildAfterAllSkeleton(report *PlanReport) string {
 	objs := &report.SourceObjects
 	hasObjects := len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0
 	hasIndexes := len(report.SkippedIndexes) > 0
@@ -672,14 +675,23 @@ func buildAfterAllSkeleton(report *PlanReport, schema string) string {
 		b.WriteString("-- Unsupported Columns\n")
 		b.WriteString("-- These columns could not be migrated automatically.\n")
 		for _, uc := range report.UnsupportedColumns {
+			sourceType := sanitizeSQLCommentText(uc.SourceType)
+			reason := sanitizeSQLCommentText(uc.Reason)
 			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s ADD COLUMN %s ...;\n", pgIdent("{{schema}}"), pgIdent(uc.Table), pgIdent(uc.Column))
-			fmt.Fprintf(&b, "--   Source type: %s\n", uc.SourceType)
-			fmt.Fprintf(&b, "--   Reason: %s\n", uc.Reason)
+			fmt.Fprintf(&b, "--   Source type: %s\n", sourceType)
+			fmt.Fprintf(&b, "--   Reason: %s\n", reason)
 		}
 		b.WriteByte('\n')
 	}
 
 	return b.String()
+}
+
+func sanitizeSQLCommentText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func groupGeneratedColumnsByTable(cols []PlanGeneratedColumn) map[string][]PlanGeneratedColumn {
