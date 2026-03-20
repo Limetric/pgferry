@@ -42,8 +42,11 @@ func init() {
 
 // PlanOptions configures plan execution (wizard and tests pass explicit values; CLI uses flags via runPlan).
 type PlanOptions struct {
-	FailOn    string
-	Format    string
+	// FailOn is none, errors, or warnings (see --fail-on). Empty behaves like none.
+	FailOn string
+	// Format is text or json. Empty means text.
+	Format string
+	// OutputDir is the directory for hook skeleton files; empty skips writing hooks.
 	OutputDir string
 }
 
@@ -221,6 +224,11 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	format := opts.Format
 	if format == "" {
 		format = "text"
+	}
+	switch format {
+	case "text", "json":
+	default:
+		return fmt.Errorf("plan format must be text or json")
 	}
 	failOn, err := parsePlanFailOn(opts.FailOn)
 	if err != nil {

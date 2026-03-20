@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -816,6 +817,16 @@ func TestWritePlanJSON_EmptySlices(t *testing.T) {
 	}
 }
 
+func TestRunPlanWithConfig_InvalidFormat(t *testing.T) {
+	err := runPlanWithConfig(&MigrationConfig{}, io.Discard, PlanOptions{Format: "yaml"})
+	if err == nil {
+		t.Fatal("expected error for unsupported format")
+	}
+	if !strings.Contains(err.Error(), "text or json") {
+		t.Fatalf("error = %v, want mention of text or json", err)
+	}
+}
+
 func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "plan-copy-risk.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
@@ -831,12 +842,6 @@ func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
 		t.Fatalf("insert rows: %v", err)
 	}
 
-	prevFormat := planFormat
-	planFormat = "json"
-	t.Cleanup(func() {
-		planFormat = prevFormat
-	})
-
 	cfg := &MigrationConfig{
 		Schema:           "app",
 		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
@@ -845,7 +850,7 @@ func TestRunPlanWithConfig_CopyRiskAnalysisDisabled(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: planFormat}); err != nil {
+	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: "json"}); err != nil {
 		t.Fatalf("runPlanWithConfig() error: %v", err)
 	}
 

@@ -21,7 +21,10 @@ import (
 )
 
 var generatedConfigRunner = runMigrationWithConfig
-var generatedConfigPlanner = runPlanWithConfig
+
+type plannerFunc func(*MigrationConfig, io.Writer, PlanOptions) error
+
+var generatedConfigPlanner plannerFunc = runPlanWithConfig
 var wizardSourceDSNValidator = validateWizardSourceDSN
 var wizardTargetDSNValidator = validateWizardTargetDSN
 var wizardSourceConnectionTester = testWizardSourceConnection
