@@ -13,6 +13,7 @@ const expectedRoutes = [
 	'/migration-patterns/',
 	'/guides/',
 	'/operations/',
+	'/operations/operator-tuning/',
 	'/operations/first-production-migration-checklist/',
 	'/operations/when-resume-is-worth-it/',
 	'/operations/when-unlogged-tables-are-safe/',

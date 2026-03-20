@@ -84,6 +84,7 @@ The website is the primary end-user docs surface:
 - [Guides](https://pgferry.com/guides/)
 - [Examples](https://pgferry.com/examples/)
 - [Operations](https://pgferry.com/operations/)
+- [Operator tuning](https://pgferry.com/operations/operator-tuning/)
 - [Reference](https://pgferry.com/reference/)
 
 ## How it's built
