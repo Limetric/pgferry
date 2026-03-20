@@ -549,7 +549,6 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results := make([]ChunkPlan, len(schema.Tables))
 	jobCh := make(chan chunkPlanningJob, workers)
 	var wg sync.WaitGroup
 
@@ -596,7 +595,7 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 						var err error
 						source, err = deps.openSource()
 						if err != nil {
-							recordErr(err)
+							recordErr(fmt.Errorf("open source for chunk planning on %s: %w", job.table.SourceName, err))
 							return
 						}
 					}
@@ -611,7 +610,7 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 					}
 
 					if !hasRows {
-						results[job.tableIndex] = ChunkPlan{
+						plans[job.tableIndex] = ChunkPlan{
 							Table:            job.table,
 							ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
 							Chunks:           []Chunk{{Index: 0, IsLast: true}},
@@ -623,7 +622,7 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 					}
 
 					chunks := planChunks(min, max, chunkSize)
-					results[job.tableIndex] = ChunkPlan{
+					plans[job.tableIndex] = ChunkPlan{
 						Table:            job.table,
 						ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
 						Chunks:           chunks,
@@ -657,18 +656,15 @@ enqueue:
 		return nil, err
 	}
 
-	chunkable := 0
 	totalChunks := 0
 	for _, job := range jobs {
-		plans[job.tableIndex] = results[job.tableIndex]
-		chunkable++
-		totalChunks += len(results[job.tableIndex].Chunks)
+		totalChunks += len(plans[job.tableIndex].Chunks)
 	}
 
-	if chunkable > 0 {
-		log.Printf("chunk plan: %d chunkable table(s) (%d total chunks), %d non-chunkable table(s)", chunkable, totalChunks, nonChunkable)
+	if len(jobs) > 0 {
+		log.Printf("chunk plan: %d chunkable table(s) (%d total chunks), %d non-chunkable table(s)", len(jobs), totalChunks, nonChunkable)
 	}
-	if nonChunkable > 0 && chunkable == 0 {
+	if nonChunkable > 0 && len(jobs) == 0 {
 		log.Printf("chunk plan: no tables with chunkable primary keys, using full-table copy for all %d table(s)", nonChunkable)
 	}
 

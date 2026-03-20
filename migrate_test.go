@@ -450,6 +450,42 @@ func TestBuildChunkPlansWithDeps_CancelsSiblingQueriesAfterFirstError(t *testing
 	}
 }
 
+func TestBuildChunkPlansWithDeps_OpenSourceErrorIncludesTableName(t *testing.T) {
+	src := &stubChunkPlanningSourceDB{}
+	schema := &Schema{
+		Tables: []Table{
+			chunkablePlanningTable("orders"),
+		},
+	}
+
+	_, err := buildChunkPlansWithDeps(
+		context.Background(),
+		src,
+		schema,
+		100,
+		defaultTypeMappingConfig(),
+		1,
+		chunkPlanningDeps{
+			openSource: func() (migrationWorkerSource, error) {
+				return nil, errors.New("dial tcp timeout")
+			},
+			queryMinMax: func(context.Context, dbQuerier, SourceDB, Table, ChunkKey) (int64, int64, bool, error) {
+				t.Fatal("queryMinMax should not be called when openSource fails")
+				return 0, 0, false, nil
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected chunk planning error")
+	}
+	if !strings.Contains(err.Error(), "orders") {
+		t.Fatalf("error = %q, want table name context", err.Error())
+	}
+	if !strings.Contains(err.Error(), "dial tcp timeout") {
+		t.Fatalf("error = %q, want original openSource failure", err.Error())
+	}
+}
+
 func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.T) {
 	chunkKey := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 	plans := []ChunkPlan{
