@@ -44,7 +44,7 @@ func migrateData(ctx context.Context, cfg migrateDataConfig) error {
 
 func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 	// Plan chunks for each table
-	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize, cfg.TypeMap)
+	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize, cfg.TypeMap, cfg.Workers)
 	if err != nil {
 		return err
 	}
@@ -390,6 +390,24 @@ func openMigrationSourceDB(src SourceDB, srcDSN string) (*sql.DB, error) {
 	return srcDB, nil
 }
 
+const maxChunkPlanningWorkers = 16
+
+// chunkPlanningWorkers returns the effective worker count for chunk planning,
+// reusing migration workers while capping planning fan-out to avoid placing
+// unexpected load on small source instances.
+func chunkPlanningWorkers(workers int, src SourceDB) int {
+	if max := src.MaxWorkers(); max > 0 && workers > max {
+		workers = max
+	}
+	if workers > maxChunkPlanningWorkers {
+		workers = maxChunkPlanningWorkers
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	return workers
+}
+
 type dbQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
@@ -461,56 +479,211 @@ func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, t
 // buildChunkPlans creates chunk plans for all tables by querying MIN/MAX on chunkable tables.
 // typeMap must be the same validated TypeMappingConfig used for the data migration so
 // ColumnSelectList matches buildSourceSelectQuery / columnSelectExpr semantics.
-func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64, typeMap TypeMappingConfig) ([]ChunkPlan, error) {
-	srcDB, err := openMigrationSourceDB(src, srcDSN)
-	if err != nil {
-		return nil, fmt.Errorf("open source for chunk planning: %w", err)
-	}
-	defer srcDB.Close()
+func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int) ([]ChunkPlan, error) {
+	return buildChunkPlansWithDeps(
+		ctx,
+		src,
+		schema,
+		chunkSize,
+		typeMap,
+		chunkPlanningWorkers(workers, src),
+		chunkPlanningDeps{
+			openSource: func() (migrationWorkerSource, error) {
+				srcDB, err := openMigrationSourceDB(src, srcDSN)
+				if err != nil {
+					return nil, fmt.Errorf("open source for chunk planning: %w", err)
+				}
+				return srcDB, nil
+			},
+			queryMinMax: queryMinMax,
+		},
+	)
+}
 
-	var plans []ChunkPlan
-	var chunkable, nonChunkable int
-	totalChunks := 0
+type chunkPlanningDeps struct {
+	openSource  func() (migrationWorkerSource, error)
+	queryMinMax func(context.Context, dbQuerier, SourceDB, Table, ChunkKey) (int64, int64, bool, error)
+}
 
-	for _, t := range schema.Tables {
+type chunkPlanningJob struct {
+	tableIndex       int
+	table            Table
+	key              ChunkKey
+	columnSelectList string
+	pgCopyColumns    []string
+}
+
+type chunkPlanningResult struct {
+	plan       ChunkPlan
+	chunkCount int
+}
+
+func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int, deps chunkPlanningDeps) ([]ChunkPlan, error) {
+	plans := make([]ChunkPlan, len(schema.Tables))
+	jobs := make([]chunkPlanningJob, 0, len(schema.Tables))
+	nonChunkable := 0
+
+	for i, t := range schema.Tables {
+		pgCols := tablePGCopyColumns(t)
 		key := chunkKeyForTable(t, src)
 		if key == nil {
+			plans[i] = ChunkPlan{Table: t, ChunkSize: chunkSize, PGCopyColumns: pgCols}
 			nonChunkable++
-			plans = append(plans, ChunkPlan{Table: t, ChunkSize: chunkSize, PGCopyColumns: tablePGCopyColumns(t)})
 			continue
 		}
 
-		min, max, hasRows, err := queryMinMax(ctx, srcDB, src, t, *key)
-		if err != nil {
-			return nil, err
-		}
-		if !hasRows {
-			// Empty table — single empty plan
-			plans = append(plans, ChunkPlan{
-				Table:            t,
-				ChunkKey:         key,
-				Chunks:           []Chunk{{Index: 0, IsLast: true}},
-				ChunkSize:        chunkSize,
-				ColumnSelectList: buildColumnSelectList(src, t, typeMap),
-				PGCopyColumns:    tablePGCopyColumns(t),
-			})
-			chunkable++
-			totalChunks++
-			continue
-		}
-
-		chunks := planChunks(min, max, chunkSize)
-		plans = append(plans, ChunkPlan{
-			Table:            t,
-			ChunkKey:         key,
-			Chunks:           chunks,
-			ChunkSize:        chunkSize,
-			ColumnSelectList: buildColumnSelectList(src, t, typeMap),
-			PGCopyColumns:    tablePGCopyColumns(t),
+		jobs = append(jobs, chunkPlanningJob{
+			tableIndex:       i,
+			table:            t,
+			key:              *key,
+			columnSelectList: buildColumnSelectList(src, t, typeMap),
+			pgCopyColumns:    pgCols,
 		})
+	}
+
+	if len(jobs) == 0 {
+		if nonChunkable > 0 {
+			log.Printf("chunk plan: no tables with chunkable primary keys, using full-table copy for all %d table(s)", nonChunkable)
+		}
+		return plans, nil
+	}
+
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make([]chunkPlanningResult, len(schema.Tables))
+	jobCh := make(chan chunkPlanningJob, workers)
+	var wg sync.WaitGroup
+
+	var firstErr error
+	var errOnce sync.Once
+	var otherErrsMu sync.Mutex
+	var otherErrs []error
+	recordErr := func(err error) {
+		isFirst := false
+		errOnce.Do(func() {
+			firstErr = err
+			isFirst = true
+			cancel()
+		})
+		if !isFirst {
+			otherErrsMu.Lock()
+			otherErrs = append(otherErrs, err)
+			otherErrsMu.Unlock()
+		}
+	}
+
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			var source migrationWorkerSource
+			defer func() {
+				if source != nil {
+					source.Close()
+				}
+			}()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case job, ok := <-jobCh:
+					if !ok {
+						return
+					}
+
+					if source == nil {
+						var err error
+						source, err = deps.openSource()
+						if err != nil {
+							recordErr(err)
+							return
+						}
+					}
+
+					min, max, hasRows, err := deps.queryMinMax(ctx, source, src, job.table, job.key)
+					if err != nil {
+						if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
+							return
+						}
+						recordErr(err)
+						return
+					}
+
+					if !hasRows {
+						results[job.tableIndex] = chunkPlanningResult{
+							plan: ChunkPlan{
+								Table:            job.table,
+								ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
+								Chunks:           []Chunk{{Index: 0, IsLast: true}},
+								ChunkSize:        chunkSize,
+								ColumnSelectList: job.columnSelectList,
+								PGCopyColumns:    job.pgCopyColumns,
+							},
+							chunkCount: 1,
+						}
+						continue
+					}
+
+					chunks := planChunks(min, max, chunkSize)
+					results[job.tableIndex] = chunkPlanningResult{
+						plan: ChunkPlan{
+							Table:            job.table,
+							ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
+							Chunks:           chunks,
+							ChunkSize:        chunkSize,
+							ColumnSelectList: job.columnSelectList,
+							PGCopyColumns:    job.pgCopyColumns,
+						},
+						chunkCount: len(chunks),
+					}
+					log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", job.table.SourceName, len(chunks), job.key.SourceColumn, min, max)
+				}
+			}
+		}()
+	}
+
+enqueue:
+	for _, job := range jobs {
+		select {
+		case <-ctx.Done():
+			break enqueue
+		case jobCh <- job:
+		}
+	}
+	close(jobCh)
+	wg.Wait()
+
+	if firstErr != nil {
+		otherErrsMu.Lock()
+		defer otherErrsMu.Unlock()
+		return nil, errors.Join(append([]error{firstErr}, otherErrs...)...)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	chunkable := 0
+	totalChunks := 0
+	for i := range plans {
+		if plans[i].ChunkKey == nil && len(plans[i].PGCopyColumns) > 0 {
+			continue
+		}
+		if results[i].plan.ChunkKey == nil {
+			continue
+		}
+		plans[i] = results[i].plan
 		chunkable++
-		totalChunks += len(chunks)
-		log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
+		totalChunks += results[i].chunkCount
 	}
 
 	if chunkable > 0 {
