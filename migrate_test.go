@@ -233,6 +233,259 @@ func (s *fakeMigrationWorkerSource) Close() error {
 	return nil
 }
 
+type stubChunkPlanningSourceDB struct {
+	SourceDB
+	maxWorkers int
+}
+
+func (s *stubChunkPlanningSourceDB) Name() string { return "mysql" }
+
+func (s *stubChunkPlanningSourceDB) QuoteIdentifier(name string) string {
+	return "`" + name + "`"
+}
+
+func (s *stubChunkPlanningSourceDB) SourceTableRef(table Table) string {
+	return "`" + table.SourceName + "`"
+}
+
+func (s *stubChunkPlanningSourceDB) MaxWorkers() int { return s.maxWorkers }
+
+func chunkablePlanningTable(name string) Table {
+	return Table{
+		SourceName: name,
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "int", ColumnType: "int"},
+			{SourceName: "payload", PGName: "payload", DataType: "varchar", ColumnType: "varchar(255)"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+}
+
+func nonChunkablePlanningTable(name string) Table {
+	return Table{
+		SourceName: name,
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "varchar", ColumnType: "varchar(255)"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+}
+
+func TestChunkPlanningWorkers(t *testing.T) {
+	tests := []struct {
+		name       string
+		workers    int
+		maxWorkers int
+		want       int
+	}{
+		{name: "uses workers when uncapped", workers: 8, maxWorkers: 0, want: 8},
+		{name: "caps by source max workers", workers: 8, maxWorkers: 1, want: 1},
+		{name: "caps by planning maximum", workers: 32, maxWorkers: 0, want: 16},
+		{name: "defaults to one worker", workers: 0, maxWorkers: 0, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := chunkPlanningWorkers(tt.workers, &stubChunkPlanningSourceDB{maxWorkers: tt.maxWorkers})
+			if got != tt.want {
+				t.Fatalf("chunkPlanningWorkers(%d, maxWorkers=%d) = %d, want %d", tt.workers, tt.maxWorkers, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildChunkPlansWithDeps_UsesBoundedConcurrencyAndPreservesTableOrder(t *testing.T) {
+	src := &stubChunkPlanningSourceDB{}
+	schema := &Schema{
+		Tables: []Table{
+			chunkablePlanningTable("alpha"),
+			nonChunkablePlanningTable("audit_log"),
+			chunkablePlanningTable("beta"),
+			chunkablePlanningTable("gamma"),
+		},
+	}
+
+	var mu sync.Mutex
+	openCalls := 0
+	closeCounts := map[int]int{}
+	inFlight := 0
+	maxInFlight := 0
+	started := make(chan string, 2)
+	release := make(chan struct{})
+
+	rangeByTable := map[string]struct {
+		min int64
+		max int64
+	}{
+		"alpha": {min: 1, max: 250},
+		"beta":  {min: 11, max: 11},
+		"gamma": {min: 1000, max: 1099},
+	}
+
+	deps := chunkPlanningDeps{
+		openSource: func() (migrationWorkerSource, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			openCalls++
+			return &fakeMigrationWorkerSource{id: openCalls, closeMu: &mu, closeCounts: closeCounts}, nil
+		},
+		queryMinMax: func(ctx context.Context, source dbQuerier, _ SourceDB, table Table, _ ChunkKey) (int64, int64, bool, error) {
+			if _, ok := source.(*fakeMigrationWorkerSource); !ok {
+				return 0, 0, false, fmt.Errorf("source type = %T, want *fakeMigrationWorkerSource", source)
+			}
+
+			mu.Lock()
+			inFlight++
+			if inFlight > maxInFlight {
+				maxInFlight = inFlight
+			}
+			mu.Unlock()
+
+			started <- table.SourceName
+			<-release
+
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+
+			r := rangeByTable[table.SourceName]
+			return r.min, r.max, true, nil
+		},
+	}
+
+	var (
+		plans []ChunkPlan
+		err   error
+	)
+	done := make(chan struct{})
+	go func() {
+		plans, err = buildChunkPlansWithDeps(context.Background(), src, schema, 100, defaultTypeMappingConfig(), 2, deps)
+		close(done)
+	}()
+
+	<-started
+	<-started
+	close(release)
+	<-done
+
+	if err != nil {
+		t.Fatalf("buildChunkPlansWithDeps() error: %v", err)
+	}
+	if maxInFlight != 2 {
+		t.Fatalf("max concurrent queryMinMax calls = %d, want 2", maxInFlight)
+	}
+	if openCalls != 2 {
+		t.Fatalf("openSource calls = %d, want 2", openCalls)
+	}
+	if closeCounts[1] != 1 || closeCounts[2] != 1 {
+		t.Fatalf("close counts = %v, want each worker source closed once", closeCounts)
+	}
+	if len(plans) != len(schema.Tables) {
+		t.Fatalf("plan count = %d, want %d", len(plans), len(schema.Tables))
+	}
+
+	if plans[0].Table.SourceName != "alpha" || plans[0].ChunkKey == nil || len(plans[0].Chunks) != 3 {
+		t.Fatalf("alpha plan = %+v, want chunked alpha with 3 chunks", plans[0])
+	}
+	if plans[1].Table.SourceName != "audit_log" || plans[1].ChunkKey != nil {
+		t.Fatalf("audit_log plan = %+v, want non-chunkable plan in original position", plans[1])
+	}
+	if plans[2].Table.SourceName != "beta" || plans[2].ChunkKey == nil || len(plans[2].Chunks) != 1 {
+		t.Fatalf("beta plan = %+v, want single chunk in original position", plans[2])
+	}
+	if plans[3].Table.SourceName != "gamma" || plans[3].ChunkKey == nil || len(plans[3].Chunks) != 1 {
+		t.Fatalf("gamma plan = %+v, want single chunk in original position", plans[3])
+	}
+}
+
+func TestBuildChunkPlansWithDeps_CancelsSiblingQueriesAfterFirstError(t *testing.T) {
+	src := &stubChunkPlanningSourceDB{}
+	schema := &Schema{
+		Tables: []Table{
+			chunkablePlanningTable("fail"),
+			chunkablePlanningTable("slow"),
+			chunkablePlanningTable("later"),
+		},
+	}
+
+	slowStarted := make(chan struct{})
+	var slowCanceled bool
+
+	_, err := buildChunkPlansWithDeps(
+		context.Background(),
+		src,
+		schema,
+		100,
+		defaultTypeMappingConfig(),
+		2,
+		chunkPlanningDeps{
+			openSource: func() (migrationWorkerSource, error) {
+				return &fakeMigrationWorkerSource{id: 1, closeMu: &sync.Mutex{}, closeCounts: map[int]int{}}, nil
+			},
+			queryMinMax: func(ctx context.Context, _ dbQuerier, _ SourceDB, table Table, _ ChunkKey) (int64, int64, bool, error) {
+				switch table.SourceName {
+				case "fail":
+					<-slowStarted
+					return 0, 0, false, errors.New("boom")
+				case "slow":
+					close(slowStarted)
+					<-ctx.Done()
+					slowCanceled = true
+					return 0, 0, false, ctx.Err()
+				default:
+					<-ctx.Done()
+					return 0, 0, false, ctx.Err()
+				}
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected chunk planning error")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("error = %q, want substring %q", err.Error(), "boom")
+	}
+	if !slowCanceled {
+		t.Fatal("expected sibling query to observe context cancellation")
+	}
+}
+
+func TestBuildChunkPlansWithDeps_OpenSourceErrorIncludesTableName(t *testing.T) {
+	src := &stubChunkPlanningSourceDB{}
+	schema := &Schema{
+		Tables: []Table{
+			chunkablePlanningTable("orders"),
+		},
+	}
+
+	_, err := buildChunkPlansWithDeps(
+		context.Background(),
+		src,
+		schema,
+		100,
+		defaultTypeMappingConfig(),
+		1,
+		chunkPlanningDeps{
+			openSource: func() (migrationWorkerSource, error) {
+				return nil, errors.New("dial tcp timeout")
+			},
+			queryMinMax: func(context.Context, dbQuerier, SourceDB, Table, ChunkKey) (int64, int64, bool, error) {
+				t.Fatal("queryMinMax should not be called when openSource fails")
+				return 0, 0, false, nil
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("expected chunk planning error")
+	}
+	if !strings.Contains(err.Error(), "orders") {
+		t.Fatalf("error = %q, want table name context", err.Error())
+	}
+	if !strings.Contains(err.Error(), "dial tcp timeout") {
+		t.Fatalf("error = %q, want original openSource failure", err.Error())
+	}
+}
+
 func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.T) {
 	chunkKey := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
 	plans := []ChunkPlan{
