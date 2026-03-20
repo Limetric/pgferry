@@ -65,11 +65,11 @@ Any PostgreSQL `sslmode` is supported. `sslmode=disable` is just a local example
 
 Use the docs site for copy-pasteable example configs and walkthroughs:
 
-- [All examples](https://pgferry.com/examples/)
-- [MySQL examples](https://pgferry.com/examples/mysql/)
-- [MariaDB examples](https://pgferry.com/examples/mariadb/)
-- [SQLite examples](https://pgferry.com/examples/sqlite/)
-- [MSSQL examples](https://pgferry.com/examples/mssql/)
+- [All examples](https://www.pgferry.com/examples/)
+- [MySQL examples](https://www.pgferry.com/examples/mysql/)
+- [MariaDB examples](https://www.pgferry.com/examples/mariadb/)
+- [SQLite examples](https://www.pgferry.com/examples/sqlite/)
+- [MSSQL examples](https://www.pgferry.com/examples/mssql/)
 
 The raw example files still live in [`examples/`](examples/).
 
@@ -77,15 +77,15 @@ The raw example files still live in [`examples/`](examples/).
 
 The website is the primary end-user docs surface:
 
-- [Install](https://pgferry.com/get-started/install/)
-- [Quick Start](https://pgferry.com/get-started/quick-start/)
-- [Advanced Options](https://pgferry.com/get-started/advanced-options/)
-- [Migration Patterns](https://pgferry.com/migration-patterns/)
-- [Guides](https://pgferry.com/guides/)
-- [Examples](https://pgferry.com/examples/)
-- [Operations](https://pgferry.com/operations/)
-- [Operator tuning](https://pgferry.com/operations/operator-tuning/)
-- [Reference](https://pgferry.com/reference/)
+- [Install](https://www.pgferry.com/get-started/install/)
+- [Quick Start](https://www.pgferry.com/get-started/quick-start/)
+- [Advanced Options](https://www.pgferry.com/get-started/advanced-options/)
+- [Migration Patterns](https://www.pgferry.com/migration-patterns/)
+- [Guides](https://www.pgferry.com/guides/)
+- [Examples](https://www.pgferry.com/examples/)
+- [Operations](https://www.pgferry.com/operations/)
+- [Operator tuning](https://www.pgferry.com/operations/operator-tuning/)
+- [Reference](https://www.pgferry.com/reference/)
 
 ## How it's built
 
