@@ -396,8 +396,8 @@ const maxChunkPlanningWorkers = 16
 // reusing migration workers while capping planning fan-out to avoid placing
 // unexpected load on small source instances.
 func chunkPlanningWorkers(workers int, src SourceDB) int {
-	if max := src.MaxWorkers(); max > 0 && workers > max {
-		workers = max
+	if srcMax := src.MaxWorkers(); srcMax > 0 && workers > srcMax {
+		workers = srcMax
 	}
 	if workers > maxChunkPlanningWorkers {
 		workers = maxChunkPlanningWorkers
@@ -513,11 +513,6 @@ type chunkPlanningJob struct {
 	pgCopyColumns    []string
 }
 
-type chunkPlanningResult struct {
-	plan       ChunkPlan
-	chunkCount int
-}
-
 func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int, deps chunkPlanningDeps) ([]ChunkPlan, error) {
 	plans := make([]ChunkPlan, len(schema.Tables))
 	jobs := make([]chunkPlanningJob, 0, len(schema.Tables))
@@ -547,10 +542,6 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 		}
 		return plans, nil
 	}
-
-	if workers < 1 {
-		workers = 1
-	}
 	if workers > len(jobs) {
 		workers = len(jobs)
 	}
@@ -558,7 +549,7 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	results := make([]chunkPlanningResult, len(schema.Tables))
+	results := make([]ChunkPlan, len(schema.Tables))
 	jobCh := make(chan chunkPlanningJob, workers)
 	var wg sync.WaitGroup
 
@@ -620,31 +611,25 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 					}
 
 					if !hasRows {
-						results[job.tableIndex] = chunkPlanningResult{
-							plan: ChunkPlan{
-								Table:            job.table,
-								ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
-								Chunks:           []Chunk{{Index: 0, IsLast: true}},
-								ChunkSize:        chunkSize,
-								ColumnSelectList: job.columnSelectList,
-								PGCopyColumns:    job.pgCopyColumns,
-							},
-							chunkCount: 1,
+						results[job.tableIndex] = ChunkPlan{
+							Table:            job.table,
+							ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
+							Chunks:           []Chunk{{Index: 0, IsLast: true}},
+							ChunkSize:        chunkSize,
+							ColumnSelectList: job.columnSelectList,
+							PGCopyColumns:    job.pgCopyColumns,
 						}
 						continue
 					}
 
 					chunks := planChunks(min, max, chunkSize)
-					results[job.tableIndex] = chunkPlanningResult{
-						plan: ChunkPlan{
-							Table:            job.table,
-							ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
-							Chunks:           chunks,
-							ChunkSize:        chunkSize,
-							ColumnSelectList: job.columnSelectList,
-							PGCopyColumns:    job.pgCopyColumns,
-						},
-						chunkCount: len(chunks),
+					results[job.tableIndex] = ChunkPlan{
+						Table:            job.table,
+						ChunkKey:         &ChunkKey{SourceColumn: job.key.SourceColumn, PGColumn: job.key.PGColumn},
+						Chunks:           chunks,
+						ChunkSize:        chunkSize,
+						ColumnSelectList: job.columnSelectList,
+						PGCopyColumns:    job.pgCopyColumns,
 					}
 					log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", job.table.SourceName, len(chunks), job.key.SourceColumn, min, max)
 				}
@@ -674,16 +659,10 @@ enqueue:
 
 	chunkable := 0
 	totalChunks := 0
-	for i := range plans {
-		if plans[i].ChunkKey == nil && len(plans[i].PGCopyColumns) > 0 {
-			continue
-		}
-		if results[i].plan.ChunkKey == nil {
-			continue
-		}
-		plans[i] = results[i].plan
+	for _, job := range jobs {
+		plans[job.tableIndex] = results[job.tableIndex]
 		chunkable++
-		totalChunks += results[i].chunkCount
+		totalChunks += len(results[job.tableIndex].Chunks)
 	}
 
 	if chunkable > 0 {
