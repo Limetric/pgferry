@@ -77,9 +77,9 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `replicate_on_update_current_timestamp` | bool | `false` | Create PostgreSQL trigger emulation for MySQL-family `ON UPDATE CURRENT_TIMESTAMP`. |
 | `workers` | int | `min(runtime.NumCPU(), 8)` | Parallel worker count for data loading. SQLite is internally capped at 1. |
 | `index_workers` | int | `workers` | Concurrent index builds during post-migration. |
-| `chunk_size` | int | `100000` | Target rows per chunk for single-column numeric PK tables. |
+| `chunk_size` | int | `100000` | Key-range width for chunkable single-column numeric PK tables. Actual rows per chunk vary with key density. |
 | `resume` | bool | `false` | Reuse `pgferry_checkpoint.json` after interruptions. |
-| `validation` | string | `"none"` | `"row_count"` compares source and target row counts after data load. |
+| `validation` | string | `"none"` | `"row_count"` compares per-table counts after load. `"sampled_hash"` adds bounded content fingerprints for deterministic primary-key-addressable rows. |
 
 ### `[source]`
 
@@ -203,6 +203,7 @@ The `database` parameter is required because pgferry extracts the DB name for in
 ## Practical guidance
 
 - Run `pgferry plan migration.toml` before the first real migration.
+- Use [Operator tuning](/operations/operator-tuning/) when runtime is dominated by PostgreSQL settings, source pressure, or network distance rather than config shape alone.
 - Use `unlogged_tables = false` whenever you also need `resume = true`.
 - Use `source_snapshot_mode = "single_tx"` when the source stays live during the migration and you need one consistent read view.
 - Keep `on_schema_exists = "error"` for the first production dry runs so you do not destroy previous target state by mistake.

@@ -33,6 +33,12 @@ POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=d
 go test -tags integration -run TestIntegration_MSSQL -count=1 -v ./...
 ```
 
+## Performance and tuning
+
+Operator-facing tuning guidance lives on the docs site at <https://pgferry.com/operations/operator-tuning/>.
+
+Use that guide for PostgreSQL bulk-load tuning, source-side pressure, `chunk_size` semantics, and the tradeoffs between `unlogged_tables`, `resume`, and `source_snapshot_mode`. Keep this file focused on contributor context and implementation details.
+
 ## Architecture
 
 All source is in `package main` at the repo root. Single-binary CLI using Cobra.

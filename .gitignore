@@ -38,3 +38,6 @@ reference/
 
 # Agent
 .claude/settings.local.json
+
+# Local agent planning artifacts
+docs/superpowers/
