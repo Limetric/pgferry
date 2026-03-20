@@ -1186,6 +1186,9 @@ type = "mssql"
 dsn = %q
 source_schema = "sales"
 
+[type_mapping]
+spatial_mode = "wkt_text"
+
 [target]
 dsn = %q
 `, pgSchema, mssqlDSN, pgDSN))
@@ -1195,6 +1198,7 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "users", 3)
 	assertRowCount(t, pgPool, pgSchema, "orders", 3)
 	assertRowCount(t, pgPool, pgSchema, "exact_numerics", 1)
+	assertRowCount(t, pgPool, pgSchema, "special_types", 2)
 	assertPKExists(t, pgPool, pgSchema, "users")
 	assertPKExists(t, pgPool, pgSchema, "orders")
 	assertPKExists(t, pgPool, pgSchema, "exact_numerics")
@@ -1205,6 +1209,9 @@ dsn = %q
 	assertColumnType(t, pgPool, pgSchema, "orders", "total", "numeric")
 	assertColumnType(t, pgPool, pgSchema, "exact_numerics", "rounded_example", "numeric")
 	assertColumnType(t, pgPool, pgSchema, "exact_numerics", "truncated_example", "numeric")
+	assertColumnType(t, pgPool, pgSchema, "special_types", "hid", "text")
+	assertColumnType(t, pgPool, pgSchema, "special_types", "geom", "text")
+	assertColumnType(t, pgPool, pgSchema, "special_types", "variant", "text")
 
 	var (
 		displayNameUpper string
@@ -1259,6 +1266,34 @@ dsn = %q
 	}
 	if truncatedExample != "-67723280.0928298500000" {
 		t.Fatalf("truncated_example = %q, want -67723280.0928298500000", truncatedExample)
+	}
+
+	var hid1, geom1, variant1, variant2 string
+	err = pgPool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT hid, geom, variant
+		FROM %s.special_types
+		WHERE id = 1
+	`, pgIdent(pgSchema))).Scan(&hid1, &geom1, &variant1)
+	if err != nil {
+		t.Fatalf("query special_types id=1: %v", err)
+	}
+	if hid1 != "/1/2/" {
+		t.Fatalf("hid = %q, want /1/2/", hid1)
+	}
+	if !strings.Contains(geom1, "POINT") {
+		t.Fatalf("geom WKT = %q, want substring POINT", geom1)
+	}
+	if variant1 != "99" {
+		t.Fatalf("variant id=1 = %q, want 99", variant1)
+	}
+	err = pgPool.QueryRow(ctx, fmt.Sprintf(`
+		SELECT variant FROM %s.special_types WHERE id = 2
+	`, pgIdent(pgSchema))).Scan(&variant2)
+	if err != nil {
+		t.Fatalf("query special_types id=2: %v", err)
+	}
+	if variant2 != "msg" {
+		t.Fatalf("variant id=2 = %q, want msg", variant2)
 	}
 
 	var insertedID int64
@@ -1564,6 +1599,7 @@ func seedMSSQL(t *testing.T, db *sql.DB) {
 
 	stmts := []string{
 		`IF SCHEMA_ID(N'sales') IS NULL EXEC(N'CREATE SCHEMA sales')`,
+		`DROP TABLE IF EXISTS [sales].[SpecialTypes]`,
 		`DROP TABLE IF EXISTS [sales].[ExactNumerics]`,
 		`DROP TABLE IF EXISTS [sales].[Orders]`,
 		`DROP TABLE IF EXISTS [sales].[Users]`,
@@ -1597,6 +1633,12 @@ func seedMSSQL(t *testing.T, db *sql.DB) {
 			[RoundedExample] NUMERIC(18,4) NOT NULL,
 			[TruncatedExample] DECIMAL(28,13) NOT NULL
 		)`,
+		`CREATE TABLE [sales].[SpecialTypes] (
+			[ID] INT NOT NULL PRIMARY KEY,
+			[Hid] HIERARCHYID NULL,
+			[Geom] GEOMETRY NULL,
+			[Variant] SQL_VARIANT NULL
+		)`,
 		`INSERT INTO [sales].[Users] ([ExternalID], [DisplayName], [Email], [IsActive], [CreatedAt]) VALUES
 			('6F9619FF-8B86-D011-B42D-00C04FC964FF', N'Alice', N'alice@example.com', 1, '2024-01-02T03:04:05'),
 			('7C9E6679-7425-40DE-944B-E07FC1F90AE7', N'Bob', NULL, 0, '2024-01-03T04:05:06'),
@@ -1607,6 +1649,10 @@ func seedMSSQL(t *testing.T, db *sql.DB) {
 			(2, 3.50, NULL, '2024-02-03T12:00:00')`,
 		`INSERT INTO [sales].[ExactNumerics] ([RoundedExample], [TruncatedExample]) VALUES
 			(19942031.0000, -67723280.0928298500000)`,
+		`INSERT INTO [sales].[SpecialTypes] ([ID], [Hid], [Geom], [Variant]) VALUES
+			(1, CAST('/1/2/' AS HIERARCHYID), geometry::STGeomFromText('POINT (3 4)', 0), CAST(99 AS SQL_VARIANT))`,
+		`INSERT INTO [sales].[SpecialTypes] ([ID], [Hid], [Geom], [Variant]) VALUES
+			(2, NULL, NULL, CAST(N'msg' AS SQL_VARIANT))`,
 	}
 
 	for _, stmt := range stmts {

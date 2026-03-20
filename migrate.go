@@ -635,7 +635,7 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 		case isMSSQLSpatialType(col.DataType) && typeMap.SpatialMode == "wkb_bytea":
 			return fmt.Sprintf("%s.STAsBinary() AS %s", quoted, quoted)
 		case col.DataType == "sql_variant":
-			return fmt.Sprintf("CAST(%s AS nvarchar(max)) AS %s", quoted, quoted)
+			return fmt.Sprintf("TRY_CAST(%s AS nvarchar(max)) AS %s", quoted, quoted)
 		}
 	}
 	return quoted
