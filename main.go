@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -289,7 +290,14 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 
 	// 3. Connect to PostgreSQL
 	log.Printf("connecting to PostgreSQL...")
-	pgPool, err := pgxpool.New(ctx, cfg.Target.DSN)
+	poolCfg, poolWarning, err := buildTargetPoolConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	if poolWarning != "" {
+		log.Printf("WARN: %s", poolWarning)
+	}
+	pgPool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
 	}
@@ -400,6 +408,57 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 
 	log.Printf("migration completed in %s", time.Since(start).Round(time.Millisecond))
 	return nil
+}
+
+func buildTargetPoolConfig(cfg *MigrationConfig) (*pgxpool.Config, string, error) {
+	connCfg, err := pgx.ParseConfig(cfg.Target.DSN)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse postgres pool config: %w", err)
+	}
+
+	explicitMaxConns := int32(0)
+	explicitPoolMaxConns := false
+	if s, ok := connCfg.Config.RuntimeParams["pool_max_conns"]; ok {
+		explicitPoolMaxConns = true
+		n, err := strconv.ParseInt(s, 10, 32)
+		if err != nil {
+			return nil, "", fmt.Errorf("parse postgres pool config: pool_max_conns=%q: %w", s, err)
+		}
+		explicitMaxConns = int32(n)
+	}
+
+	poolCfg, err := pgxpool.ParseConfig(cfg.Target.DSN)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse postgres pool config: %w", err)
+	}
+
+	peak := effectiveTargetPoolConcurrency(cfg)
+	if explicitPoolMaxConns {
+		if explicitMaxConns < peak {
+			return poolCfg, fmt.Sprintf(
+				"target DSN sets pool_max_conns=%d below effective migration concurrency %d; parallel COPY and index creation may wait on the PostgreSQL pool",
+				explicitMaxConns,
+				peak,
+			), nil
+		}
+		return poolCfg, "", nil
+	}
+
+	if poolCfg.MaxConns < peak {
+		poolCfg.MaxConns = peak
+	}
+	return poolCfg, "", nil
+}
+
+func effectiveTargetPoolConcurrency(cfg *MigrationConfig) int32 {
+	peak := cfg.Workers
+	if cfg.IndexWorkers > peak {
+		peak = cfg.IndexWorkers
+	}
+	if peak < 1 {
+		peak = 1
+	}
+	return int32(peak)
 }
 
 func runDataMigrationPhase(

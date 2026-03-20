@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -88,5 +89,65 @@ func TestRunMigration_UsesConfigFlag(t *testing.T) {
 	got := resolveMigrationConfigPath(nil)
 	if got != "migration.toml" {
 		t.Fatalf("resolveMigrationConfigPath(nil) = %q, want migration.toml", got)
+	}
+}
+
+func TestBuildTargetPoolConfig_AutoSizesMaxConnsWhenUnset(t *testing.T) {
+	cfg := &MigrationConfig{
+		Target:       TargetConfig{DSN: "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"},
+		Workers:      12,
+		IndexWorkers: 4,
+	}
+
+	poolCfg, warning, err := buildTargetPoolConfig(cfg)
+	if err != nil {
+		t.Fatalf("buildTargetPoolConfig() error = %v", err)
+	}
+	if got, want := poolCfg.MaxConns, int32(12); got != want {
+		t.Fatalf("MaxConns = %d, want %d", got, want)
+	}
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestBuildTargetPoolConfig_PreservesExplicitMaxConnsWhenHigher(t *testing.T) {
+	cfg := &MigrationConfig{
+		Target:       TargetConfig{DSN: "user=postgres password=postgres host=127.0.0.1 port=5432 dbname=target sslmode=disable pool_max_conns=50"},
+		Workers:      4,
+		IndexWorkers: 6,
+	}
+
+	poolCfg, warning, err := buildTargetPoolConfig(cfg)
+	if err != nil {
+		t.Fatalf("buildTargetPoolConfig() error = %v", err)
+	}
+	if got, want := poolCfg.MaxConns, int32(50); got != want {
+		t.Fatalf("MaxConns = %d, want %d", got, want)
+	}
+	if warning != "" {
+		t.Fatalf("warning = %q, want empty", warning)
+	}
+}
+
+func TestBuildTargetPoolConfig_PreservesExplicitMaxConnsWhenLowerAndWarns(t *testing.T) {
+	cfg := &MigrationConfig{
+		Target:       TargetConfig{DSN: "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable&pool_max_conns=5"},
+		Workers:      8,
+		IndexWorkers: 12,
+	}
+
+	poolCfg, warning, err := buildTargetPoolConfig(cfg)
+	if err != nil {
+		t.Fatalf("buildTargetPoolConfig() error = %v", err)
+	}
+	if got, want := poolCfg.MaxConns, int32(5); got != want {
+		t.Fatalf("MaxConns = %d, want %d", got, want)
+	}
+	if !strings.Contains(warning, "pool_max_conns=5") {
+		t.Fatalf("warning = %q, want explicit pool_max_conns value", warning)
+	}
+	if !strings.Contains(warning, "12") {
+		t.Fatalf("warning = %q, want effective concurrency", warning)
 	}
 }
