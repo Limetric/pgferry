@@ -750,12 +750,6 @@ func TestWriteHookSkeletons_SanitizesCommentText(t *testing.T) {
 	}
 }
 
-func TestBuildBeforeFkSkeleton_Empty(t *testing.T) {
-	if got := buildBeforeFkSkeleton(); got != "" {
-		t.Fatalf("buildBeforeFkSkeleton() = %q, want empty string", got)
-	}
-}
-
 func TestWriteHookSkeletons_CreatesDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "hooks")
 	report := &PlanReport{

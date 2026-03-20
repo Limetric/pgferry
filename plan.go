@@ -652,11 +652,6 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 		files = append(files, hookFile{"after_data.sql", body})
 	}
 
-	// before_fk: rarely needed, skip unless there's content
-	if body := buildBeforeFkSkeleton(); body != "" {
-		files = append(files, hookFile{"before_fk.sql", body})
-	}
-
 	// after_all: views, routines, triggers, skipped indexes
 	if body := buildAfterAllSkeleton(report); body != "" {
 		files = append(files, hookFile{"after_all.sql", body})
@@ -699,12 +694,6 @@ func buildBeforeDataSkeleton(report *PlanReport) string {
 	}
 
 	return b.String()
-}
-
-// before_fk is reserved for future plan-generated remediation that must run
-// after data load but before foreign keys are added.
-func buildBeforeFkSkeleton() string {
-	return ""
 }
 
 func buildAfterDataSkeleton(report *PlanReport) string {
