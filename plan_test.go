@@ -622,6 +622,74 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 	}
 }
 
+func TestWriteHookSkeletons_Extensions(t *testing.T) {
+	dir := t.TempDir()
+	report := &PlanReport{
+		RequiredExtensions: []PlanRequiredExtension{
+			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+			{Name: "postgis", Feature: "postgis", Mode: "require_existing"},
+		},
+	}
+
+	if err := writeHookSkeletons(dir, report, "app"); err != nil {
+		t.Fatalf("writeHookSkeletons: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "before_data.sql"))
+	if err != nil {
+		t.Fatalf("read before_data.sql: %v", err)
+	}
+	content := string(data)
+
+	for _, want := range []string{
+		"required PostgreSQL extensions",
+		`CREATE EXTENSION IF NOT EXISTS "citext";`,
+		"ci_as_citext",
+		`Extension "postgis" must already exist before running pgferry.`,
+		"postgis",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("before_data.sql missing %q", want)
+		}
+	}
+}
+
+func TestWriteHookSkeletons_UnsupportedColumns(t *testing.T) {
+	dir := t.TempDir()
+	report := &PlanReport{
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{
+				Table:      "mystery",
+				Column:     "payload",
+				SourceType: "geometry",
+				Reason:     `unsupported MySQL type "geometry"`,
+			},
+		},
+	}
+
+	if err := writeHookSkeletons(dir, report, "app"); err != nil {
+		t.Fatalf("writeHookSkeletons: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "after_all.sql"))
+	if err != nil {
+		t.Fatalf("read after_all.sql: %v", err)
+	}
+	content := string(data)
+
+	for _, want := range []string{
+		"Unsupported Columns",
+		"These columns could not be migrated automatically.",
+		`ALTER TABLE "{{schema}}"."mystery" ADD COLUMN "payload"`,
+		"Source type: geometry",
+		`unsupported MySQL type "geometry"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("after_all.sql missing %q", want)
+		}
+	}
+}
+
 func TestWriteHookSkeletons_CreatesDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "hooks")
 	report := &PlanReport{

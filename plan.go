@@ -525,8 +525,8 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 
 	var files []hookFile
 
-	// before_data: rarely needed for plan items, but generate if useful
-	if body := buildBeforeDataSkeleton(); body != "" {
+	// before_data: extension setup and other pre-load prerequisites
+	if body := buildBeforeDataSkeleton(report); body != "" {
 		files = append(files, hookFile{"before_data.sql", body})
 	}
 
@@ -559,10 +559,32 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	return nil
 }
 
-func buildBeforeDataSkeleton() string {
-	return ""
+func buildBeforeDataSkeleton(report *PlanReport) string {
+	if report == nil || len(report.RequiredExtensions) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("-- before_data hook: required PostgreSQL extensions\n")
+	b.WriteString("-- Schema: {{schema}}\n\n")
+	b.WriteString("-- pgferry requires these extensions for the configured type mappings.\n")
+
+	for _, req := range report.RequiredExtensions {
+		switch req.Mode {
+		case "create_if_missing":
+			fmt.Fprintf(&b, "CREATE EXTENSION IF NOT EXISTS %s; -- %s\n", pgIdent(req.Name), req.Feature)
+		case "require_existing":
+			fmt.Fprintf(&b, "-- Extension %q must already exist before running pgferry. (%s)\n", req.Name, req.Feature)
+		default:
+			fmt.Fprintf(&b, "-- Extension %q is required for %s.\n", req.Name, req.Feature)
+		}
+	}
+
+	return b.String()
 }
 
+// before_fk is reserved for future plan-generated remediation that must run
+// after data load but before foreign keys are added.
 func buildBeforeFkSkeleton() string {
 	return ""
 }
@@ -599,8 +621,9 @@ func buildAfterAllSkeleton(report *PlanReport, schema string) string {
 	objs := &report.SourceObjects
 	hasObjects := len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0
 	hasIndexes := len(report.SkippedIndexes) > 0
+	hasUnsupportedColumns := len(report.UnsupportedColumns) > 0
 
-	if !hasObjects && !hasIndexes {
+	if !hasObjects && !hasIndexes && !hasUnsupportedColumns {
 		return ""
 	}
 
@@ -641,6 +664,17 @@ func buildAfterAllSkeleton(report *PlanReport, schema string) string {
 		for _, si := range report.SkippedIndexes {
 			fmt.Fprintf(&b, "-- TODO: CREATE INDEX ON %s.%s ...;\n", pgIdent("{{schema}}"), pgIdent(si.Table))
 			fmt.Fprintf(&b, "--   Source: %s.%s — %s\n", si.Table, si.Index, si.Reason)
+		}
+		b.WriteByte('\n')
+	}
+
+	if hasUnsupportedColumns {
+		b.WriteString("-- Unsupported Columns\n")
+		b.WriteString("-- These columns could not be migrated automatically.\n")
+		for _, uc := range report.UnsupportedColumns {
+			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s ADD COLUMN %s ...;\n", pgIdent("{{schema}}"), pgIdent(uc.Table), pgIdent(uc.Column))
+			fmt.Fprintf(&b, "--   Source type: %s\n", uc.SourceType)
+			fmt.Fprintf(&b, "--   Reason: %s\n", uc.Reason)
 		}
 		b.WriteByte('\n')
 	}
