@@ -1017,6 +1017,7 @@ func TestBuildPlanReport_TemporalWarnings_SQLiteNone(t *testing.T) {
 		Source:      SourceConfig{Type: "sqlite"},
 		TypeMapping: defaultTypeMappingConfig(),
 	}
+	cfg.TypeMapping.DatetimeAsTimestamptz = false
 	schema := &Schema{
 		Tables: []Table{
 			{
@@ -1033,5 +1034,38 @@ func TestBuildPlanReport_TemporalWarnings_SQLiteNone(t *testing.T) {
 
 	if len(report.TemporalWarnings) != 0 {
 		t.Fatalf("temporal warnings = %d, want 0", len(report.TemporalWarnings))
+	}
+}
+
+func TestBuildPlanReport_TemporalWarnings_SQLiteDatetimeAsTimestamptz(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:      SourceConfig{Type: "sqlite"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	cfg.TypeMapping.DatetimeAsTimestamptz = true
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				PGName: "events",
+				Columns: []Column{
+					{PGName: "opened_at", DataType: "DATETIME"},
+					{PGName: "updated_at", DataType: "timestamp"},
+				},
+			},
+		},
+	}
+
+	report := buildPlanReport(schema, nil, nil, nil, &sqliteSourceDB{}, cfg, effectiveTypeMapping(cfg))
+
+	if len(report.TemporalWarnings) != 1 {
+		t.Fatalf("temporal warnings = %d, want 1", len(report.TemporalWarnings))
+	}
+	w := report.TemporalWarnings[0]
+	if w.Category != "sqlite_datetime_to_timestamptz" {
+		t.Fatalf("warning category = %q", w.Category)
+	}
+	if w.Columns != 2 {
+		t.Fatalf("warning columns = %d, want 2", w.Columns)
 	}
 }

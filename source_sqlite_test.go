@@ -29,6 +29,8 @@ func TestSQLiteMapType(t *testing.T) {
 		{"NUMERIC(10,2)", Column{DataType: "numeric", ColumnType: "NUMERIC(10,2)", Precision: 10, Scale: 2}, "numeric(10,2)", false},
 		{"BOOLEAN→boolean", Column{DataType: "boolean", ColumnType: "BOOLEAN"}, "boolean", false},
 		{"DATETIME→timestamp", Column{DataType: "datetime", ColumnType: "DATETIME"}, "timestamp", false},
+		{"DATETIME→timestamptz opt-in", Column{DataType: "datetime", ColumnType: "DATETIME"}, "timestamptz", false},
+		{"TIMESTAMP→timestamptz opt-in", Column{DataType: "timestamp", ColumnType: "TIMESTAMP"}, "timestamptz", false},
 		{"DATE→date", Column{DataType: "date", ColumnType: "DATE"}, "date", false},
 		{"JSON→jsonb", Column{DataType: "json", ColumnType: "JSON"}, "jsonb", false},
 		{"JSON→json opt-out", Column{DataType: "json", ColumnType: "JSON"}, "json", false},
@@ -41,6 +43,9 @@ func TestSQLiteMapType(t *testing.T) {
 			tm := defaultTypeMappingConfig()
 			if tt.name == "JSON→json opt-out" {
 				tm.JSONAsJSONB = false
+			}
+			if tt.name == "DATETIME→timestamptz opt-in" || tt.name == "TIMESTAMP→timestamptz opt-in" {
+				tm.DatetimeAsTimestamptz = true
 			}
 			if tt.name == "unknown→text opt-in" {
 				tm.UnknownAsText = true
@@ -497,6 +502,12 @@ func TestSQLiteValidateTypeMapping(t *testing.T) {
 		t.Fatal("expected error for ci_as_citext")
 	} else if !strings.Contains(err.Error(), "ci_as_citext") {
 		t.Errorf("error should mention ci_as_citext, got: %v", err)
+	}
+
+	tm = defaultTypeMappingConfig()
+	tm.DatetimeAsTimestamptz = true
+	if err := src.ValidateTypeMapping(tm); err != nil {
+		t.Fatalf("datetime_as_timestamptz should be valid for SQLite: %v", err)
 	}
 }
 
