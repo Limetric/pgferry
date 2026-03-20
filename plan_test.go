@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestBuildPlanReport_Empty(t *testing.T) {
@@ -888,6 +890,44 @@ func TestRunPlanFailOn_JSONWrittenBeforeError(t *testing.T) {
 	}
 	if len(report.UnsupportedColumns) != 1 {
 		t.Fatalf("unsupported columns = %d, want 1", len(report.UnsupportedColumns))
+	}
+	if strings.Contains(buf.String(), "FAIL:") {
+		t.Fatalf("JSON output must not contain FAIL summary line: %q", buf.String())
+	}
+}
+
+func TestRunPlan_InvalidFailOn(t *testing.T) {
+	prevFail := planFailOn
+	prevFormat := planFormat
+	t.Cleanup(func() {
+		planFailOn = prevFail
+		planFormat = prevFormat
+	})
+	planFailOn = "not-a-level"
+	planFormat = "text"
+
+	err := runPlan(&cobra.Command{}, []string{"any.toml"})
+	if err == nil {
+		t.Fatal("runPlan() error = nil, want invalid --fail-on")
+	}
+	if !strings.Contains(err.Error(), "--fail-on must be none, errors, or warnings") {
+		t.Fatalf("runPlan() error = %q", err.Error())
+	}
+}
+
+func TestRunPlanWithConfig_InvalidFailOn(t *testing.T) {
+	cfg := &MigrationConfig{
+		Schema:      "app",
+		Source:      SourceConfig{Type: "sqlite", DSN: "/tmp/unused"},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+	var buf bytes.Buffer
+	err := runPlanWithConfig(cfg, &buf, PlanOptions{FailOn: "bogus"})
+	if err == nil {
+		t.Fatal("runPlanWithConfig() error = nil, want invalid fail-on")
+	}
+	if !strings.Contains(err.Error(), "--fail-on must be none, errors, or warnings") {
+		t.Fatalf("runPlanWithConfig() error = %q", err.Error())
 	}
 }
 
