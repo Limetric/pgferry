@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const temporalExamplesLimit = 3
 
@@ -16,6 +19,8 @@ func collectTemporalWarnings(schema *Schema, sourceType string, typeMap TypeMapp
 		return collectMySQLFamilyTemporalWarnings(schema, typeMap, "mariadb", "MariaDB")
 	case "mssql":
 		return collectMSSQLTemporalWarnings(schema, typeMap)
+	case "sqlite":
+		return collectSQLiteTemporalWarnings(schema, typeMap)
 	default:
 		return []PlanTemporalWarning{}
 	}
@@ -140,6 +145,35 @@ func collectMSSQLTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []P
 			datetimeOffsetCols,
 			fmt.Sprintf("%d MSSQL datetimeoffset column(s) will map to PostgreSQL timestamptz; confirm clients and downstream queries handle offset-normalized values as expected.", len(datetimeOffsetCols)),
 			`Review application behavior around time zone display and comparisons for datetimeoffset-derived data.`,
+		))
+	}
+
+	return warnings
+}
+
+func collectSQLiteTemporalWarnings(schema *Schema, typeMap TypeMappingConfig) []PlanTemporalWarning {
+	if !typeMap.DatetimeAsTimestamptz {
+		return []PlanTemporalWarning{}
+	}
+
+	var warnings []PlanTemporalWarning
+	var datetimeCols []string
+
+	for _, table := range schema.Tables {
+		for _, col := range table.Columns {
+			dt := strings.ToLower(col.DataType)
+			if dt == "datetime" || dt == "timestamp" {
+				datetimeCols = append(datetimeCols, temporalColumnRef(table, col))
+			}
+		}
+	}
+
+	if len(datetimeCols) > 0 {
+		warnings = append(warnings, newTemporalWarning(
+			"sqlite_datetime_to_timestamptz",
+			datetimeCols,
+			fmt.Sprintf("%d SQLite datetime/timestamp column(s) will map to PostgreSQL timestamptz; SQLite values carry no timezone — the PostgreSQL session timezone determines interpretation.", len(datetimeCols)),
+			`Ensure the PostgreSQL session timezone matches the timezone assumed by the source application, or keep datetime_as_timestamptz = false.`,
 		))
 	}
 
