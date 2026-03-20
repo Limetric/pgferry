@@ -329,6 +329,7 @@ func mysqlBitWidth(col Column) int64 {
 	if col.Precision > 0 {
 		return col.Precision
 	}
+	// 0 means "indeterminate"; mysqlBitString treats that as full-width output.
 	return 0
 }
 

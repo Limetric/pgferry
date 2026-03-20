@@ -184,6 +184,81 @@ func TestBuildRowValueTransformers_MSSQLMatchesTransformValue(t *testing.T) {
 	}
 }
 
+func TestBuildRowValueTransformers_MariaDBMatchesTransformValue(t *testing.T) {
+	src := &mariadbSourceDB{}
+	typeMap := defaultTypeMappingConfig()
+	typeMap.SanitizeJSONNullBytes = true
+
+	table := Table{
+		Columns: []Column{
+			{SourceName: "id", DataType: "uuid", ColumnType: "uuid"},
+			{SourceName: "doc", DataType: "json", ColumnType: "json"},
+			{SourceName: "title", DataType: "varchar", ColumnType: "varchar(255)", CharMaxLen: 255},
+		},
+	}
+	inputs := []any{
+		" 550E8400-E29B-41D4-A716-446655440000 ",
+		[]byte("hello\x00world"),
+		[]byte("title\x00value"),
+	}
+
+	transformers := buildRowValueTransformers(table, src, typeMap)
+	if len(transformers) != len(inputs) {
+		t.Fatalf("len(transformers) = %d, want %d", len(transformers), len(inputs))
+	}
+
+	for i, col := range table.Columns {
+		got, err := transformers[i](inputs[i])
+		if err != nil {
+			t.Fatalf("transformers[%d](%s) error: %v", i, col.SourceName, err)
+		}
+		want, err := src.TransformValue(inputs[i], col, typeMap)
+		if err != nil {
+			t.Fatalf("TransformValue(%s) error: %v", col.SourceName, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("transformers[%d](%s) = %#v, want %#v", i, col.SourceName, got, want)
+		}
+	}
+}
+
+func TestBuildRowValueTransformers_SQLiteMatchesTransformValue(t *testing.T) {
+	src := &sqliteSourceDB{}
+	typeMap := defaultTypeMappingConfig()
+
+	table := Table{
+		Columns: []Column{
+			{SourceName: "id", DataType: "integer"},
+			{SourceName: "name", DataType: "text"},
+			{SourceName: "payload", DataType: "blob"},
+		},
+	}
+	inputs := []any{
+		int64(42),
+		"hello",
+		[]byte{0x01, 0x02, 0x03},
+	}
+
+	transformers := buildRowValueTransformers(table, src, typeMap)
+	if len(transformers) != len(inputs) {
+		t.Fatalf("len(transformers) = %d, want %d", len(transformers), len(inputs))
+	}
+
+	for i, col := range table.Columns {
+		got, err := transformers[i](inputs[i])
+		if err != nil {
+			t.Fatalf("transformers[%d](%s) error: %v", i, col.SourceName, err)
+		}
+		want, err := src.TransformValue(inputs[i], col, typeMap)
+		if err != nil {
+			t.Fatalf("TransformValue(%s) error: %v", col.SourceName, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("transformers[%d](%s) = %#v, want %#v", i, col.SourceName, got, want)
+		}
+	}
+}
+
 func BenchmarkRowTransformLoopMySQLDispatch(b *testing.B) {
 	src := &mysqlSourceDB{}
 	table, values, typeMap := benchmarkMySQLTransformFixture()
