@@ -634,13 +634,13 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 
 	var files []hookFile
 
-	// before_data: rarely needed for plan items, but generate if useful
-	if body := buildBeforeDataSkeleton(); body != "" {
+	// before_data: extension setup and other pre-load prerequisites
+	if body := buildBeforeDataSkeleton(report); body != "" {
 		files = append(files, hookFile{"before_data.sql", body})
 	}
 
 	// after_data: generated columns
-	if body := buildAfterDataSkeleton(report, schema); body != "" {
+	if body := buildAfterDataSkeleton(report); body != "" {
 		files = append(files, hookFile{"after_data.sql", body})
 	}
 
@@ -650,7 +650,7 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	}
 
 	// after_all: views, routines, triggers, skipped indexes
-	if body := buildAfterAllSkeleton(report, schema); body != "" {
+	if body := buildAfterAllSkeleton(report); body != "" {
 		files = append(files, hookFile{"after_all.sql", body})
 	}
 
@@ -668,15 +668,38 @@ func writeHookSkeletons(dir string, report *PlanReport, schema string) error {
 	return nil
 }
 
-func buildBeforeDataSkeleton() string {
-	return ""
+func buildBeforeDataSkeleton(report *PlanReport) string {
+	if report == nil || len(report.RequiredExtensions) == 0 {
+		return ""
+	}
+
+	var b strings.Builder
+	b.WriteString("-- before_data hook: required PostgreSQL extensions\n")
+	b.WriteString("-- Schema: {{schema}}\n\n")
+	b.WriteString("-- pgferry requires these extensions for the configured type mappings.\n")
+
+	for _, req := range report.RequiredExtensions {
+		feature := sanitizeSQLCommentText(req.Feature)
+		switch req.Mode {
+		case "create_if_missing":
+			fmt.Fprintf(&b, "CREATE EXTENSION IF NOT EXISTS %s; -- %s\n", pgIdent(req.Name), feature)
+		case "require_existing":
+			fmt.Fprintf(&b, "-- Extension %s must already exist before running pgferry. (%s)\n", pgIdent(req.Name), feature)
+		default:
+			fmt.Fprintf(&b, "-- Extension %s is required for %s.\n", pgIdent(req.Name), feature)
+		}
+	}
+
+	return b.String()
 }
 
+// before_fk is reserved for future plan-generated remediation that must run
+// after data load but before foreign keys are added.
 func buildBeforeFkSkeleton() string {
 	return ""
 }
 
-func buildAfterDataSkeleton(report *PlanReport, schema string) string {
+func buildAfterDataSkeleton(report *PlanReport) string {
 	if len(report.GeneratedColumns) == 0 {
 		return ""
 	}
@@ -695,7 +718,9 @@ func buildAfterDataSkeleton(report *PlanReport, schema string) string {
 		fmt.Fprintf(&b, "-- Table: %s\n", table)
 		for _, gc := range cols {
 			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s\n", pgIdent("{{schema}}"), pgIdent(gc.Table))
-			fmt.Fprintf(&b, "--        ALTER COLUMN %s SET EXPRESSION AS (...);\n", pgIdent(gc.Column))
+			fmt.Fprintf(&b, "--        DROP COLUMN %s;\n", pgIdent(gc.Column))
+			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s\n", pgIdent("{{schema}}"), pgIdent(gc.Table))
+			fmt.Fprintf(&b, "--        ADD COLUMN %s <type> GENERATED ALWAYS AS (...) STORED;\n", pgIdent(gc.Column))
 			fmt.Fprintf(&b, "-- Source expression: %s\n", gc.Expression)
 		}
 		b.WriteByte('\n')
@@ -704,12 +729,13 @@ func buildAfterDataSkeleton(report *PlanReport, schema string) string {
 	return b.String()
 }
 
-func buildAfterAllSkeleton(report *PlanReport, schema string) string {
+func buildAfterAllSkeleton(report *PlanReport) string {
 	objs := &report.SourceObjects
 	hasObjects := len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0
 	hasIndexes := len(report.SkippedIndexes) > 0
+	hasUnsupportedColumns := len(report.UnsupportedColumns) > 0
 
-	if !hasObjects && !hasIndexes {
+	if !hasObjects && !hasIndexes && !hasUnsupportedColumns {
 		return ""
 	}
 
@@ -754,7 +780,27 @@ func buildAfterAllSkeleton(report *PlanReport, schema string) string {
 		b.WriteByte('\n')
 	}
 
+	if hasUnsupportedColumns {
+		b.WriteString("-- Unsupported Columns\n")
+		b.WriteString("-- These columns could not be migrated automatically.\n")
+		for _, uc := range report.UnsupportedColumns {
+			sourceType := sanitizeSQLCommentText(uc.SourceType)
+			reason := sanitizeSQLCommentText(uc.Reason)
+			fmt.Fprintf(&b, "-- TODO: ALTER TABLE %s.%s ADD COLUMN %s ...;\n", pgIdent("{{schema}}"), pgIdent(uc.Table), pgIdent(uc.Column))
+			fmt.Fprintf(&b, "--   Source type: %s\n", sourceType)
+			fmt.Fprintf(&b, "--   Reason: %s\n", reason)
+		}
+		b.WriteByte('\n')
+	}
+
 	return b.String()
+}
+
+func sanitizeSQLCommentText(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func groupGeneratedColumnsByTable(cols []PlanGeneratedColumn) map[string][]PlanGeneratedColumn {

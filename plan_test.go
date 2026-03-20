@@ -585,6 +585,18 @@ func TestWriteHookSkeletons_GeneratedColumns(t *testing.T) {
 	if !strings.Contains(content, "concat(`first`,`last`)") {
 		t.Error("after_data.sql should mention the source expression")
 	}
+	if strings.Contains(content, "SET EXPRESSION AS") {
+		t.Error("after_data.sql should not suggest unsupported PostgreSQL generated-column syntax")
+	}
+	for _, want := range []string{
+		`DROP COLUMN "display_name";`,
+		`ADD COLUMN "display_name"`,
+		"GENERATED ALWAYS AS (...) STORED",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("after_data.sql missing %q", want)
+		}
+	}
 }
 
 func TestWriteHookSkeletons_AfterAll(t *testing.T) {
@@ -622,6 +634,124 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Errorf("after_all.sql missing %q", want)
 		}
+	}
+}
+
+func TestWriteHookSkeletons_Extensions(t *testing.T) {
+	dir := t.TempDir()
+	report := &PlanReport{
+		RequiredExtensions: []PlanRequiredExtension{
+			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+			{Name: "postgis", Feature: "postgis", Mode: "require_existing"},
+		},
+	}
+
+	if err := writeHookSkeletons(dir, report, "app"); err != nil {
+		t.Fatalf("writeHookSkeletons: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "before_data.sql"))
+	if err != nil {
+		t.Fatalf("read before_data.sql: %v", err)
+	}
+	content := string(data)
+
+	for _, want := range []string{
+		"required PostgreSQL extensions",
+		`CREATE EXTENSION IF NOT EXISTS "citext";`,
+		"ci_as_citext",
+		`Extension "postgis" must already exist before running pgferry.`,
+		"postgis",
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("before_data.sql missing %q", want)
+		}
+	}
+}
+
+func TestWriteHookSkeletons_UnsupportedColumns(t *testing.T) {
+	dir := t.TempDir()
+	report := &PlanReport{
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{
+				Table:      "mystery",
+				Column:     "payload",
+				SourceType: "geometry",
+				Reason:     `unsupported MySQL type "geometry"`,
+			},
+		},
+	}
+
+	if err := writeHookSkeletons(dir, report, "app"); err != nil {
+		t.Fatalf("writeHookSkeletons: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "after_all.sql"))
+	if err != nil {
+		t.Fatalf("read after_all.sql: %v", err)
+	}
+	content := string(data)
+
+	for _, want := range []string{
+		"Unsupported Columns",
+		"These columns could not be migrated automatically.",
+		`ALTER TABLE "{{schema}}"."mystery" ADD COLUMN "payload"`,
+		"Source type: geometry",
+		`unsupported MySQL type "geometry"`,
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("after_all.sql missing %q", want)
+		}
+	}
+}
+
+func TestWriteHookSkeletons_SanitizesCommentText(t *testing.T) {
+	dir := t.TempDir()
+	report := &PlanReport{
+		RequiredExtensions: []PlanRequiredExtension{
+			{Name: "citext", Feature: "ci_as_citext\nSELECT 1;", Mode: "create_if_missing"},
+			{Name: "postgis", Feature: "postgis\r\nALTER ROLE", Mode: "require_existing"},
+		},
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{
+				Table:      "mystery",
+				Column:     "payload",
+				SourceType: "geometry\nline2",
+				Reason:     "unsupported\r\ntype",
+			},
+		},
+	}
+
+	if err := writeHookSkeletons(dir, report, "app"); err != nil {
+		t.Fatalf("writeHookSkeletons: %v", err)
+	}
+
+	beforeData, err := os.ReadFile(filepath.Join(dir, "before_data.sql"))
+	if err != nil {
+		t.Fatalf("read before_data.sql: %v", err)
+	}
+	afterAll, err := os.ReadFile(filepath.Join(dir, "after_all.sql"))
+	if err != nil {
+		t.Fatalf("read after_all.sql: %v", err)
+	}
+
+	for _, content := range []string{string(beforeData), string(afterAll)} {
+		for _, unwanted := range []string{
+			"\nSELECT 1;",
+			"\nALTER ROLE",
+			"\nline2",
+			"\ntype",
+		} {
+			if strings.Contains(content, unwanted) {
+				t.Fatalf("generated skeleton should flatten embedded newlines, found %q in:\n%s", unwanted, content)
+			}
+		}
+	}
+}
+
+func TestBuildBeforeFkSkeleton_Empty(t *testing.T) {
+	if got := buildBeforeFkSkeleton(); got != "" {
+		t.Fatalf("buildBeforeFkSkeleton() = %q, want empty string", got)
 	}
 }
 
