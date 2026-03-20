@@ -16,6 +16,7 @@ import (
 
 var planOutputDir string
 var planFormat string
+var planFailOn string
 
 var planCmd = &cobra.Command{
 	Use:   "plan [migration.toml]",
@@ -35,6 +36,88 @@ func init() {
 	planCmd.Flags().StringVar(&planConfigPath, "config", "", "path to migration TOML config file")
 	planCmd.Flags().StringVar(&planOutputDir, "output-dir", "", "directory to write hook skeleton files")
 	planCmd.Flags().StringVar(&planFormat, "format", "text", "output format: text or json")
+	// fail-on=none keeps exit 0 when introspection succeeds; errors/warnings gate CI on unsupported columns or high copy-risk severity.
+	planCmd.Flags().StringVar(&planFailOn, "fail-on", "none", "exit non-zero on findings: none, errors, or warnings")
+}
+
+// PlanOptions configures plan execution (wizard and tests pass explicit values; CLI uses flags via runPlan).
+type PlanOptions struct {
+	FailOn    string
+	Format    string
+	OutputDir string
+}
+
+// PlanFindingsError is returned when --fail-on is triggered. main exits non-zero and prints Error() to stderr
+// (text mode also prints the same summary to stdout after the report).
+type PlanFindingsError struct {
+	UnsupportedColumns int
+	HighSeverityRisks  int
+}
+
+func (e *PlanFindingsError) Error() string {
+	return planFindingsFailSummary(e.UnsupportedColumns, e.HighSeverityRisks)
+}
+
+func planFindingsFailSummary(unsupportedCols, highSeverityRisks int) string {
+	var parts []string
+	if unsupportedCols > 0 {
+		parts = append(parts, fmt.Sprintf("%d unsupported column(s)", unsupportedCols))
+	}
+	if highSeverityRisks > 0 {
+		parts = append(parts, fmt.Sprintf("%d high-severity copy risk finding(s)", highSeverityRisks))
+	}
+	// shouldFailPlan guarantees at least one of these counts is non-zero.
+	if len(parts) == 0 {
+		return "FAIL"
+	}
+	return "FAIL: " + strings.Join(parts, ", ")
+}
+
+func parsePlanFailOn(s string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	if v == "" {
+		return "none", nil
+	}
+	switch v {
+	case "none", "errors", "warnings":
+		return v, nil
+	default:
+		return "", fmt.Errorf("--fail-on must be none, errors, or warnings")
+	}
+}
+
+// wizardPlanOptions is the interactive wizard default: human-readable plan, never CI gate.
+func wizardPlanOptions() PlanOptions {
+	return PlanOptions{Format: "text", FailOn: "none"}
+}
+
+func shouldFailPlan(report *PlanReport, level string) bool {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "errors":
+		return len(report.UnsupportedColumns) > 0
+	case "warnings":
+		if len(report.UnsupportedColumns) > 0 {
+			return true
+		}
+		for _, r := range report.CopyRiskFindings {
+			if strings.EqualFold(r.Severity, "high") {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+func countHighSeverityCopyRisks(report *PlanReport) int {
+	n := 0
+	for _, r := range report.CopyRiskFindings {
+		if strings.EqualFold(r.Severity, "high") {
+			n++
+		}
+	}
+	return n
 }
 
 // PlanReport holds all findings from the plan analysis.
@@ -117,19 +200,33 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--format must be text or json")
 	}
 
+	failOn, err := parsePlanFailOn(planFailOn)
+	if err != nil {
+		return err
+	}
+
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
 		return err
 	}
 
-	return runPlanWithConfig(cfg, cmd.OutOrStdout())
+	return runPlanWithConfig(cfg, cmd.OutOrStdout(), PlanOptions{
+		FailOn:    failOn,
+		Format:    planFormat,
+		OutputDir: planOutputDir,
+	})
 }
 
-func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
-	format := planFormat
+func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) error {
+	format := opts.Format
 	if format == "" {
 		format = "text"
 	}
+	failOn, err := parsePlanFailOn(opts.FailOn)
+	if err != nil {
+		return err
+	}
+	outputDir := opts.OutputDir
 
 	ctx := context.Background()
 
@@ -199,11 +296,23 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer) error {
 		writePlanText(out, report)
 	}
 
-	if planOutputDir != "" {
-		if err := writeHookSkeletons(planOutputDir, report, cfg.Schema); err != nil {
+	if outputDir != "" {
+		if err := writeHookSkeletons(outputDir, report, cfg.Schema); err != nil {
 			return fmt.Errorf("write hook skeletons: %w", err)
 		}
-		log.Printf("hook skeletons written to %s", planOutputDir)
+		log.Printf("hook skeletons written to %s", outputDir)
+	}
+
+	if shouldFailPlan(report, failOn) {
+		highRisks := countHighSeverityCopyRisks(report)
+		nUnsupported := len(report.UnsupportedColumns)
+		if format == "text" {
+			fmt.Fprintln(out, planFindingsFailSummary(nUnsupported, highRisks))
+		}
+		return &PlanFindingsError{
+			UnsupportedColumns: nUnsupported,
+			HighSeverityRisks:  highRisks,
+		}
 	}
 
 	return nil

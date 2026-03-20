@@ -125,7 +125,7 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 
 	if nextStep == "plan" {
 		fmt.Fprintln(w.out, w.styles.accent("Generating migration plan..."))
-		if err := generatedConfigPlanner(cfg, w.out); err != nil {
+		if err := generatedConfigPlanner(cfg, w.out, wizardPlanOptions()); err != nil {
 			return fmt.Errorf("run plan: %w", err)
 		}
 	}

@@ -67,6 +67,12 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
+		var planFindings *PlanFindingsError
+		if errors.As(err, &planFindings) {
+			// Mirror stdout summary so CI logs/stderr captures the gate reason (JSON mode only writes this here).
+			fmt.Fprintln(os.Stderr, planFindings.Error())
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
