@@ -59,11 +59,11 @@ SQLite uses type affinity, so pgferry keeps the mapping conservative.
 | `NUMERIC` | `numeric` | |
 | `NUMERIC(P,S)` / `DECIMAL(P,S)` | `numeric(P,S)` | Precision and scale are preserved when declared. |
 | `BOOLEAN` | `boolean` | |
-| `DATETIME`, `TIMESTAMP` | `timestamp` | |
+| `DATETIME`, `TIMESTAMP` | `timestamp` | With `datetime_as_timestamptz = true`, maps to `timestamptz`. `plan` emits a temporal warning: SQLite values have no timezone, so PostgreSQL session timezone is load-bearing. |
 | `DATE` | `date` | |
 | `JSON` | `jsonb` | `json` when `json_as_jsonb = false` |
 
-SQLite rejects MySQL-family-only and MSSQL-only type-mapping options during config validation.
+SQLite accepts `datetime_as_timestamptz` for `DATETIME` / `TIMESTAMP`. Other MySQL-family-only and MSSQL-only type-mapping options are rejected during config validation.
 
 ## MSSQL to PostgreSQL
 

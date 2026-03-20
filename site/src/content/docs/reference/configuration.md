@@ -185,6 +185,7 @@ The `database` parameter is required because pgferry extracts the DB name for in
 | `source.charset` | Yes | Yes | Error | Error |
 | `source.source_schema` | N/A | N/A | N/A | Yes |
 | MySQL-family type options | Yes | Yes | Error | Error |
+| `datetime_as_timestamptz` for date/time types | Yes | Yes | Yes (`DATETIME` / `TIMESTAMP` → `timestamptz`) | Yes |
 | MSSQL-only type options | Error | Error | Error | Yes |
 | `[postgis]` | Yes | Error | Error | Error |
 | `collation_mode` / `collation_map` / `ci_as_citext` | Yes | Yes | Error | Error |

@@ -180,9 +180,6 @@ func (s *sqliteSourceDB) ValidateTypeMapping(typeMap TypeMappingConfig) error {
 	if typeMap.Binary16AsUUID {
 		errs = append(errs, "binary16_as_uuid is a MySQL/MariaDB-only option")
 	}
-	if typeMap.DatetimeAsTimestamptz {
-		errs = append(errs, "datetime_as_timestamptz is a MySQL/MariaDB-only option")
-	}
 	if typeMap.VarcharAsText {
 		errs = append(errs, "varchar_as_text is a MySQL/MariaDB-only option")
 	}
@@ -801,6 +798,9 @@ func sqliteMapType(col Column, typeMap TypeMappingConfig) (string, error) {
 	case "BOOLEAN", "BOOL":
 		return "boolean", nil
 	case "DATETIME", "TIMESTAMP":
+		if typeMap.DatetimeAsTimestamptz {
+			return "timestamptz", nil
+		}
 		return "timestamp", nil
 	case "DATE":
 		return "date", nil
