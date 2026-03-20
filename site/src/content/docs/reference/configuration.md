@@ -94,7 +94,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `dsn` | string | required | PostgreSQL connection string. |
+| `dsn` | string | required | PostgreSQL connection string. If it does not set `pool_max_conns`, pgferry raises target pool `MaxConns` to at least `max(workers, index_workers)`. If `pool_max_conns` is set explicitly, pgferry preserves it and warns when it is lower than that concurrency. |
 
 ### `[type_mapping]`
 

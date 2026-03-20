@@ -62,6 +62,7 @@ Factory: `newSourceDB(sourceType string)` returns the correct implementation bas
 
 - Source names are converted to snake_case by default via `toSnakeCase`; when `snake_case_identifiers=false`, only lowercased; PostgreSQL reserved words are quoted via `pgIdent`
 - Tables are created as UNLOGGED by default during full migrations; set `unlogged_tables=false` for crash-safe WAL logging or when using `resume=true`
+- Target PostgreSQL pools are created via `pgxpool.ParseConfig`; when `[target].dsn` does not set `pool_max_conns`, pgferry raises `MaxConns` to at least the effective migration concurrency (`max(workers, index_workers)`). If `pool_max_conns` is set explicitly, pgferry preserves it and only warns when it is lower than that concurrency.
 - `auto_increment` columns get PG sequences; `ON UPDATE CURRENT_TIMESTAMP` columns get trigger emulation only when `replicate_on_update_current_timestamp=true`
 - `type_mapping.enum_mode` controls enum handling (`text` or `check`); `type_mapping.set_mode` controls set handling (`text` or `text_array`) — MySQL/MariaDB only
 - Some type mapping options are MySQL/MariaDB-only (`tinyint1_as_boolean`, `binary16_as_uuid`, `varchar_as_text`, `widen_unsigned_integers`, `enum_mode`, `set_mode`); some are MSSQL-only (`nvarchar_as_text`, `money_as_numeric`, `xml_as_text`); some are shared (`datetime_as_timestamptz`, `spatial_mode`). Incompatible sources reject these at config validation
