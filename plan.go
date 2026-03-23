@@ -502,21 +502,20 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 
 func newPlanTableFilterReport(r schemaFilterReport) *PlanTableFilterReport {
 	out := &PlanTableFilterReport{
-		TotalTables:       r.TotalTables,
-		SelectedTables:    append([]string(nil), r.SelectedTables...),
-		SkippedTables:     append([]string(nil), r.SkippedTables...),
-		OverlappingTables: append([]string(nil), r.OverlappingTables...),
+		TotalTables: r.TotalTables,
+		// Non-nil empty slices so JSON encodes [] instead of null for absent entries.
+		SelectedTables:     append(make([]string, 0, len(r.SelectedTables)), r.SelectedTables...),
+		SkippedTables:      append(make([]string, 0, len(r.SkippedTables)), r.SkippedTables...),
+		OverlappingTables:  append(make([]string, 0, len(r.OverlappingTables)), r.OverlappingTables...),
+		SkippedForeignKeys: make([]PlanSkippedForeignKey, 0, len(r.SkippedForeignKeys)),
 	}
-	if len(r.SkippedForeignKeys) > 0 {
-		out.SkippedForeignKeys = make([]PlanSkippedForeignKey, 0, len(r.SkippedForeignKeys))
-		for _, fk := range r.SkippedForeignKeys {
-			out.SkippedForeignKeys = append(out.SkippedForeignKeys, PlanSkippedForeignKey{
-				Table:    fk.Table,
-				Name:     fk.Name,
-				RefTable: fk.RefTable,
-				Reason:   fk.Reason,
-			})
-		}
+	for _, fk := range r.SkippedForeignKeys {
+		out.SkippedForeignKeys = append(out.SkippedForeignKeys, PlanSkippedForeignKey{
+			Table:    fk.Table,
+			Name:     fk.Name,
+			RefTable: fk.RefTable,
+			Reason:   fk.Reason,
+		})
 	}
 	return out
 }

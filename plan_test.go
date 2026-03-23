@@ -621,6 +621,29 @@ func TestNewPlanTableFilterReport(t *testing.T) {
 	}
 }
 
+func TestNewPlanTableFilterReport_JSONEmptySlicesAreArrays(t *testing.T) {
+	r := schemaFilterReport{
+		TotalTables:    2,
+		SelectedTables: []string{"only"},
+	}
+	got := newPlanTableFilterReport(r)
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	s := string(b)
+	for _, bad := range []string{
+		`"skipped_tables":null`,
+		`"overlapping_tables":null`,
+		`"skipped_foreign_keys":null`,
+		`"selected_tables":null`,
+	} {
+		if strings.Contains(s, bad) {
+			t.Fatalf("expected empty JSON arrays, found %q in %s", bad, s)
+		}
+	}
+}
+
 func TestWritePlanJSON(t *testing.T) {
 	report := &PlanReport{
 		Summary: PlanSummary{
