@@ -15,6 +15,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// snapshotPlanGlobals saves plan CLI package vars and restores them after the test.
+func snapshotPlanGlobals(t *testing.T) {
+	t.Helper()
+	prevInput := planInputPath
+	prevFormat := planFormat
+	prevFail := planFailOn
+	prevConfig := planConfigPath
+	prevOut := planOutputDir
+	t.Cleanup(func() {
+		planInputPath = prevInput
+		planFormat = prevFormat
+		planFailOn = prevFail
+		planConfigPath = prevConfig
+		planOutputDir = prevOut
+	})
+}
+
 func TestBuildPlanReport_Empty(t *testing.T) {
 	schema := &Schema{}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig()}
@@ -1045,18 +1062,7 @@ func TestRunPlan_InvalidFailOn(t *testing.T) {
 }
 
 func TestRunPlanFromInput_Text(t *testing.T) {
-	prevInput := planInputPath
-	prevFormat := planFormat
-	prevFail := planFailOn
-	prevConfig := planConfigPath
-	prevOut := planOutputDir
-	t.Cleanup(func() {
-		planInputPath = prevInput
-		planFormat = prevFormat
-		planFailOn = prevFail
-		planConfigPath = prevConfig
-		planOutputDir = prevOut
-	})
+	snapshotPlanGlobals(t)
 
 	dbPath := filepath.Join(t.TempDir(), "plan-from-input.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
@@ -1109,18 +1115,7 @@ func TestRunPlanFromInput_Text(t *testing.T) {
 }
 
 func TestRunPlanFromInput_FailOn(t *testing.T) {
-	prevInput := planInputPath
-	prevFormat := planFormat
-	prevFail := planFailOn
-	prevConfig := planConfigPath
-	prevOut := planOutputDir
-	t.Cleanup(func() {
-		planInputPath = prevInput
-		planFormat = prevFormat
-		planFailOn = prevFail
-		planConfigPath = prevConfig
-		planOutputDir = prevOut
-	})
+	snapshotPlanGlobals(t)
 
 	jsonPath := filepath.Join(t.TempDir(), "report.json")
 	report := PlanReport{
@@ -1159,18 +1154,7 @@ func TestRunPlanFromInput_FailOn(t *testing.T) {
 }
 
 func TestRunPlanFromInput_RejectsOutputDir(t *testing.T) {
-	prevInput := planInputPath
-	prevFormat := planFormat
-	prevFail := planFailOn
-	prevConfig := planConfigPath
-	prevOut := planOutputDir
-	t.Cleanup(func() {
-		planInputPath = prevInput
-		planFormat = prevFormat
-		planFailOn = prevFail
-		planConfigPath = prevConfig
-		planOutputDir = prevOut
-	})
+	snapshotPlanGlobals(t)
 
 	planInputPath = filepath.Join(t.TempDir(), "report.json")
 	planFormat = "text"
@@ -1188,18 +1172,7 @@ func TestRunPlanFromInput_RejectsOutputDir(t *testing.T) {
 }
 
 func TestRunPlanFromInput_InvalidJSON(t *testing.T) {
-	prevInput := planInputPath
-	prevFormat := planFormat
-	prevFail := planFailOn
-	prevConfig := planConfigPath
-	prevOut := planOutputDir
-	t.Cleanup(func() {
-		planInputPath = prevInput
-		planFormat = prevFormat
-		planFailOn = prevFail
-		planConfigPath = prevConfig
-		planOutputDir = prevOut
-	})
+	snapshotPlanGlobals(t)
 
 	jsonPath := filepath.Join(t.TempDir(), "bad.json")
 	if err := os.WriteFile(jsonPath, []byte("{not json"), 0o644); err != nil {
@@ -1217,6 +1190,42 @@ func TestRunPlanFromInput_InvalidJSON(t *testing.T) {
 		t.Fatal("runPlan() error = nil, want decode error")
 	}
 	if !strings.Contains(err.Error(), "decode plan input") {
+		t.Fatalf("runPlan() error = %q", err.Error())
+	}
+}
+
+func TestRunPlanFromInput_RejectsConfig(t *testing.T) {
+	snapshotPlanGlobals(t)
+
+	planInputPath = filepath.Join(t.TempDir(), "report.json")
+	planFormat = "text"
+	planFailOn = "none"
+	planConfigPath = filepath.Join(t.TempDir(), "migration.toml")
+	planOutputDir = ""
+
+	err := runPlan(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("runPlan() error = nil, want --config rejected")
+	}
+	if !strings.Contains(err.Error(), "--config") {
+		t.Fatalf("runPlan() error = %q", err.Error())
+	}
+}
+
+func TestRunPlanFromInput_RejectsPositionalArg(t *testing.T) {
+	snapshotPlanGlobals(t)
+
+	planInputPath = filepath.Join(t.TempDir(), "report.json")
+	planFormat = "text"
+	planFailOn = "none"
+	planConfigPath = ""
+	planOutputDir = ""
+
+	err := runPlan(&cobra.Command{}, []string{"migration.toml"})
+	if err == nil {
+		t.Fatal("runPlan() error = nil, want positional config rejected")
+	}
+	if !strings.Contains(err.Error(), "config file when using --input") {
 		t.Fatalf("runPlan() error = %q", err.Error())
 	}
 }

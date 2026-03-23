@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,20 +15,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errInvalidPlanFormat is returned when plan output format is not text or json.
+var errInvalidPlanFormat = errors.New("--format must be text or json")
+
 var planOutputDir string
 var planFormat string
 var planFailOn string
 var planInputPath string
 
 var planCmd = &cobra.Command{
-	Use:   "plan [migration.toml]",
+	Use:   "plan [migration.toml] | plan --input <report.json>",
 	Short: "Analyze source schema and generate a migration plan report",
 	Long: `Analyze the source database schema and produce a report of objects that
 require manual follow-up: views, routines, triggers, generated columns,
 and skipped indexes.
 
 Use --input with a JSON report from a previous --format json run to re-render
-or apply --fail-on checks without connecting to the source.
+or apply --fail-on checks without connecting to the source. --input cannot be
+combined with a migration config (--config or a positional TOML path); use one
+or the other.
 
 Optionally generates hook skeleton files in the specified output directory.`,
 	Args: cobra.MaximumNArgs(1),
@@ -197,7 +203,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	switch planFormat {
 	case "text", "json":
 	default:
-		return fmt.Errorf("--format must be text or json")
+		return errInvalidPlanFormat
 	}
 
 	failOn, err := parsePlanFailOn(planFailOn)
@@ -248,7 +254,7 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	switch format {
 	case "text", "json":
 	default:
-		return fmt.Errorf("plan format must be text or json")
+		return errInvalidPlanFormat
 	}
 	failOn, err := parsePlanFailOn(opts.FailOn)
 	if err != nil {
@@ -339,7 +345,7 @@ func writePlanReportOutput(report *PlanReport, out io.Writer, format string) err
 		writePlanText(out, report)
 		return nil
 	default:
-		return fmt.Errorf("plan format must be text or json")
+		return errInvalidPlanFormat
 	}
 }
 
@@ -362,6 +368,8 @@ func applyPlanFailOn(report *PlanReport, out io.Writer, format string, failOn st
 }
 
 // renderPlanReport writes the plan report in the requested format and applies --fail-on.
+// It validates format and fail-on again so callers other than runPlan (e.g. tests) get
+// the same checks as the CLI path; runPlan already validates before runPlanFromInput.
 func renderPlanReport(report *PlanReport, out io.Writer, opts PlanOptions) error {
 	format := opts.Format
 	if format == "" {
@@ -374,7 +382,7 @@ func renderPlanReport(report *PlanReport, out io.Writer, opts PlanOptions) error
 	switch format {
 	case "text", "json":
 	default:
-		return fmt.Errorf("--format must be text or json")
+		return errInvalidPlanFormat
 	}
 	if err := writePlanReportOutput(report, out, format); err != nil {
 		return err
@@ -388,6 +396,8 @@ func runPlanFromInput(path string, out io.Writer, opts PlanOptions) error {
 		return fmt.Errorf("read plan input: %w", err)
 	}
 	var report PlanReport
+	// Unknown JSON fields are ignored so newer pgferry versions can extend PlanReport
+	// without breaking older binaries re-reading saved reports.
 	if err := json.Unmarshal(data, &report); err != nil {
 		return fmt.Errorf("decode plan input: %w", err)
 	}
