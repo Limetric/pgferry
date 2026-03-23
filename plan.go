@@ -150,6 +150,24 @@ type PlanTableChunkInfo struct {
 	FullTableCopyReason string `json:"full_table_copy_reason,omitempty"`
 }
 
+// PlanSkippedForeignKey describes a foreign key omitted because include/exclude table filtering
+// dropped the FK or its referenced table from the migrated set.
+type PlanSkippedForeignKey struct {
+	Table    string `json:"table"`
+	Name     string `json:"name"`
+	RefTable string `json:"ref_table"`
+	Reason   string `json:"reason"`
+}
+
+// PlanTableFilterReport summarizes include/exclude table filtering applied before plan analysis.
+type PlanTableFilterReport struct {
+	TotalTables        int                     `json:"total_tables"`
+	SelectedTables     []string                `json:"selected_tables"`
+	SkippedTables      []string                `json:"skipped_tables"`
+	OverlappingTables  []string                `json:"overlapping_tables"`
+	SkippedForeignKeys []PlanSkippedForeignKey `json:"skipped_foreign_keys"`
+}
+
 // PlanSummary is a high-level snapshot of the planned migration (config echo + table counts).
 type PlanSummary struct {
 	SourceType         string `json:"source_type"`
@@ -173,6 +191,7 @@ type PlanSummary struct {
 // PlanReport holds all findings from the plan analysis.
 type PlanReport struct {
 	Summary                 PlanSummary                  `json:"summary"`
+	TableFilterReport       *PlanTableFilterReport       `json:"table_filter_report,omitempty"`
 	RequiredExtensions      []PlanRequiredExtension      `json:"required_extensions"`
 	CopyRiskFindings        []PlanCopyRiskFinding        `json:"copy_risk_findings"`
 	TableChunkPlan          []PlanTableChunkInfo         `json:"table_chunk_plan"`
@@ -362,6 +381,9 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	}
 	summary := buildPlanSummary(schema, cfg, dbName, copyRisks, cfg.CopyRiskAnalysis)
 	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, tableChunkPlan, src, cfg, typeMap, summary)
+	if hasTableFilters(cfg) {
+		report.TableFilterReport = newPlanTableFilterReport(filterReport)
+	}
 
 	if err := writePlanReportOutput(report, out, format); err != nil {
 		return err
@@ -476,6 +498,21 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 		s.TotalEstimatedRows = sumCopyRiskEstimatedRowsByTable(copyRisks)
 	}
 	return s
+}
+
+func newPlanTableFilterReport(r schemaFilterReport) *PlanTableFilterReport {
+	out := &PlanTableFilterReport{
+		TotalTables: r.TotalTables,
+		// Non-nil empty slices so JSON encodes [] instead of null for absent entries.
+		SelectedTables:     append(make([]string, 0, len(r.SelectedTables)), r.SelectedTables...),
+		SkippedTables:      append(make([]string, 0, len(r.SkippedTables)), r.SkippedTables...),
+		OverlappingTables:  append(make([]string, 0, len(r.OverlappingTables)), r.OverlappingTables...),
+		SkippedForeignKeys: make([]PlanSkippedForeignKey, 0, len(r.SkippedForeignKeys)),
+	}
+	for _, fk := range r.SkippedForeignKeys {
+		out.SkippedForeignKeys = append(out.SkippedForeignKeys, PlanSkippedForeignKey(fk))
+	}
+	return out
 }
 
 func sumCopyRiskEstimatedRowsByTable(findings []PlanCopyRiskFinding) int64 {
@@ -711,6 +748,41 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t snake_case_identifiers=%t\n",
 			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.SnakeCaseIDs)
 		fmt.Fprintln(w)
+	}
+
+	if report.TableFilterReport != nil {
+		hasContent = true
+		tf := report.TableFilterReport
+		fmt.Fprintf(w, "## Table Filters\n\n")
+		fmt.Fprintf(w, "Selected %d of %d source table(s).\n\n", len(tf.SelectedTables), tf.TotalTables)
+		if len(tf.SelectedTables) > 0 {
+			fmt.Fprintf(w, "Selected tables (%d):\n", len(tf.SelectedTables))
+			for _, name := range tf.SelectedTables {
+				fmt.Fprintf(w, "  - %s\n", name)
+			}
+			fmt.Fprintln(w)
+		}
+		if len(tf.SkippedTables) > 0 {
+			fmt.Fprintf(w, "Skipped tables (%d):\n", len(tf.SkippedTables))
+			for _, name := range tf.SkippedTables {
+				fmt.Fprintf(w, "  - %s\n", name)
+			}
+			fmt.Fprintln(w)
+		}
+		if len(tf.OverlappingTables) > 0 {
+			fmt.Fprintf(w, "Overlapping include/exclude entries — exclude_tables wins (%d):\n", len(tf.OverlappingTables))
+			for _, line := range tf.OverlappingTables {
+				fmt.Fprintf(w, "  - %s\n", line)
+			}
+			fmt.Fprintln(w)
+		}
+		if len(tf.SkippedForeignKeys) > 0 {
+			fmt.Fprintf(w, "Skipped foreign keys (%d):\n", len(tf.SkippedForeignKeys))
+			for _, fk := range tf.SkippedForeignKeys {
+				fmt.Fprintf(w, "  - %s.%s -> %s: %s\n", fk.Table, fk.Name, fk.RefTable, fk.Reason)
+			}
+			fmt.Fprintln(w)
+		}
 	}
 
 	if len(report.RequiredExtensions) > 0 {
