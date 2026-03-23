@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/go-sql-driver/mysql v1.9.3
-	github.com/jackc/pgx/v5 v5.8.0
+	github.com/jackc/pgx/v5 v5.9.0
 	github.com/microsoft/go-mssqldb v1.9.8
 	github.com/spf13/cobra v1.10.2
 	modernc.org/sqlite v1.47.0
