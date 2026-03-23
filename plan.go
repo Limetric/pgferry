@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/dustin/go-humanize"
@@ -149,8 +150,29 @@ type PlanTableChunkInfo struct {
 	FullTableCopyReason string `json:"full_table_copy_reason,omitempty"`
 }
 
+// PlanSummary is a high-level snapshot of the planned migration (config echo + table counts).
+type PlanSummary struct {
+	SourceType         string `json:"source_type"`
+	SourceDatabase     string `json:"source_database"`
+	TargetSchema       string `json:"target_schema"`
+	TableCount         int    `json:"table_count"`
+	TotalEstimatedRows int64  `json:"total_estimated_rows,omitempty"`
+	Workers            int    `json:"workers"`
+	IndexWorkers       int    `json:"index_workers"`
+	ChunkSize          int64  `json:"chunk_size"`
+	UnloggedTables     bool   `json:"unlogged_tables"`
+	Resume             bool   `json:"resume"`
+	Validation         string `json:"validation"`
+	SnapshotMode       string `json:"source_snapshot_mode"`
+	CopyRiskAnalysis   bool   `json:"copy_risk_analysis"`
+	PreserveDefaults   bool   `json:"preserve_defaults"`
+	CleanOrphans       bool   `json:"clean_orphans"`
+	SnakeCaseIDs       bool   `json:"snake_case_identifiers"`
+}
+
 // PlanReport holds all findings from the plan analysis.
 type PlanReport struct {
+	Summary                 PlanSummary                  `json:"summary"`
 	RequiredExtensions      []PlanRequiredExtension      `json:"required_extensions"`
 	CopyRiskFindings        []PlanCopyRiskFinding        `json:"copy_risk_findings"`
 	TableChunkPlan          []PlanTableChunkInfo         `json:"table_chunk_plan"`
@@ -338,7 +360,8 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 			tableChunkPlan = chunks
 		}
 	}
-	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, tableChunkPlan, src, cfg, typeMap)
+	summary := buildPlanSummary(schema, cfg, dbName, copyRisks, cfg.CopyRiskAnalysis)
+	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, tableChunkPlan, src, cfg, typeMap, summary)
 
 	if err := writePlanReportOutput(report, out, format); err != nil {
 		return err
@@ -422,8 +445,84 @@ func runPlanFromInput(path string, out io.Writer, opts PlanOptions) error {
 	return renderPlanReport(&report, out, opts)
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, tableChunkPlan []PlanTableChunkInfo, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
+// buildPlanSummary copies migration config into PlanSummary. copyRiskEnabled is
+// passed explicitly (not inferred only inside this function) so callers and tests
+// can control whether TotalEstimatedRows is filled from copyRisks without
+// mutating cfg.
+func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyRisks []PlanCopyRiskFinding, copyRiskEnabled bool) PlanSummary {
+	if cfg == nil {
+		return PlanSummary{}
+	}
+	s := PlanSummary{
+		SourceType:       cfg.Source.Type,
+		SourceDatabase:   dbName,
+		TargetSchema:     cfg.Schema,
+		Workers:          cfg.Workers,
+		IndexWorkers:     cfg.IndexWorkers,
+		ChunkSize:        cfg.ChunkSize,
+		UnloggedTables:   cfg.UnloggedTables,
+		Resume:           cfg.Resume,
+		Validation:       cfg.Validation,
+		SnapshotMode:     cfg.SourceSnapshotMode,
+		CopyRiskAnalysis: cfg.CopyRiskAnalysis,
+		PreserveDefaults: cfg.PreserveDefaults,
+		CleanOrphans:     cfg.CleanOrphans,
+		SnakeCaseIDs:     cfg.SnakeCaseIdentifiers,
+	}
+	if schema != nil {
+		s.TableCount = len(schema.Tables)
+	}
+	if copyRiskEnabled {
+		s.TotalEstimatedRows = sumCopyRiskEstimatedRowsByTable(copyRisks)
+	}
+	return s
+}
+
+func sumCopyRiskEstimatedRowsByTable(findings []PlanCopyRiskFinding) int64 {
+	byTable := make(map[string]int64)
+	for _, f := range findings {
+		if f.EstimatedRows > byTable[f.Table] {
+			byTable[f.Table] = f.EstimatedRows
+		}
+	}
+	var total int64
+	for _, n := range byTable {
+		total += n
+	}
+	return total
+}
+
+// planSummaryHasData is true when Summary was produced by a connected plan run.
+// Reports loaded from older JSON without a summary block decode as the zero
+// struct; SourceType stays empty so we skip printing an empty Summary section.
+func planSummaryHasData(s PlanSummary) bool {
+	return s.SourceType != ""
+}
+
+func formatInt64Thousands(n int64) string {
+	if n < 0 {
+		// Row counts are non-negative; avoid -math.MinInt64 overflow from recursive -n.
+		return strconv.FormatInt(n, 10)
+	}
+	s := strconv.FormatUint(uint64(n), 10)
+	if len(s) <= 3 {
+		return s
+	}
+	var chunks []string
+	for len(s) > 3 {
+		chunks = append(chunks, s[len(s)-3:])
+		s = s[:len(s)-3]
+	}
+	chunks = append(chunks, s)
+	for i, j := 0, len(chunks)-1; i < j; i, j = i+1, j-1 {
+		chunks[i], chunks[j] = chunks[j], chunks[i]
+	}
+	return strings.Join(chunks, ",")
+}
+
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, tableChunkPlan []PlanTableChunkInfo, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig, summary PlanSummary) *PlanReport {
 	report := &PlanReport{
+		Summary:                 summary,
 		RequiredExtensions:      []PlanRequiredExtension{},
 		CopyRiskFindings:        []PlanCopyRiskFinding{},
 		TableChunkPlan:          []PlanTableChunkInfo{},
@@ -590,7 +689,29 @@ func truncateTableChunkPlanTableName(s string, width int) string {
 }
 
 func writePlanText(w io.Writer, report *PlanReport) {
+	if report == nil {
+		fmt.Fprintln(w, "No manual follow-up items detected.")
+		return
+	}
+
 	hasContent := false
+
+	if planSummaryHasData(report.Summary) {
+		hasContent = true
+		s := report.Summary
+		fmt.Fprintf(w, "## Summary\n\n")
+		fmt.Fprintf(w, "Source: %s (%s)\n", s.SourceType, s.SourceDatabase)
+		fmt.Fprintf(w, "Target schema: %s\n", s.TargetSchema)
+		fmt.Fprintf(w, "Tables: %d\n", s.TableCount)
+		if s.CopyRiskAnalysis {
+			fmt.Fprintf(w, "Estimated rows: %s\n", formatInt64Thousands(s.TotalEstimatedRows))
+		}
+		fmt.Fprintf(w, "Config: workers=%d index_workers=%d chunk_size=%d resume=%t validation=%s\n",
+			s.Workers, s.IndexWorkers, s.ChunkSize, s.Resume, s.Validation)
+		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t snake_case_identifiers=%t\n",
+			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.SnakeCaseIDs)
+		fmt.Fprintln(w)
+	}
 
 	if len(report.RequiredExtensions) > 0 {
 		hasContent = true
