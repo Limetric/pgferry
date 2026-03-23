@@ -1176,46 +1176,6 @@ func TestRunPlanWithConfig_CopyRiskEnabled_OmitsTotalEstimatedRowsJSONWhenZero(t
 	}
 }
 
-func TestRunPlanWithConfig_CopyRiskEnabled_OmitsTotalEstimatedRowsJSONWhenZero(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "plan-copy-risk-zero.sqlite")
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	defer db.Close()
-
-	if _, err := db.Exec(`CREATE TABLE empty_table (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
-		t.Fatalf("create table: %v", err)
-	}
-
-	cfg := &MigrationConfig{
-		Schema:           "app",
-		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
-		CopyRiskAnalysis: true,
-		ChunkSize:        1000,
-		TypeMapping:      defaultTypeMappingConfig(),
-	}
-
-	var buf bytes.Buffer
-	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: "json"}); err != nil {
-		t.Fatalf("runPlanWithConfig: %v", err)
-	}
-	jsonStr := buf.String()
-	if strings.Contains(jsonStr, `"total_estimated_rows"`) {
-		t.Fatalf("JSON should omit total_estimated_rows when copy risk is enabled but sum is 0 (omitempty):\n%s", jsonStr)
-	}
-	var report PlanReport
-	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !report.Summary.CopyRiskAnalysis {
-		t.Fatal("expected copy_risk_analysis true in summary")
-	}
-	if report.Summary.TotalEstimatedRows != 0 {
-		t.Fatalf("TotalEstimatedRows = %d, want 0", report.Summary.TotalEstimatedRows)
-	}
-}
-
 func TestRunPlanFailOnErrors(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "plan-fail-on-errors.sqlite")
 	db, err := sql.Open("sqlite", dbPath)
