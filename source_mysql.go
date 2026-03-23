@@ -848,13 +848,25 @@ func introspectMySQLSourceObjects(db *sql.DB, dbName string) (*SourceObjects, er
 		return nil, fmt.Errorf("iterate routines: %w", err)
 	}
 
-	if err := collectStringRows(db, `
-		SELECT TRIGGER_NAME
+	trRows, err := db.Query(`
+		SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE
 		FROM INFORMATION_SCHEMA.TRIGGERS
 		WHERE TRIGGER_SCHEMA = ?
 		ORDER BY TRIGGER_NAME
-	`, dbName, &objs.Triggers); err != nil {
+	`, dbName)
+	if err != nil {
 		return nil, fmt.Errorf("introspect triggers: %w", err)
+	}
+	defer trRows.Close()
+	for trRows.Next() {
+		var name, table string
+		if err := trRows.Scan(&name, &table); err != nil {
+			return nil, fmt.Errorf("scan triggers: %w", err)
+		}
+		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: name, Table: table})
+	}
+	if err := trRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate triggers: %w", err)
 	}
 
 	return objs, nil

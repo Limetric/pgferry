@@ -131,17 +131,17 @@ func (s *sqliteSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceO
 		return nil, err
 	}
 
-	rows2, err := db.Query("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name")
+	rows2, err := db.Query("SELECT name, tbl_name FROM sqlite_master WHERE type='trigger' ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("introspect triggers: %w", err)
 	}
 	defer rows2.Close()
 	for rows2.Next() {
-		var name string
-		if err := rows2.Scan(&name); err != nil {
+		var name, tblName string
+		if err := rows2.Scan(&name, &tblName); err != nil {
 			return nil, err
 		}
-		objs.Triggers = append(objs.Triggers, name)
+		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: name, Table: tblName})
 	}
 	if err := rows2.Err(); err != nil {
 		return nil, err

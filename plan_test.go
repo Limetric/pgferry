@@ -102,7 +102,7 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	objs := &SourceObjects{
 		Views:    []string{"v_active_users"},
 		Routines: []string{"FUNCTION calc_score"},
-		Triggers: []string{"trg_audit"},
+		Triggers: []SourceTrigger{{Name: "trg_audit", Table: "users"}},
 	}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig(), CleanOrphans: true}
 
@@ -114,8 +114,8 @@ func TestBuildPlanReport_Full(t *testing.T) {
 	if len(report.SourceObjects.Routines) != 1 {
 		t.Errorf("routines = %d, want 1", len(report.SourceObjects.Routines))
 	}
-	if len(report.SourceObjects.Triggers) != 1 {
-		t.Errorf("triggers = %d, want 1", len(report.SourceObjects.Triggers))
+	if len(report.SourceObjects.Triggers) != 1 || report.SourceObjects.Triggers[0].Name != "trg_audit" || report.SourceObjects.Triggers[0].Table != "users" {
+		t.Errorf("triggers = %+v, want one trigger trg_audit on users", report.SourceObjects.Triggers)
 	}
 	if len(report.GeneratedColumns) != 1 {
 		t.Fatalf("generated columns = %d, want 1", len(report.GeneratedColumns))
@@ -524,6 +524,44 @@ func TestWritePlanText_TableFilters(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("text output missing %q, got:\n%s", want, got)
 		}
+	}
+}
+
+func TestWritePlanText_SourceObjectsScopeNotesWithTableFilters(t *testing.T) {
+	report := &PlanReport{
+		TableFilterReport: &PlanTableFilterReport{
+			TotalTables:    5,
+			SelectedTables: []string{"orders"},
+		},
+		SourceObjects: PlanSourceObjects{
+			Views:    []string{"v_all"},
+			Routines: []string{"FUNCTION f"},
+			Triggers: []PlanSourceTrigger{{Name: "trg_t", Table: "orders"}},
+		},
+	}
+	var buf bytes.Buffer
+	writePlanText(&buf, report)
+	got := buf.String()
+	for _, want := range []string{
+		"include_tables/exclude_tables scope",
+		"Views (1):",
+		"Routines (1):",
+		"Triggers (1):",
+		"trg_t (on orders)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("text output missing %q, got:\n%s", want, got)
+		}
+	}
+}
+
+func TestWritePlanJSON_LegacyTriggersStringArray(t *testing.T) {
+	var p PlanSourceObjects
+	if err := json.Unmarshal([]byte(`{"views":[],"routines":[],"triggers":["old_a","old_b"]}`), &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(p.Triggers) != 2 || p.Triggers[0].Name != "old_a" || p.Triggers[1].Name != "old_b" {
+		t.Fatalf("triggers = %+v", p.Triggers)
 	}
 }
 
@@ -937,7 +975,7 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 		SourceObjects: PlanSourceObjects{
 			Views:    []string{"v_summary"},
 			Routines: []string{"FUNCTION calc"},
-			Triggers: []string{"trg_audit"},
+			Triggers: []PlanSourceTrigger{{Name: "trg_audit"}},
 		},
 		SkippedIndexes: []PlanSkippedIndex{
 			{Table: "orders", Index: "idx_ft", Reason: "FULLTEXT not supported"},

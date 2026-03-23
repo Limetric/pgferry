@@ -226,3 +226,28 @@ func TestFilterSchemaTables_NilSchemaReturnsEmptySchema(t *testing.T) {
 		t.Fatalf("report.TotalTables = %d, want 0", report.TotalTables)
 	}
 }
+
+func TestFilterTriggersBySelectedTables(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "orders", PGName: "orders"},
+			{SourceName: "Products", PGName: "products"},
+		},
+	}
+	triggers := []SourceTrigger{
+		{Name: "t_orders", Table: "orders"},
+		{Name: "t_audit", Table: "audit_log"},
+		{Name: "t_unknown", Table: ""},
+	}
+	got := filterTriggersBySelectedTables(triggers, schema)
+	if len(got) != 1 || got[0].Name != "t_orders" {
+		t.Fatalf("got %+v, want only t_orders", got)
+	}
+	got2 := filterTriggersBySelectedTables([]SourceTrigger{{Name: "x", Table: "PRODUCTS"}}, schema)
+	if len(got2) != 1 || got2[0].Name != "x" {
+		t.Fatalf("case-insensitive table: got %+v", got2)
+	}
+	if filterTriggersBySelectedTables(triggers, nil) != nil {
+		t.Fatal("nil schema should yield nil")
+	}
+}

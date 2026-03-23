@@ -1,17 +1,23 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSourceObjectWarnings(t *testing.T) {
 	objs := &SourceObjects{
 		Views:    []string{"v_users"},
 		Routines: []string{"FUNCTION calc_score", "PROCEDURE sync_data"},
-		Triggers: []string{"trg_users_touch"},
+		Triggers: []SourceTrigger{{Name: "trg_users_touch", Table: "users"}},
 	}
 
 	warnings := sourceObjectWarnings(objs)
 	if len(warnings) != 5 {
 		t.Fatalf("warnings len = %d, want 5 (%v)", len(warnings), warnings)
+	}
+	if !strings.Contains(warnings[4], "trg_users_touch") || !strings.Contains(warnings[4], "users") {
+		t.Fatalf("trigger warning should name table, got %q", warnings[4])
 	}
 	if warnings[0] == "" {
 		t.Fatal("summary warning should not be empty")

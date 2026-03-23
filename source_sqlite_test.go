@@ -452,8 +452,8 @@ func TestSQLiteIntrospectSourceObjects(t *testing.T) {
 	if len(objs.Views) != 1 || objs.Views[0] != "v_users" {
 		t.Errorf("views = %v, want [v_users]", objs.Views)
 	}
-	if len(objs.Triggers) != 1 || objs.Triggers[0] != "trg_users" {
-		t.Errorf("triggers = %v, want [trg_users]", objs.Triggers)
+	if len(objs.Triggers) != 1 || objs.Triggers[0].Name != "trg_users" || objs.Triggers[0].Table != "users" {
+		t.Errorf("triggers = %v, want one trigger trg_users on users", objs.Triggers)
 	}
 	if len(objs.Routines) != 0 {
 		t.Errorf("routines = %v, want empty", objs.Routines)
