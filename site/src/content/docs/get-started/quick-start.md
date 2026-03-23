@@ -38,6 +38,8 @@ The wizard will prompt you for both of these, so you don't need to get the forma
 pgferry wizard
 ```
 
+Same wizard, different spellings: `pgferry generate` and `pgferry init` do the same thing if your fingers prefer those words.
+
 In an interactive terminal, plain `pgferry` also opens the wizard. It asks the useful questions, writes the config, and gets you out of the “blank TOML file staring contest” phase quickly.
 
 Use the wizard to generate `migration.toml`.
@@ -64,6 +66,8 @@ This step is technically optional — the same way riding your bike without chec
 ```bash
 pgferry migrate migration.toml
 ```
+
+`pgferry run migration.toml` is identical — choose whichever verb feels right that day.
 
 If you ran `plan` first, this step shouldn't have any surprises — you've already seen what's coming.
 
