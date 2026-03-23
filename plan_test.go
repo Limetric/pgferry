@@ -477,6 +477,148 @@ func TestWritePlanText_WithContent(t *testing.T) {
 			t.Errorf("text output missing %q, got:\n%s", want, got)
 		}
 	}
+	if strings.Contains(got, "## Table Filters") {
+		t.Errorf("text output should not include table filters when TableFilterReport is nil, got:\n%s", got)
+	}
+}
+
+func TestWritePlanText_TableFilters(t *testing.T) {
+	report := &PlanReport{
+		Summary: PlanSummary{
+			SourceType: "mysql", SourceDatabase: "db", TargetSchema: "app",
+			TableCount: 1, Workers: 1, IndexWorkers: 1, ChunkSize: 1000,
+			Validation: "row_count", SnapshotMode: "none",
+		},
+		TableFilterReport: &PlanTableFilterReport{
+			TotalTables:       3,
+			SelectedTables:    []string{"orders", "products"},
+			SkippedTables:     []string{"legacy_audit"},
+			OverlappingTables: []string{`orders (excluded by "orders")`},
+			SkippedForeignKeys: []PlanSkippedForeignKey{
+				{
+					Table:    "orders",
+					Name:     "fk_orders_customer",
+					RefTable: "customers",
+					Reason:   "referenced table customers is not in the selected table set",
+				},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	writePlanText(&buf, report)
+	got := buf.String()
+	for _, want := range []string{
+		"## Table Filters",
+		"Selected 2 of 3 source table(s).",
+		"Selected tables (2):",
+		"  - orders",
+		"  - products",
+		"Skipped tables (1):",
+		"  - legacy_audit",
+		"Overlapping include/exclude entries",
+		`orders (excluded by "orders")`,
+		"Skipped foreign keys (1):",
+		"fk_orders_customer",
+		"referenced table customers is not in the selected table set",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("text output missing %q, got:\n%s", want, got)
+		}
+	}
+}
+
+func TestWritePlanJSON_TableFilterReportRoundTrip(t *testing.T) {
+	report := &PlanReport{
+		TableFilterReport: &PlanTableFilterReport{
+			TotalTables:       5,
+			SelectedTables:    []string{"a", "b"},
+			SkippedTables:     []string{"c"},
+			OverlappingTables: []string{"overlap"},
+			SkippedForeignKeys: []PlanSkippedForeignKey{
+				{Table: "a", Name: "fk_a_b", RefTable: "b", Reason: "reason"},
+			},
+		},
+	}
+	var buf bytes.Buffer
+	if err := writePlanJSON(&buf, report); err != nil {
+		t.Fatalf("writePlanJSON: %v", err)
+	}
+	var decoded PlanReport
+	if err := json.Unmarshal(buf.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode JSON: %v", err)
+	}
+	if decoded.TableFilterReport == nil {
+		t.Fatal("TableFilterReport is nil after round-trip")
+	}
+	tf := decoded.TableFilterReport
+	if tf.TotalTables != 5 || len(tf.SelectedTables) != 2 || len(tf.SkippedTables) != 1 {
+		t.Fatalf("unexpected table filter report: %+v", tf)
+	}
+	if len(tf.SkippedForeignKeys) != 1 || tf.SkippedForeignKeys[0].Name != "fk_a_b" {
+		t.Fatalf("skipped FKs: %+v", tf.SkippedForeignKeys)
+	}
+}
+
+func TestBuildPlanReport_OrphanCleanupRespectsTableFilter(t *testing.T) {
+	cfg := &MigrationConfig{
+		Source:        SourceConfig{Type: "mysql"},
+		TypeMapping:   defaultTypeMappingConfig(),
+		IncludeTables: []string{"orders"},
+		CleanOrphans:  true,
+	}
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "id", PGName: "id", DataType: "int"}},
+				ForeignKeys: []ForeignKey{
+					{
+						Name:       "fk_orders_customer",
+						Columns:    []string{"customer_id"},
+						RefTable:   "customers",
+						RefPGTable: "customers",
+						RefColumns: []string{"id"},
+					},
+				},
+			},
+			{
+				SourceName: "customers",
+				PGName:     "customers",
+				Columns:    []Column{{SourceName: "id", PGName: "id", DataType: "int"}},
+			},
+		},
+	}
+	filtered, _, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables: %v", err)
+	}
+	report := buildPlanReport(filtered, nil, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg), PlanSummary{})
+	if len(report.OrphanCleanupCandidates) != 0 {
+		t.Fatalf("FK to a table excluded by filters must not appear in orphan cleanup; got %d candidate(s): %+v",
+			len(report.OrphanCleanupCandidates), report.OrphanCleanupCandidates)
+	}
+}
+
+func TestNewPlanTableFilterReport(t *testing.T) {
+	r := schemaFilterReport{
+		TotalTables:       10,
+		SelectedTables:    []string{"x"},
+		SkippedTables:     []string{"y"},
+		OverlappingTables: []string{"z"},
+		SkippedForeignKeys: []skippedForeignKey{
+			{Table: "t", Name: "fk", RefTable: "r", Reason: "because"},
+		},
+	}
+	got := newPlanTableFilterReport(r)
+	if got.TotalTables != 10 || len(got.SelectedTables) != 1 || len(got.SkippedForeignKeys) != 1 {
+		t.Fatalf("newPlanTableFilterReport: %+v", got)
+	}
+	// Mutating the original report must not alias slices into the plan report.
+	r.SelectedTables[0] = "mutated"
+	if got.SelectedTables[0] != "x" {
+		t.Fatalf("plan report shares slice with schemaFilterReport")
+	}
 }
 
 func TestWritePlanJSON(t *testing.T) {
