@@ -556,6 +556,35 @@ func TestWritePlanJSON_TableChunkPlanRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTableChunkPlanTableColumnWidth(t *testing.T) {
+	if w := tableChunkPlanTableColumnWidth([]PlanTableChunkInfo{{Table: "a"}}); w != minTableChunkPlanTableColWidth {
+		t.Fatalf("width = %d, want min %d", w, minTableChunkPlanTableColWidth)
+	}
+	long := strings.Repeat("x", 60)
+	if w := tableChunkPlanTableColumnWidth([]PlanTableChunkInfo{{Table: long}}); w != maxTableChunkPlanTableColWidth {
+		t.Fatalf("width = %d, want max %d", w, maxTableChunkPlanTableColWidth)
+	}
+}
+
+func TestWritePlanText_TableChunkPlan_LongTableName(t *testing.T) {
+	long := strings.Repeat("n", 60)
+	report := &PlanReport{
+		TableChunkPlan: []PlanTableChunkInfo{
+			{
+				Table: long, EstimatedRows: 1, Chunkable: true,
+				ChunkKey: "id", ChunkKeyType: "int", EstimatedChunks: 1,
+			},
+		},
+	}
+	var buf bytes.Buffer
+	writePlanText(&buf, report)
+	got := buf.String()
+	wantName := truncateTableChunkPlanTableName(long, maxTableChunkPlanTableColWidth)
+	if !strings.Contains(got, wantName) {
+		t.Fatalf("expected truncated table name %q in:\n%s", wantName, got)
+	}
+}
+
 func TestWritePlanText_TableChunkPlan(t *testing.T) {
 	report := &PlanReport{
 		TableChunkPlan: []PlanTableChunkInfo{

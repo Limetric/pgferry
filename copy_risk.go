@@ -101,12 +101,15 @@ func collectCopyRiskFindingsAndTableChunkPlan(ctx context.Context, source dbQuer
 	}
 
 	sortCopyRiskFindings(findings)
+	// Chunk plan is sorted by table name so operators get a stable directory; copy risk
+	// findings remain severity-ordered (see sortCopyRiskFindings).
 	sort.Slice(chunkPlan, func(i, j int) bool {
 		return chunkPlan[i].Table < chunkPlan[j].Table
 	})
 	return findings, chunkPlan, nil
 }
 
+// buildPlanTableChunkInfo summarizes chunking for one table. When key is nil, minPK and maxPK are ignored.
 func buildPlanTableChunkInfo(table Table, src SourceDB, rowCount int64, chunkSize int64, key *ChunkKey, minPK, maxPK int64) PlanTableChunkInfo {
 	if key == nil {
 		return PlanTableChunkInfo{

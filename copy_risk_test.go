@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"path/filepath"
 	"strings"
@@ -331,6 +332,8 @@ func TestBuildSourceCountQuery_ReusedByCopyRisk(t *testing.T) {
 	}
 }
 
+// TestBuildPlanTableChunkInfo_Chunkable checks estimateChunkCount from the PK key range (min..max),
+// not from EstimatedRows: range 1..1_000_000 with chunk_size 100_000 yields 10 key-range chunks.
 func TestBuildPlanTableChunkInfo_Chunkable(t *testing.T) {
 	src := &mysqlSourceDB{}
 	table := Table{
@@ -352,6 +355,34 @@ func TestBuildPlanTableChunkInfo_Chunkable(t *testing.T) {
 	}
 	if got.MinPK == nil || *got.MinPK != 1 || got.MaxPK == nil || *got.MaxPK != 1_000_000 {
 		t.Fatalf("range = %v..%v", got.MinPK, got.MaxPK)
+	}
+}
+
+type failQueryQuerier struct{}
+
+func (failQueryQuerier) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	return nil, errors.New("forced query failure")
+}
+
+func TestCollectCopyRiskFindingsAndTableChunkPlan_QueryError(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "t",
+				PGName:     "t",
+				Columns: []Column{
+					{SourceName: "id", PGName: "id", DataType: "int", ColumnType: "int"},
+				},
+				PrimaryKey: &Index{Columns: []string{"id"}},
+			},
+		},
+	}
+	_, _, err := collectCopyRiskFindingsAndTableChunkPlan(context.Background(), failQueryQuerier{}, &mysqlSourceDB{}, schema, 1000)
+	if err == nil {
+		t.Fatal("expected error from COUNT query")
+	}
+	if !strings.Contains(err.Error(), "forced query failure") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

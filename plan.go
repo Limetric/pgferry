@@ -480,6 +480,37 @@ func writePlanJSON(w io.Writer, report *PlanReport) error {
 	return enc.Encode(report)
 }
 
+const (
+	minTableChunkPlanTableColWidth = 22
+	maxTableChunkPlanTableColWidth = 48
+)
+
+func tableChunkPlanTableColumnWidth(plan []PlanTableChunkInfo) int {
+	w := len("Table")
+	for _, row := range plan {
+		if n := len(row.Table); n > w {
+			w = n
+		}
+	}
+	if w < minTableChunkPlanTableColWidth {
+		w = minTableChunkPlanTableColWidth
+	}
+	if w > maxTableChunkPlanTableColWidth {
+		w = maxTableChunkPlanTableColWidth
+	}
+	return w
+}
+
+func truncateTableChunkPlanTableName(s string, width int) string {
+	if len(s) <= width {
+		return s
+	}
+	if width <= 1 {
+		return "…"
+	}
+	return s[:width-1] + "…"
+}
+
 func writePlanText(w io.Writer, report *PlanReport) {
 	hasContent := false
 
@@ -529,7 +560,8 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		hasContent = true
 		fmt.Fprintf(w, "## Table Chunk Plan (%d)\n\n", len(report.TableChunkPlan))
 		fmt.Fprintf(w, "How each non-empty table will be split for COPY (chunk_size is key-range width, not rows per chunk).\n\n")
-		fmt.Fprintf(w, "  %-22s %12s %8s %-14s %s\n", "Table", "Rows", "Chunks", "Key", "Type")
+		tw := tableChunkPlanTableColumnWidth(report.TableChunkPlan)
+		fmt.Fprintf(w, "  %-*s %12s %8s %-14s %s\n", tw, "Table", "Rows", "Chunks", "Key", "Type")
 		for _, row := range report.TableChunkPlan {
 			rows := humanize.Comma(row.EstimatedRows)
 			var chunks, keyCol, typeCol string
@@ -542,7 +574,8 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				keyCol = "(full copy)"
 				typeCol = row.FullTableCopyReason
 			}
-			fmt.Fprintf(w, "  %-22s %12s %8s %-14s %s\n", row.Table, rows, chunks, keyCol, typeCol)
+			name := truncateTableChunkPlanTableName(row.Table, tw)
+			fmt.Fprintf(w, "  %-*s %12s %8s %-14s %s\n", tw, name, rows, chunks, keyCol, typeCol)
 		}
 		fmt.Fprintln(w)
 	}
