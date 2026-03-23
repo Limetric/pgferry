@@ -36,7 +36,11 @@ Cleanup behavior:
 - `ON DELETE SET NULL` foreign keys are repaired by setting the child columns to `NULL`.
 - Other delete rules cause the orphaned child rows to be deleted.
 
-Disable this when you want FK creation to fail naturally so you can inspect the data problem yourself or fix it with `before_fk` hooks.
+`clean_orphans_mode = "apply"` (the default) actually does the work. `"report"` only inspects and logs — handy when you want a preview without touching rows, but the migration stops before FK creation so you can react first.
+
+Set `clean_orphans_max_rows` to a positive number when you want a fuse: if the total orphan rows across all FKs would exceed that cap, pgferry aborts instead of deleting half the internet. `0` means no fuse.
+
+Disable orphan cleanup entirely when you want FK creation to fail naturally so you can inspect the data problem yourself or fix it with `before_fk` hooks.
 
 ## Generated columns
 

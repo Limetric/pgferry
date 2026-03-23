@@ -40,14 +40,22 @@ One thing to keep in mind: pair `resume = true` with `unlogged_tables = false`. 
 
 ## Plan and preflight
 
-Before you migrate anything, `pgferry plan` tells you what will need manual attention: views, routines, generated columns, skipped indexes, collation warnings, and required extensions like `citext` or PostGIS.
+Before you migrate anything, `pgferry plan` tells you what will need manual attention: views, routines, generated columns, skipped indexes, collation warnings, copy-risk hints (when `copy_risk_analysis` is on), and required extensions like `citext` or PostGIS.
 
 ```bash
 pgferry plan migration.toml
 pgferry plan migration.toml --output-dir hooks
+pgferry plan migration.toml --format json > plan.json
+pgferry plan --input plan.json --format text
 ```
 
-With `--output-dir`, pgferry writes skeleton hook files you can fill in before the real run. If you want to start with a smaller slice, scope it to specific tables:
+With `--output-dir`, pgferry writes skeleton hook files you can fill in before the real run.
+
+**Machine-readable and CI:** `--format json` is for diffing, dashboards, or filing tickets. `--fail-on errors` exits non-zero when there are unsupported column types; `--fail-on warnings` also fails on high-severity copy-risk findings. Your CI pipeline will finally care about migrations.
+
+**Replay without the source:** `--input saved.json` renders a previous JSON report (text or JSON) without connecting to the database. You cannot combine `--input` with a TOML path or `--config` — pick one story.
+
+If you want to start with a smaller slice, scope it to specific tables:
 
 ```toml
 include_tables = ["orders", "order_items"]

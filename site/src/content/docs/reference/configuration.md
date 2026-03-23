@@ -15,6 +15,8 @@ If you want the fastest safe starting point, use the wizard first:
 pgferry wizard
 ```
 
+Shorthand: `pgferry run` is the same as `migrate`, and `generate` / `init` are aliases for `wizard` — use whichever muscle memory you have.
+
 ## Minimal config
 
 ```toml
@@ -65,6 +67,8 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `schema` | string | required | Target PostgreSQL schema name. |
+| `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Exact names only — no globs. |
+| `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied together with `include_tables` when both are set. |
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
@@ -74,10 +78,13 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `preserve_defaults` | bool | `true` | Keep source column defaults in the created PostgreSQL schema. |
 | `add_unsigned_checks` | bool | `false` | Add `CHECK` constraints for MySQL-family unsigned ranges. |
 | `clean_orphans` | bool | `true` | Automatically delete or null invalid child rows before FK creation. |
+| `clean_orphans_mode` | string | `"apply"` | `"apply"` fixes rows before FKs. `"report"` logs what would happen and stops before FK creation (dry-run style). |
+| `clean_orphans_max_rows` | int | `0` | Safety cap: abort if orphan rows to fix would exceed this total. `0` means no cap. |
 | `replicate_on_update_current_timestamp` | bool | `false` | Create PostgreSQL trigger emulation for MySQL-family `ON UPDATE CURRENT_TIMESTAMP`. |
 | `workers` | int | `min(runtime.NumCPU(), 8)` | Parallel worker count for data loading. SQLite is internally capped at 1. |
 | `index_workers` | int | `workers` | Concurrent index builds during post-migration. |
 | `chunk_size` | int | `100000` | Key-range width for chunkable single-column numeric PK tables. Actual rows per chunk vary with key density. |
+| `copy_risk_analysis` | bool | `true` | Lightweight COUNT/MIN/MAX probes to flag awkward COPY chunking (huge tables, sparse keys, etc.). Feeds `plan` copy-risk output and optional migrate warnings. Turn off for quieter runs when you already know the shape. |
 | `resume` | bool | `false` | Reuse `pgferry_checkpoint.json` after interruptions. |
 | `validation` | string | `"none"` | `"row_count"` compares per-table counts after load. `"sampled_hash"` adds bounded content fingerprints for deterministic primary-key-addressable rows. |
 
