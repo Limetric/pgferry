@@ -60,15 +60,23 @@ func queryExactRowCount(ctx context.Context, source dbQuerier, src SourceDB, tab
 }
 
 func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64) ([]PlanCopyRiskFinding, error) {
+	findings, _, err := collectCopyRiskFindingsAndTableChunkPlan(ctx, source, src, schema, chunkSize)
+	return findings, err
+}
+
+// collectCopyRiskFindingsAndTableChunkPlan runs the same per-table COUNT/MIN/MAX probes as copy risk
+// analysis and returns both risk findings and a full per-table chunk plan.
+func collectCopyRiskFindingsAndTableChunkPlan(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64) ([]PlanCopyRiskFinding, []PlanTableChunkInfo, error) {
 	if schema == nil {
-		return []PlanCopyRiskFinding{}, nil
+		return []PlanCopyRiskFinding{}, []PlanTableChunkInfo{}, nil
 	}
 
 	findings := make([]PlanCopyRiskFinding, 0, len(schema.Tables))
+	chunkPlan := make([]PlanTableChunkInfo, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		rowCount, err := queryExactRowCount(ctx, source, src, table)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if rowCount == 0 {
 			continue
@@ -77,21 +85,51 @@ func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB
 		key := chunkKeyForTable(table, src)
 		if key == nil {
 			findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, nil, 0, 0)...)
+			chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, nil, 0, 0))
 			continue
 		}
 
 		min, max, hasRows, err := queryMinMax(ctx, source, src, table, *key)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if !hasRows {
 			continue
 		}
 		findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, key, min, max)...)
+		chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, key, min, max))
 	}
 
 	sortCopyRiskFindings(findings)
-	return findings, nil
+	sort.Slice(chunkPlan, func(i, j int) bool {
+		return chunkPlan[i].Table < chunkPlan[j].Table
+	})
+	return findings, chunkPlan, nil
+}
+
+func buildPlanTableChunkInfo(table Table, src SourceDB, rowCount int64, chunkSize int64, key *ChunkKey, minPK, maxPK int64) PlanTableChunkInfo {
+	if key == nil {
+		return PlanTableChunkInfo{
+			Table:               table.PGName,
+			EstimatedRows:       rowCount,
+			Chunkable:           false,
+			FullTableCopyReason: nonChunkableTableReason(table, src),
+		}
+	}
+	est := estimateChunkCount(minPK, maxPK, chunkSize)
+	if est < 1 {
+		est = 1
+	}
+	return PlanTableChunkInfo{
+		Table:           table.PGName,
+		EstimatedRows:   rowCount,
+		Chunkable:       true,
+		ChunkKey:        key.PGColumn,
+		ChunkKeyType:    chunkKeyDataType(table, key),
+		MinPK:           int64Ptr(minPK),
+		MaxPK:           int64Ptr(maxPK),
+		EstimatedChunks: est,
+	}
 }
 
 func analyzeCopyRiskTable(table Table, src SourceDB, rowCount int64, chunkSize int64, key *ChunkKey, minPK, maxPK int64) []PlanCopyRiskFinding {

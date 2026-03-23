@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
@@ -123,10 +124,25 @@ func countHighSeverityCopyRisks(report *PlanReport) int {
 	return n
 }
 
+// PlanTableChunkInfo describes how one table will be copied at chunk granularity
+// when copy risk analysis is enabled (same probes as copy risk; empty otherwise).
+type PlanTableChunkInfo struct {
+	Table               string `json:"table"`
+	EstimatedRows       int64  `json:"estimated_rows"`
+	Chunkable           bool   `json:"chunkable"`
+	ChunkKey            string `json:"chunk_key,omitempty"`
+	ChunkKeyType        string `json:"chunk_key_type,omitempty"`
+	MinPK               *int64 `json:"min_pk,omitempty"`
+	MaxPK               *int64 `json:"max_pk,omitempty"`
+	EstimatedChunks     int    `json:"estimated_chunks,omitempty"`
+	FullTableCopyReason string `json:"full_table_copy_reason,omitempty"`
+}
+
 // PlanReport holds all findings from the plan analysis.
 type PlanReport struct {
 	RequiredExtensions      []PlanRequiredExtension      `json:"required_extensions"`
 	CopyRiskFindings        []PlanCopyRiskFinding        `json:"copy_risk_findings"`
+	TableChunkPlan          []PlanTableChunkInfo         `json:"table_chunk_plan"`
 	SourceObjects           PlanSourceObjects            `json:"source_objects"`
 	UnsupportedColumns      []PlanUnsupportedColumn      `json:"unsupported_columns"`
 	SchemaSemanticWarnings  []SchemaSemanticWarning      `json:"schema_semantic_warnings"`
@@ -286,15 +302,17 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 		return fmt.Errorf("introspect schema semantics: %w", err)
 	}
 	copyRisks := []PlanCopyRiskFinding{}
+	tableChunkPlan := []PlanTableChunkInfo{}
 	if cfg.CopyRiskAnalysis {
 		logCopyRiskProbeStart(len(schema.Tables))
-		if findings, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
+		if findings, chunks, err := collectCopyRiskFindingsAndTableChunkPlan(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
 			log.Printf("WARN: copy risk analysis skipped: %v", err)
 		} else {
 			copyRisks = findings
+			tableChunkPlan = chunks
 		}
 	}
-	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, src, cfg, typeMap)
+	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, tableChunkPlan, src, cfg, typeMap)
 
 	if format == "json" {
 		if err := writePlanJSON(out, report); err != nil {
@@ -326,10 +344,11 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	return nil
 }
 
-func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
+func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, tableChunkPlan []PlanTableChunkInfo, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
 	report := &PlanReport{
 		RequiredExtensions:      []PlanRequiredExtension{},
 		CopyRiskFindings:        []PlanCopyRiskFinding{},
+		TableChunkPlan:          []PlanTableChunkInfo{},
 		UnsupportedColumns:      []PlanUnsupportedColumn{},
 		SchemaSemanticWarnings:  []SchemaSemanticWarning{},
 		GeneratedColumns:        []PlanGeneratedColumn{},
@@ -340,6 +359,9 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 	}
 	if copyRisks != nil {
 		report.CopyRiskFindings = copyRisks
+	}
+	if tableChunkPlan != nil {
+		report.TableChunkPlan = tableChunkPlan
 	}
 
 	for _, req := range collectRequiredExtensions(schema, src, cfg, typeMap) {
@@ -499,6 +521,28 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				fmt.Fprintf(w, "    Chunking: not eligible; rows=%d\n", risk.EstimatedRows)
 			}
 			fmt.Fprintf(w, "    Recommendation: %s\n", risk.Recommendation)
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(report.TableChunkPlan) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Table Chunk Plan (%d)\n\n", len(report.TableChunkPlan))
+		fmt.Fprintf(w, "How each non-empty table will be split for COPY (chunk_size is key-range width, not rows per chunk).\n\n")
+		fmt.Fprintf(w, "  %-22s %12s %8s %-14s %s\n", "Table", "Rows", "Chunks", "Key", "Type")
+		for _, row := range report.TableChunkPlan {
+			rows := humanize.Comma(row.EstimatedRows)
+			var chunks, keyCol, typeCol string
+			if row.Chunkable {
+				chunks = fmt.Sprintf("%d", row.EstimatedChunks)
+				keyCol = row.ChunkKey
+				typeCol = row.ChunkKeyType
+			} else {
+				chunks = "—"
+				keyCol = "(full copy)"
+				typeCol = row.FullTableCopyReason
+			}
+			fmt.Fprintf(w, "  %-22s %12s %8s %-14s %s\n", row.Table, rows, chunks, keyCol, typeCol)
 		}
 		fmt.Fprintln(w)
 	}

@@ -330,3 +330,47 @@ func TestBuildSourceCountQuery_ReusedByCopyRisk(t *testing.T) {
 		t.Fatalf("buildSourceCountQuery() = %q", got)
 	}
 }
+
+func TestBuildPlanTableChunkInfo_Chunkable(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "orders",
+		PGName:     "orders",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "bigint"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+	key := &ChunkKey{SourceColumn: "id", PGColumn: "id"}
+
+	got := buildPlanTableChunkInfo(table, src, 1_000_000, 100_000, key, 1, 1_000_000)
+	if !got.Chunkable || got.ChunkKey != "id" || got.ChunkKeyType != "bigint" {
+		t.Fatalf("chunk info = %+v", got)
+	}
+	if got.EstimatedChunks != 10 {
+		t.Fatalf("estimated chunks = %d, want 10", got.EstimatedChunks)
+	}
+	if got.MinPK == nil || *got.MinPK != 1 || got.MaxPK == nil || *got.MaxPK != 1_000_000 {
+		t.Fatalf("range = %v..%v", got.MinPK, got.MaxPK)
+	}
+}
+
+func TestBuildPlanTableChunkInfo_NonChunkable(t *testing.T) {
+	src := &mysqlSourceDB{}
+	table := Table{
+		SourceName: "sessions",
+		PGName:     "sessions",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "varchar", ColumnType: "varchar(36)"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+
+	got := buildPlanTableChunkInfo(table, src, 456, 100_000, nil, 0, 0)
+	if got.Chunkable || got.FullTableCopyReason == "" {
+		t.Fatalf("chunk info = %+v", got)
+	}
+	if got.EstimatedRows != 456 {
+		t.Fatalf("rows = %d", got.EstimatedRows)
+	}
+}
