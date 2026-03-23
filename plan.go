@@ -757,7 +757,7 @@ func planTriggersFromSource(tr []SourceTrigger) []PlanSourceTrigger {
 	}
 	out := make([]PlanSourceTrigger, len(tr))
 	for i, t := range tr {
-		out[i] = PlanSourceTrigger{Name: t.Name, Table: t.Table}
+		out[i] = PlanSourceTrigger(t)
 	}
 	return out
 }
