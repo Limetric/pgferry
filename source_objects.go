@@ -2,11 +2,17 @@ package main
 
 import "fmt"
 
+// SourceTrigger is a source-database trigger attached to a specific table.
+type SourceTrigger struct {
+	Name  string
+	Table string // source table the trigger is on (empty if unknown)
+}
+
 // SourceObjects holds non-table source objects that require manual migration.
 type SourceObjects struct {
 	Views    []string
 	Routines []string
-	Triggers []string
+	Triggers []SourceTrigger
 }
 
 func sourceObjectWarnings(objs *SourceObjects) []string {
@@ -32,7 +38,11 @@ func sourceObjectWarnings(objs *SourceObjects) []string {
 		warnings = append(warnings, fmt.Sprintf("routine: %s", r))
 	}
 	for _, t := range objs.Triggers {
-		warnings = append(warnings, fmt.Sprintf("trigger: %s", t))
+		if t.Table != "" {
+			warnings = append(warnings, fmt.Sprintf("trigger: %s (on %s)", t.Name, t.Table))
+		} else {
+			warnings = append(warnings, fmt.Sprintf("trigger: %s", t.Name))
+		}
 	}
 	return warnings
 }

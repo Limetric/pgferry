@@ -25,6 +25,34 @@ func hasTableFilters(cfg *MigrationConfig) bool {
 	return cfg != nil && (len(cfg.IncludeTables) > 0 || len(cfg.ExcludeTables) > 0)
 }
 
+// filterTriggersBySelectedTables keeps triggers whose Table is in the filtered schema's
+// selected source tables (case-insensitive key, same as include/exclude matching).
+// Triggers with an empty Table are kept (source could not resolve the table); they are not
+// silently dropped when filters are active.
+func filterTriggersBySelectedTables(triggers []SourceTrigger, schema *Schema) []SourceTrigger {
+	if len(triggers) == 0 {
+		return []SourceTrigger{}
+	}
+	if schema == nil || len(schema.Tables) == 0 {
+		return append([]SourceTrigger(nil), triggers...)
+	}
+	selected := make(map[string]struct{}, len(schema.Tables))
+	for _, t := range schema.Tables {
+		selected[normalizeTableFilterKey(t.SourceName)] = struct{}{}
+	}
+	out := make([]SourceTrigger, 0, len(triggers))
+	for _, tr := range triggers {
+		if tr.Table == "" {
+			out = append(out, tr)
+			continue
+		}
+		if _, ok := selected[normalizeTableFilterKey(tr.Table)]; ok {
+			out = append(out, tr)
+		}
+	}
+	return out
+}
+
 func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFilterReport, error) {
 	report := schemaFilterReport{}
 	if schema == nil {

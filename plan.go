@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -211,11 +212,70 @@ type PlanRequiredExtension struct {
 	Mode    string `json:"mode"`
 }
 
+// PlanSourceTrigger is a trigger on the source database with its source table.
+type PlanSourceTrigger struct {
+	Name  string `json:"name"`
+	Table string `json:"table,omitempty"`
+}
+
 // PlanSourceObjects holds non-table source objects.
 type PlanSourceObjects struct {
-	Views    []string `json:"views"`
-	Routines []string `json:"routines"`
-	Triggers []string `json:"triggers"`
+	Views    []string            `json:"views"`
+	Routines []string            `json:"routines"`
+	Triggers []PlanSourceTrigger `json:"triggers"`
+}
+
+// MarshalJSON emits empty arrays for nil slices (including triggers) so saved reports stay consistent.
+func (p PlanSourceObjects) MarshalJSON() ([]byte, error) {
+	type out struct {
+		Views    []string            `json:"views"`
+		Routines []string            `json:"routines"`
+		Triggers []PlanSourceTrigger `json:"triggers"`
+	}
+	return json.Marshal(out{
+		Views:    ensureStringSlice(p.Views),
+		Routines: ensureStringSlice(p.Routines),
+		Triggers: ensurePlanTriggersSlice(p.Triggers),
+	})
+}
+
+func ensurePlanTriggersSlice(t []PlanSourceTrigger) []PlanSourceTrigger {
+	if t == nil {
+		return []PlanSourceTrigger{}
+	}
+	return t
+}
+
+// UnmarshalJSON accepts legacy trigger lists as JSON string arrays or the new object form.
+func (p *PlanSourceObjects) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Views    []string        `json:"views"`
+		Routines []string        `json:"routines"`
+		Triggers json.RawMessage `json:"triggers"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	p.Views = ensureStringSlice(raw.Views)
+	p.Routines = ensureStringSlice(raw.Routines)
+	if len(raw.Triggers) == 0 || string(bytes.TrimSpace(raw.Triggers)) == "null" {
+		p.Triggers = []PlanSourceTrigger{}
+		return nil
+	}
+	var strs []string
+	if err := json.Unmarshal(raw.Triggers, &strs); err == nil {
+		p.Triggers = make([]PlanSourceTrigger, len(strs))
+		for i, s := range strs {
+			p.Triggers[i] = PlanSourceTrigger{Name: s}
+		}
+		return nil
+	}
+	var objs []PlanSourceTrigger
+	if err := json.Unmarshal(raw.Triggers, &objs); err != nil {
+		return fmt.Errorf("source_objects.triggers: expected string array or object array: %w", err)
+	}
+	p.Triggers = objs
+	return nil
 }
 
 type PlanUnsupportedColumn struct {
@@ -361,6 +421,9 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName)
 	if err != nil {
 		return fmt.Errorf("introspect source objects: %w", err)
+	}
+	if hasTableFilters(cfg) && sourceObjects != nil {
+		sourceObjects.Triggers = filterTriggersBySelectedTables(sourceObjects.Triggers, schema)
 	}
 
 	typeMap := effectiveTypeMapping(cfg)
@@ -594,11 +657,11 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 	if sourceObjects != nil {
 		report.SourceObjects.Views = ensureStringSlice(sourceObjects.Views)
 		report.SourceObjects.Routines = ensureStringSlice(sourceObjects.Routines)
-		report.SourceObjects.Triggers = ensureStringSlice(sourceObjects.Triggers)
+		report.SourceObjects.Triggers = planTriggersFromSource(sourceObjects.Triggers)
 	} else {
 		report.SourceObjects.Views = []string{}
 		report.SourceObjects.Routines = []string{}
-		report.SourceObjects.Triggers = []string{}
+		report.SourceObjects.Triggers = []PlanSourceTrigger{}
 	}
 
 	if src != nil {
@@ -686,6 +749,17 @@ func ensureStringSlice(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+func planTriggersFromSource(tr []SourceTrigger) []PlanSourceTrigger {
+	if len(tr) == 0 {
+		return []PlanSourceTrigger{}
+	}
+	out := make([]PlanSourceTrigger, len(tr))
+	for i, t := range tr {
+		out[i] = PlanSourceTrigger(t)
+	}
+	return out
 }
 
 func writePlanJSON(w io.Writer, report *PlanReport) error {
@@ -858,6 +932,10 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		fmt.Fprintf(w, "## Source Objects (require manual migration)\n\n")
 		if len(objs.Views) > 0 {
 			fmt.Fprintf(w, "Views (%d):\n", len(objs.Views))
+			if report.TableFilterReport != nil {
+				fmt.Fprintf(w, "  Note: These are all views in the source database. Some may reference\n")
+				fmt.Fprintf(w, "  tables outside your include_tables/exclude_tables scope.\n")
+			}
 			for _, v := range objs.Views {
 				fmt.Fprintf(w, "  - %s\n", v)
 			}
@@ -865,6 +943,10 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		}
 		if len(objs.Routines) > 0 {
 			fmt.Fprintf(w, "Routines (%d):\n", len(objs.Routines))
+			if report.TableFilterReport != nil {
+				fmt.Fprintf(w, "  Note: These are all routines in the source database. Some may reference\n")
+				fmt.Fprintf(w, "  tables outside your include_tables/exclude_tables scope.\n")
+			}
 			for _, r := range objs.Routines {
 				fmt.Fprintf(w, "  - %s\n", r)
 			}
@@ -872,8 +954,12 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		}
 		if len(objs.Triggers) > 0 {
 			fmt.Fprintf(w, "Triggers (%d):\n", len(objs.Triggers))
-			for _, t := range objs.Triggers {
-				fmt.Fprintf(w, "  - %s\n", t)
+			for _, tg := range objs.Triggers {
+				if tg.Table != "" {
+					fmt.Fprintf(w, "  - %s (on %s)\n", tg.Name, tg.Table)
+				} else {
+					fmt.Fprintf(w, "  - %s\n", tg.Name)
+				}
 			}
 			fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
 		}
@@ -1109,8 +1195,12 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 	if len(objs.Triggers) > 0 {
 		b.WriteString("-- Triggers\n")
 		b.WriteString("-- Recreate these triggers using PostgreSQL trigger functions.\n")
-		for _, t := range objs.Triggers {
-			fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...;\n", pgIdent(t))
+		for _, tg := range objs.Triggers {
+			if tg.Table != "" {
+				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...; -- source table: %s\n", pgIdent(tg.Name), sanitizeSQLCommentText(tg.Table))
+			} else {
+				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...;\n", pgIdent(tg.Name))
+			}
 		}
 		b.WriteByte('\n')
 	}

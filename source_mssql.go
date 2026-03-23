@@ -947,7 +947,7 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 
 	// Triggers
 	triggerRows, err := db.Query(`
-		SELECT tr.name
+		SELECT tr.name, o.name
 		FROM sys.triggers tr
 		JOIN sys.objects o ON tr.parent_id = o.object_id
 		JOIN sys.schemas s ON o.schema_id = s.schema_id
@@ -960,11 +960,11 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 	}
 	defer triggerRows.Close()
 	for triggerRows.Next() {
-		var name string
-		if err := triggerRows.Scan(&name); err != nil {
+		var triggerName, tableName string
+		if err := triggerRows.Scan(&triggerName, &tableName); err != nil {
 			return nil, err
 		}
-		objs.Triggers = append(objs.Triggers, name)
+		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: triggerName, Table: tableName})
 	}
 	if err := triggerRows.Err(); err != nil {
 		return nil, err
