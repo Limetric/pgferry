@@ -565,6 +565,17 @@ func TestWritePlanJSON_LegacyTriggersStringArray(t *testing.T) {
 	}
 }
 
+func TestPlanSourceObjects_UnmarshalJSON_InvalidTriggers(t *testing.T) {
+	var p PlanSourceObjects
+	err := json.Unmarshal([]byte(`{"views":[],"routines":[],"triggers":[123]}`), &p)
+	if err == nil {
+		t.Fatal("expected error for non-string, non-object triggers")
+	}
+	if !strings.Contains(err.Error(), "source_objects.triggers") {
+		t.Fatalf("error should mention triggers field: %v", err)
+	}
+}
+
 func TestWritePlanJSON_TableFilterReportRoundTrip(t *testing.T) {
 	report := &PlanReport{
 		TableFilterReport: &PlanTableFilterReport{

@@ -240,14 +240,21 @@ func TestFilterTriggersBySelectedTables(t *testing.T) {
 		{Name: "t_unknown", Table: ""},
 	}
 	got := filterTriggersBySelectedTables(triggers, schema)
-	if len(got) != 1 || got[0].Name != "t_orders" {
-		t.Fatalf("got %+v, want only t_orders", got)
+	if len(got) != 2 {
+		t.Fatalf("got len=%d %+v, want t_orders and t_unknown (empty table preserved)", len(got), got)
+	}
+	if got[0].Name != "t_orders" || got[1].Name != "t_unknown" || got[1].Table != "" {
+		t.Fatalf("got %+v, want [t_orders, t_unknown]", got)
 	}
 	got2 := filterTriggersBySelectedTables([]SourceTrigger{{Name: "x", Table: "PRODUCTS"}}, schema)
 	if len(got2) != 1 || got2[0].Name != "x" {
 		t.Fatalf("case-insensitive table: got %+v", got2)
 	}
-	if filterTriggersBySelectedTables(triggers, nil) != nil {
-		t.Fatal("nil schema should yield nil")
+	if len(filterTriggersBySelectedTables(nil, schema)) != 0 {
+		t.Fatal("nil triggers slice should yield empty slice")
+	}
+	preserved := filterTriggersBySelectedTables(triggers, nil)
+	if len(preserved) != len(triggers) {
+		t.Fatalf("nil schema should preserve all triggers: got %d want %d", len(preserved), len(triggers))
 	}
 }

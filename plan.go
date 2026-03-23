@@ -270,7 +270,12 @@ func (p *PlanSourceObjects) UnmarshalJSON(data []byte) error {
 		}
 		return nil
 	}
-	return json.Unmarshal(raw.Triggers, &p.Triggers)
+	var objs []PlanSourceTrigger
+	if err := json.Unmarshal(raw.Triggers, &objs); err != nil {
+		return fmt.Errorf("source_objects.triggers: expected string array or object array: %w", err)
+	}
+	p.Triggers = objs
+	return nil
 }
 
 type PlanUnsupportedColumn struct {
@@ -1192,7 +1197,7 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 		b.WriteString("-- Recreate these triggers using PostgreSQL trigger functions.\n")
 		for _, tg := range objs.Triggers {
 			if tg.Table != "" {
-				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...; -- source table: %s\n", pgIdent(tg.Name), tg.Table)
+				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...; -- source table: %s\n", pgIdent(tg.Name), sanitizeSQLCommentText(tg.Table))
 			} else {
 				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...;\n", pgIdent(tg.Name))
 			}
