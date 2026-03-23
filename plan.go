@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,16 +15,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// errInvalidPlanFormat is returned when plan output format is not text or json.
+var errInvalidPlanFormat = errors.New("--format must be text or json")
+
 var planOutputDir string
 var planFormat string
 var planFailOn string
+var planInputPath string
 
 var planCmd = &cobra.Command{
-	Use:   "plan [migration.toml]",
+	Use:   "plan [migration.toml] | plan --input <report.json>",
 	Short: "Analyze source schema and generate a migration plan report",
 	Long: `Analyze the source database schema and produce a report of objects that
 require manual follow-up: views, routines, triggers, generated columns,
 and skipped indexes.
+
+Use --input with a JSON report from a previous --format json run to re-render
+or apply --fail-on checks without connecting to the source. --input cannot be
+combined with a migration config (--config or a positional TOML path); use one
+or the other.
 
 Optionally generates hook skeleton files in the specified output directory.`,
 	Args: cobra.MaximumNArgs(1),
@@ -34,6 +44,7 @@ var planConfigPath string
 
 func init() {
 	planCmd.Flags().StringVar(&planConfigPath, "config", "", "path to migration TOML config file")
+	planCmd.Flags().StringVar(&planInputPath, "input", "", "read a previously saved JSON plan report instead of connecting to the source")
 	planCmd.Flags().StringVar(&planOutputDir, "output-dir", "", "directory to write hook skeleton files")
 	planCmd.Flags().StringVar(&planFormat, "format", "text", "output format: text or json")
 	// fail-on=none keeps exit 0 when introspection succeeds; errors/warnings gate CI on unsupported columns or high copy-risk severity.
@@ -189,6 +200,36 @@ type PlanTemporalWarning struct {
 }
 
 func runPlan(cmd *cobra.Command, args []string) error {
+	switch planFormat {
+	case "text", "json":
+	default:
+		return errInvalidPlanFormat
+	}
+
+	failOn, err := parsePlanFailOn(planFailOn)
+	if err != nil {
+		return err
+	}
+
+	opts := PlanOptions{
+		FailOn:    failOn,
+		Format:    planFormat,
+		OutputDir: planOutputDir,
+	}
+
+	if planInputPath != "" {
+		if planConfigPath != "" {
+			return fmt.Errorf("cannot use --config with --input")
+		}
+		if len(args) > 0 {
+			return fmt.Errorf("cannot specify a config file when using --input")
+		}
+		if planOutputDir != "" {
+			return fmt.Errorf("cannot use --output-dir with --input")
+		}
+		return runPlanFromInput(planInputPath, cmd.OutOrStdout(), opts)
+	}
+
 	cfgPath := planConfigPath
 	if len(args) > 0 {
 		cfgPath = args[0]
@@ -197,27 +238,12 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("config file required: pgferry plan <migration.toml> or pgferry plan --config <migration.toml>")
 	}
 
-	switch planFormat {
-	case "text", "json":
-	default:
-		return fmt.Errorf("--format must be text or json")
-	}
-
-	failOn, err := parsePlanFailOn(planFailOn)
-	if err != nil {
-		return err
-	}
-
 	cfg, err := loadConfig(cfgPath)
 	if err != nil {
 		return err
 	}
 
-	return runPlanWithConfig(cfg, cmd.OutOrStdout(), PlanOptions{
-		FailOn:    failOn,
-		Format:    planFormat,
-		OutputDir: planOutputDir,
-	})
+	return runPlanWithConfig(cfg, cmd.OutOrStdout(), opts)
 }
 
 func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) error {
@@ -228,7 +254,7 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	switch format {
 	case "text", "json":
 	default:
-		return fmt.Errorf("plan format must be text or json")
+		return errInvalidPlanFormat
 	}
 	failOn, err := parsePlanFailOn(opts.FailOn)
 	if err != nil {
@@ -296,34 +322,86 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	}
 	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, src, cfg, typeMap)
 
-	if format == "json" {
-		if err := writePlanJSON(out, report); err != nil {
-			return err
-		}
-	} else {
-		writePlanText(out, report)
+	if err := writePlanReportOutput(report, out, format); err != nil {
+		return err
 	}
-
 	if outputDir != "" {
 		if err := writeHookSkeletons(outputDir, report, cfg.Schema); err != nil {
 			return fmt.Errorf("write hook skeletons: %w", err)
 		}
 		log.Printf("hook skeletons written to %s", outputDir)
 	}
+	return applyPlanFailOn(report, out, format, failOn)
+}
 
-	if shouldFailPlan(report, failOn) {
-		highRisks := countHighSeverityCopyRisks(report)
-		nUnsupported := len(report.UnsupportedColumns)
-		if format == "text" {
-			fmt.Fprintln(out, planFindingsFailSummary(nUnsupported, highRisks))
-		}
-		return &PlanFindingsError{
-			UnsupportedColumns: nUnsupported,
-			HighSeverityRisks:  highRisks,
-		}
+func writePlanReportOutput(report *PlanReport, out io.Writer, format string) error {
+	if format == "" {
+		format = "text"
 	}
+	switch format {
+	case "json":
+		return writePlanJSON(out, report)
+	case "text":
+		writePlanText(out, report)
+		return nil
+	default:
+		return errInvalidPlanFormat
+	}
+}
 
-	return nil
+func applyPlanFailOn(report *PlanReport, out io.Writer, format string, failOn string) error {
+	if !shouldFailPlan(report, failOn) {
+		return nil
+	}
+	highRisks := countHighSeverityCopyRisks(report)
+	nUnsupported := len(report.UnsupportedColumns)
+	if format == "" {
+		format = "text"
+	}
+	if format == "text" {
+		fmt.Fprintln(out, planFindingsFailSummary(nUnsupported, highRisks))
+	}
+	return &PlanFindingsError{
+		UnsupportedColumns: nUnsupported,
+		HighSeverityRisks:  highRisks,
+	}
+}
+
+// renderPlanReport writes the plan report in the requested format and applies --fail-on.
+// It validates format and fail-on again so callers other than runPlan (e.g. tests) get
+// the same checks as the CLI path; runPlan already validates before runPlanFromInput.
+func renderPlanReport(report *PlanReport, out io.Writer, opts PlanOptions) error {
+	format := opts.Format
+	if format == "" {
+		format = "text"
+	}
+	failOn, err := parsePlanFailOn(opts.FailOn)
+	if err != nil {
+		return err
+	}
+	switch format {
+	case "text", "json":
+	default:
+		return errInvalidPlanFormat
+	}
+	if err := writePlanReportOutput(report, out, format); err != nil {
+		return err
+	}
+	return applyPlanFailOn(report, out, format, failOn)
+}
+
+func runPlanFromInput(path string, out io.Writer, opts PlanOptions) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read plan input: %w", err)
+	}
+	var report PlanReport
+	// Unknown JSON fields are ignored so newer pgferry versions can extend PlanReport
+	// without breaking older binaries re-reading saved reports.
+	if err := json.Unmarshal(data, &report); err != nil {
+		return fmt.Errorf("decode plan input: %w", err)
+	}
+	return renderPlanReport(&report, out, opts)
 }
 
 func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig) *PlanReport {
