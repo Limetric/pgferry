@@ -1044,6 +1044,183 @@ func TestRunPlan_InvalidFailOn(t *testing.T) {
 	}
 }
 
+func TestRunPlanFromInput_Text(t *testing.T) {
+	prevInput := planInputPath
+	prevFormat := planFormat
+	prevFail := planFailOn
+	prevConfig := planConfigPath
+	prevOut := planOutputDir
+	t.Cleanup(func() {
+		planInputPath = prevInput
+		planFormat = prevFormat
+		planFailOn = prevFail
+		planConfigPath = prevConfig
+		planOutputDir = prevOut
+	})
+
+	dbPath := filepath.Join(t.TempDir(), "plan-from-input.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:      "app",
+		Source:      SourceConfig{Type: "sqlite", DSN: dbPath},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+
+	var jsonBuf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &jsonBuf, PlanOptions{Format: "json"}); err != nil {
+		t.Fatalf("runPlanWithConfig json: %v", err)
+	}
+
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(jsonPath, jsonBuf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write json: %v", err)
+	}
+
+	var directText bytes.Buffer
+	if err := runPlanWithConfig(cfg, &directText, PlanOptions{Format: "text"}); err != nil {
+		t.Fatalf("runPlanWithConfig text: %v", err)
+	}
+
+	planInputPath = jsonPath
+	planFormat = "text"
+	planFailOn = "none"
+	planConfigPath = ""
+	planOutputDir = ""
+
+	var fromInput bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&fromInput)
+	if err := runPlan(cmd, nil); err != nil {
+		t.Fatalf("runPlan from input: %v", err)
+	}
+
+	if directText.String() != fromInput.String() {
+		t.Fatalf("text mismatch\n--- direct ---\n%s\n--- from input ---\n%s", directText.String(), fromInput.String())
+	}
+}
+
+func TestRunPlanFromInput_FailOn(t *testing.T) {
+	prevInput := planInputPath
+	prevFormat := planFormat
+	prevFail := planFailOn
+	prevConfig := planConfigPath
+	prevOut := planOutputDir
+	t.Cleanup(func() {
+		planInputPath = prevInput
+		planFormat = prevFormat
+		planFailOn = prevFail
+		planConfigPath = prevConfig
+		planOutputDir = prevOut
+	})
+
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	report := PlanReport{
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{Table: "weird", Column: "x", SourceType: "FROBNOZZ", Reason: "unsupported"},
+		},
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(jsonPath, data, 0o644); err != nil {
+		t.Fatalf("write json: %v", err)
+	}
+
+	planInputPath = jsonPath
+	planFormat = "text"
+	planFailOn = "errors"
+	planConfigPath = ""
+	planOutputDir = ""
+
+	var buf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
+	err = runPlan(cmd, nil)
+	var pf *PlanFindingsError
+	if !errors.As(err, &pf) {
+		t.Fatalf("runPlan() error = %v, want *PlanFindingsError", err)
+	}
+	if pf.UnsupportedColumns != 1 {
+		t.Fatalf("UnsupportedColumns = %d, want 1", pf.UnsupportedColumns)
+	}
+	if !strings.Contains(buf.String(), "Unsupported Columns") || !strings.Contains(buf.String(), "FAIL: 1 unsupported column(s)") {
+		t.Fatalf("unexpected output:\n%s", buf.String())
+	}
+}
+
+func TestRunPlanFromInput_RejectsOutputDir(t *testing.T) {
+	prevInput := planInputPath
+	prevFormat := planFormat
+	prevFail := planFailOn
+	prevConfig := planConfigPath
+	prevOut := planOutputDir
+	t.Cleanup(func() {
+		planInputPath = prevInput
+		planFormat = prevFormat
+		planFailOn = prevFail
+		planConfigPath = prevConfig
+		planOutputDir = prevOut
+	})
+
+	planInputPath = filepath.Join(t.TempDir(), "report.json")
+	planFormat = "text"
+	planFailOn = "none"
+	planConfigPath = ""
+	planOutputDir = t.TempDir()
+
+	err := runPlan(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("runPlan() error = nil, want --output-dir rejected")
+	}
+	if !strings.Contains(err.Error(), "--output-dir") {
+		t.Fatalf("runPlan() error = %q", err.Error())
+	}
+}
+
+func TestRunPlanFromInput_InvalidJSON(t *testing.T) {
+	prevInput := planInputPath
+	prevFormat := planFormat
+	prevFail := planFailOn
+	prevConfig := planConfigPath
+	prevOut := planOutputDir
+	t.Cleanup(func() {
+		planInputPath = prevInput
+		planFormat = prevFormat
+		planFailOn = prevFail
+		planConfigPath = prevConfig
+		planOutputDir = prevOut
+	})
+
+	jsonPath := filepath.Join(t.TempDir(), "bad.json")
+	if err := os.WriteFile(jsonPath, []byte("{not json"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	planInputPath = jsonPath
+	planFormat = "text"
+	planFailOn = "none"
+	planConfigPath = ""
+	planOutputDir = ""
+
+	err := runPlan(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("runPlan() error = nil, want decode error")
+	}
+	if !strings.Contains(err.Error(), "decode plan input") {
+		t.Fatalf("runPlan() error = %q", err.Error())
+	}
+}
+
 func TestRunPlanWithConfig_InvalidFailOn(t *testing.T) {
 	cfg := &MigrationConfig{
 		Schema:      "app",
