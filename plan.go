@@ -510,12 +510,7 @@ func newPlanTableFilterReport(r schemaFilterReport) *PlanTableFilterReport {
 		SkippedForeignKeys: make([]PlanSkippedForeignKey, 0, len(r.SkippedForeignKeys)),
 	}
 	for _, fk := range r.SkippedForeignKeys {
-		out.SkippedForeignKeys = append(out.SkippedForeignKeys, PlanSkippedForeignKey{
-			Table:    fk.Table,
-			Name:     fk.Name,
-			RefTable: fk.RefTable,
-			Reason:   fk.Reason,
-		})
+		out.SkippedForeignKeys = append(out.SkippedForeignKeys, PlanSkippedForeignKey(fk))
 	}
 	return out
 }
