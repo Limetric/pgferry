@@ -25,12 +25,19 @@ var rootCmd = &cobra.Command{
 	RunE:  runRoot,
 }
 
+var versionVerbose bool
+
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print pgferry version",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, _ []string) {
-		fmt.Fprintln(cmd.OutOrStdout(), versionString())
+		out := cmd.OutOrStdout()
+		if versionVerbose {
+			fmt.Fprintln(out, versionVerboseString())
+			return
+		}
+		fmt.Fprintln(out, versionString())
 	},
 }
 
@@ -59,6 +66,7 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	migrateCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
+	versionCmd.Flags().BoolVarP(&versionVerbose, "verbose", "v", false, "print detailed build metadata")
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(generateCmd)
