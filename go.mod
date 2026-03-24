@@ -9,6 +9,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.0
 	github.com/microsoft/go-mssqldb v1.9.8
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/sync v0.19.0
 	modernc.org/sqlite v1.47.0
 )
 
@@ -29,7 +30,6 @@ require (
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
 	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect

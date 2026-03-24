@@ -14,7 +14,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
+
+// connectivityPingTimeout bounds the parallel source/target connectivity check.
+const connectivityPingTimeout = 30 * time.Second
 
 var configPath string
 
@@ -215,8 +219,45 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	defer sourceDB.Close()
 	sourceDB.SetMaxOpenConns(1)
 
-	if err := sourceDB.PingContext(ctx); err != nil {
-		return fmt.Errorf("ping %s: %w", strings.ToLower(src.Name()), err)
+	// Open the PostgreSQL pool before introspection so we can ping source and
+	// target in parallel (fail-fast with lower wall-clock latency). The pool may
+	// sit idle until introspection finishes; that trades a longer-held target
+	// connection for parallel ping latency (see #156).
+	poolCfg, poolWarning, err := buildTargetPoolConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	if poolWarning != "" {
+		log.Printf("WARN: %s", poolWarning)
+	}
+	pgPool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pgPool.Close()
+
+	srcLabel := strings.ToLower(src.Name())
+	log.Printf("pinging %s and PostgreSQL...", srcLabel)
+	pingCtx, pingCancel := context.WithTimeout(ctx, connectivityPingTimeout)
+	defer pingCancel()
+	var srcPingErr, pgPingErr error
+	var g errgroup.Group
+	g.Go(func() error {
+		if err := sourceDB.PingContext(pingCtx); err != nil {
+			srcPingErr = fmt.Errorf("ping %s: %w", srcLabel, err)
+		}
+		return nil
+	})
+	g.Go(func() error {
+		// pgxpool.Ping honors the context deadline (network I/O is cancellable).
+		if err := pgPool.Ping(pingCtx); err != nil {
+			pgPingErr = fmt.Errorf("ping postgres: %w", err)
+		}
+		return nil
+	})
+	g.Wait()
+	if err := errors.Join(srcPingErr, pgPingErr); err != nil {
+		return err
 	}
 
 	dbName, err := src.ExtractDBName(cfg.Source.DSN)
@@ -327,29 +368,13 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	}
 	logTemporalWarnings(collectTemporalWarnings(schema, cfg.Source.Type, typeMap))
 
-	// Close introspection connection — data migration opens its own connections
+	// Release the introspection source handle before data migration (which opens
+	// its own connections). defer sourceDB.Close() still runs at function exit;
+	// sql.DB.Close is idempotent.
 	sourceDB.Close()
 
-	// 3. Connect to PostgreSQL
+	// 3. PostgreSQL pool (opened and pinged earlier; still used below)
 	stage = "target"
-	log.Printf("connecting to PostgreSQL...")
-	poolCfg, poolWarning, err := buildTargetPoolConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("connect postgres: %w", err)
-	}
-	if poolWarning != "" {
-		log.Printf("WARN: %s", poolWarning)
-	}
-	pgPool, err := pgxpool.NewWithConfig(ctx, poolCfg)
-	if err != nil {
-		return fmt.Errorf("connect postgres: %w", err)
-	}
-	defer pgPool.Close()
-
-	if err := pgPool.Ping(ctx); err != nil {
-		return fmt.Errorf("ping postgres: %w", err)
-	}
-
 	// Validate extension-backed features before any schema or data work. This
 	// intentionally also runs in schema_only and data_only modes because
 	// geometry/citext DDL and COPY both depend on the target extension being
