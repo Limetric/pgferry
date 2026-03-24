@@ -115,33 +115,33 @@ func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error)
 func (s *sqliteSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceObjects, error) {
 	objs := &SourceObjects{}
 
-	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='view' ORDER BY name")
+	rows, err := db.Query("SELECT name, COALESCE(sql, '') FROM sqlite_master WHERE type='view' ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("introspect views: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var name, definition string
+		if err := rows.Scan(&name, &definition); err != nil {
 			return nil, err
 		}
-		objs.Views = append(objs.Views, name)
+		objs.Views = append(objs.Views, SourceView{Name: name, Dialect: "sqlite", Definition: definition})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 
-	rows2, err := db.Query("SELECT name, tbl_name FROM sqlite_master WHERE type='trigger' ORDER BY name")
+	rows2, err := db.Query("SELECT name, tbl_name, COALESCE(sql, '') FROM sqlite_master WHERE type='trigger' ORDER BY name")
 	if err != nil {
 		return nil, fmt.Errorf("introspect triggers: %w", err)
 	}
 	defer rows2.Close()
 	for rows2.Next() {
-		var name, tblName string
-		if err := rows2.Scan(&name, &tblName); err != nil {
+		var name, tblName, definition string
+		if err := rows2.Scan(&name, &tblName, &definition); err != nil {
 			return nil, err
 		}
-		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: name, Table: tblName})
+		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: name, Table: tblName, Dialect: "sqlite", Definition: definition})
 	}
 	if err := rows2.Err(); err != nil {
 		return nil, err

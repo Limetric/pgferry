@@ -7,8 +7,8 @@ import (
 
 func TestSourceObjectWarnings(t *testing.T) {
 	objs := &SourceObjects{
-		Views:    []string{"v_users"},
-		Routines: []string{"FUNCTION calc_score", "PROCEDURE sync_data"},
+		Views:    []SourceView{{Name: "v_users"}},
+		Routines: []SourceRoutine{{Name: "calc_score", Type: "FUNCTION"}, {Name: "sync_data", Type: "PROCEDURE"}},
 		Triggers: []SourceTrigger{{Name: "trg_users_touch", Table: "users"}},
 	}
 

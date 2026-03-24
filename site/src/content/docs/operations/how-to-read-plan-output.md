@@ -32,6 +32,8 @@ description: Treat pgferry plan output as a worklist, not a warning dump.
 
 `--format json` emits the full report as JSON — great for archives, diffs, or feeding something that isn't a human.
 
+Be careful with where you store or publish those reports: when pgferry can introspect source definitions, the JSON and generated hook skeletons may include commented source SQL that exposes schema details or business logic.
+
 `--input previous.json` reprints or re-checks a saved report without talking to the source. Pair with `--fail-on` in CI so the pipeline fails on unsupported columns or high-severity copy risks even when the database is asleep.
 
 `--fail-on` levels: `none` (always exit 0 if parsing works), `errors` (unsupported types), `warnings` (errors plus high-severity copy risks). Pick your own adventure.

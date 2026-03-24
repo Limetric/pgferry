@@ -100,7 +100,7 @@ func (m *mysqlSourceDB) IntrospectSchema(db *sql.DB, dbName string) (*Schema, er
 }
 
 func (m *mysqlSourceDB) IntrospectSourceObjects(db *sql.DB, dbName string) (*SourceObjects, error) {
-	return introspectMySQLSourceObjects(db, dbName)
+	return introspectMySQLSourceObjects(db, dbName, "mysql")
 }
 
 func (m *mysqlSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, dbName string) ([]SchemaSemanticWarning, error) {
@@ -146,6 +146,10 @@ func (m *mariadbSourceDB) IntrospectSchema(db *sql.DB, dbName string) (*Schema, 
 
 func (m *mariadbSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, dbName string) ([]SchemaSemanticWarning, error) {
 	return introspectMySQLFamilySchemaSemanticWarnings(db, dbName, m.identName, "MariaDB")
+}
+
+func (m *mariadbSourceDB) IntrospectSourceObjects(db *sql.DB, dbName string) (*SourceObjects, error) {
+	return introspectMySQLSourceObjects(db, dbName, "mariadb")
 }
 
 func (m *mariadbSourceDB) MapType(col Column, typeMap TypeMappingConfig) (string, error) {
@@ -815,20 +819,36 @@ func introspectMySQLForeignKeysByTable(db *sql.DB, dbName string, identName func
 
 // --- Source objects introspection (moved from source_objects.go) ---
 
-func introspectMySQLSourceObjects(db *sql.DB, dbName string) (*SourceObjects, error) {
+func introspectMySQLSourceObjects(db *sql.DB, dbName, dialect string) (*SourceObjects, error) {
 	objs := &SourceObjects{}
 
-	if err := collectStringRows(db, `
-		SELECT TABLE_NAME
+	viewRows, err := db.Query(`
+		SELECT TABLE_NAME, COALESCE(VIEW_DEFINITION, '')
 		FROM INFORMATION_SCHEMA.VIEWS
 		WHERE TABLE_SCHEMA = ?
 		ORDER BY TABLE_NAME
-	`, dbName, &objs.Views); err != nil {
+	`, dbName)
+	if err != nil {
 		return nil, fmt.Errorf("introspect views: %w", err)
+	}
+	defer viewRows.Close()
+	for viewRows.Next() {
+		var name, definition string
+		if err := viewRows.Scan(&name, &definition); err != nil {
+			return nil, fmt.Errorf("scan views: %w", err)
+		}
+		objs.Views = append(objs.Views, SourceView{
+			Name:       name,
+			Dialect:    dialect,
+			Definition: mysqlViewDefinition(name, definition),
+		})
+	}
+	if err := viewRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate views: %w", err)
 	}
 
 	rows, err := db.Query(`
-		SELECT ROUTINE_TYPE, ROUTINE_NAME
+		SELECT ROUTINE_TYPE, ROUTINE_NAME, COALESCE(ROUTINE_DEFINITION, '')
 		FROM INFORMATION_SCHEMA.ROUTINES
 		WHERE ROUTINE_SCHEMA = ?
 		ORDER BY ROUTINE_TYPE, ROUTINE_NAME
@@ -838,18 +858,24 @@ func introspectMySQLSourceObjects(db *sql.DB, dbName string) (*SourceObjects, er
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var routineType, routineName string
-		if err := rows.Scan(&routineType, &routineName); err != nil {
+		var routineType, routineName, definition string
+		if err := rows.Scan(&routineType, &routineName, &definition); err != nil {
 			return nil, fmt.Errorf("scan routines: %w", err)
 		}
-		objs.Routines = append(objs.Routines, fmt.Sprintf("%s %s", strings.ToUpper(routineType), routineName))
+		routineType = strings.ToUpper(routineType)
+		objs.Routines = append(objs.Routines, SourceRoutine{
+			Name:       routineName,
+			Type:       routineType,
+			Dialect:    dialect,
+			Definition: mysqlRoutineDefinition(routineType, routineName, definition),
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate routines: %w", err)
 	}
 
 	trRows, err := db.Query(`
-		SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE
+		SELECT TRIGGER_NAME, EVENT_OBJECT_TABLE, ACTION_TIMING, EVENT_MANIPULATION, ACTION_STATEMENT
 		FROM INFORMATION_SCHEMA.TRIGGERS
 		WHERE TRIGGER_SCHEMA = ?
 		ORDER BY TRIGGER_NAME
@@ -859,17 +885,58 @@ func introspectMySQLSourceObjects(db *sql.DB, dbName string) (*SourceObjects, er
 	}
 	defer trRows.Close()
 	for trRows.Next() {
-		var name, table string
-		if err := trRows.Scan(&name, &table); err != nil {
+		var name, table, timing, event, action string
+		if err := trRows.Scan(&name, &table, &timing, &event, &action); err != nil {
 			return nil, fmt.Errorf("scan triggers: %w", err)
 		}
-		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: name, Table: table})
+		objs.Triggers = append(objs.Triggers, SourceTrigger{
+			Name:       name,
+			Table:      table,
+			Dialect:    dialect,
+			Definition: mysqlTriggerDefinition(name, table, timing, event, action),
+		})
 	}
 	if err := trRows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate triggers: %w", err)
 	}
 
 	return objs, nil
+}
+
+func mysqlRoutineDefinition(routineType, routineName, body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"-- Source catalog exposed the routine body only; parameters and returns are omitted here.\nCREATE %s %s AS\n%s",
+		routineType,
+		quoteMySQLBacktickIdent(routineName),
+		body,
+	)
+}
+
+func mysqlViewDefinition(name, body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	return fmt.Sprintf("CREATE VIEW %s AS\n%s", quoteMySQLBacktickIdent(name), body)
+}
+
+func mysqlTriggerDefinition(name, table, timing, event, action string) string {
+	action = strings.TrimSpace(action)
+	if name == "" || table == "" || timing == "" || event == "" || action == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"CREATE TRIGGER %s %s %s ON %s FOR EACH ROW\n%s",
+		quoteMySQLBacktickIdent(name),
+		strings.ToUpper(strings.TrimSpace(timing)),
+		strings.ToUpper(strings.TrimSpace(event)),
+		quoteMySQLBacktickIdent(table),
+		action,
+	)
 }
 
 // --- Type mapping (moved from transform.go / type_compat.go) ---

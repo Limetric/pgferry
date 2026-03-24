@@ -88,6 +88,42 @@ func TestAnnotateMariaDBJSONColumns(t *testing.T) {
 	}
 }
 
+func TestMySQLViewDefinition(t *testing.T) {
+	if got := mysqlViewDefinition("v_users", ""); got != "" {
+		t.Fatalf("mysqlViewDefinition(empty) = %q, want empty", got)
+	}
+	got := mysqlViewDefinition("v_users", " SELECT 1 ")
+	if !strings.Contains(got, "CREATE VIEW `v_users` AS\nSELECT 1") {
+		t.Fatalf("mysqlViewDefinition() = %q", got)
+	}
+}
+
+func TestMySQLRoutineDefinition(t *testing.T) {
+	if got := mysqlRoutineDefinition("FUNCTION", "f", ""); got != "" {
+		t.Fatalf("mysqlRoutineDefinition(empty) = %q, want empty", got)
+	}
+	got := mysqlRoutineDefinition("FUNCTION", "f", "RETURN 'x';")
+	if !strings.Contains(got, "CREATE FUNCTION `f` AS\nRETURN 'x';") {
+		t.Fatalf("mysqlRoutineDefinition() = %q", got)
+	}
+	if !strings.Contains(got, "parameters and returns are omitted") {
+		t.Fatalf("mysqlRoutineDefinition() missing note, got %q", got)
+	}
+}
+
+func TestMySQLTriggerDefinition(t *testing.T) {
+	if got := mysqlTriggerDefinition("trg", "users", "before", "insert", ""); got != "" {
+		t.Fatalf("mysqlTriggerDefinition(empty action) = %q, want empty", got)
+	}
+	got := mysqlTriggerDefinition("trg", "users", "before", "insert", "SET NEW.name = 'x';")
+	if !strings.Contains(got, "CREATE TRIGGER `trg` BEFORE INSERT ON `users` FOR EACH ROW") {
+		t.Fatalf("mysqlTriggerDefinition() = %q", got)
+	}
+	if !strings.Contains(got, "SET NEW.name = 'x';") {
+		t.Fatalf("mysqlTriggerDefinition() missing action, got %q", got)
+	}
+}
+
 func TestNormalizeMariaDBSchemaColumns_JSONColumnType(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

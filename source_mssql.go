@@ -898,9 +898,10 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 
 	// Views
 	viewRows, err := db.Query(`
-		SELECT v.name
+		SELECT v.name, COALESCE(sm.definition, '')
 		FROM sys.views v
 		JOIN sys.schemas s ON v.schema_id = s.schema_id
+		LEFT JOIN sys.sql_modules sm ON v.object_id = sm.object_id
 		WHERE s.name = @p1
 		ORDER BY v.name`,
 		m.sourceSchema,
@@ -910,11 +911,11 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 	}
 	defer viewRows.Close()
 	for viewRows.Next() {
-		var name string
-		if err := viewRows.Scan(&name); err != nil {
+		var name, definition string
+		if err := viewRows.Scan(&name, &definition); err != nil {
 			return nil, err
 		}
-		objs.Views = append(objs.Views, name)
+		objs.Views = append(objs.Views, SourceView{Name: name, Dialect: "mssql", Definition: definition})
 	}
 	if err := viewRows.Err(); err != nil {
 		return nil, err
@@ -922,9 +923,10 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 
 	// Procedures and functions
 	routineRows, err := db.Query(`
-		SELECT o.type_desc, o.name
+		SELECT o.type_desc, o.name, COALESCE(sm.definition, '')
 		FROM sys.objects o
 		JOIN sys.schemas s ON o.schema_id = s.schema_id
+		LEFT JOIN sys.sql_modules sm ON o.object_id = sm.object_id
 		WHERE s.name = @p1
 		  AND o.type IN ('P', 'FN', 'IF', 'TF')
 		ORDER BY o.type, o.name`,
@@ -935,11 +937,11 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 	}
 	defer routineRows.Close()
 	for routineRows.Next() {
-		var typeDesc, name string
-		if err := routineRows.Scan(&typeDesc, &name); err != nil {
+		var typeDesc, name, definition string
+		if err := routineRows.Scan(&typeDesc, &name, &definition); err != nil {
 			return nil, err
 		}
-		objs.Routines = append(objs.Routines, fmt.Sprintf("%s %s", typeDesc, name))
+		objs.Routines = append(objs.Routines, SourceRoutine{Name: name, Type: typeDesc, Dialect: "mssql", Definition: definition})
 	}
 	if err := routineRows.Err(); err != nil {
 		return nil, err
@@ -947,10 +949,11 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 
 	// Triggers
 	triggerRows, err := db.Query(`
-		SELECT tr.name, o.name
+		SELECT tr.name, o.name, COALESCE(sm.definition, '')
 		FROM sys.triggers tr
 		JOIN sys.objects o ON tr.parent_id = o.object_id
 		JOIN sys.schemas s ON o.schema_id = s.schema_id
+		LEFT JOIN sys.sql_modules sm ON tr.object_id = sm.object_id
 		WHERE s.name = @p1
 		ORDER BY tr.name`,
 		m.sourceSchema,
@@ -960,11 +963,11 @@ func (m *mssqlSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceOb
 	}
 	defer triggerRows.Close()
 	for triggerRows.Next() {
-		var triggerName, tableName string
-		if err := triggerRows.Scan(&triggerName, &tableName); err != nil {
+		var triggerName, tableName, definition string
+		if err := triggerRows.Scan(&triggerName, &tableName, &definition); err != nil {
 			return nil, err
 		}
-		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: triggerName, Table: tableName})
+		objs.Triggers = append(objs.Triggers, SourceTrigger{Name: triggerName, Table: tableName, Dialect: "mssql", Definition: definition})
 	}
 	if err := triggerRows.Err(); err != nil {
 		return nil, err

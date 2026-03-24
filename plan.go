@@ -33,6 +33,10 @@ var planCmd = &cobra.Command{
 require manual follow-up: views, routines, triggers, generated columns,
 and skipped indexes.
 
+Saved JSON reports and generated hook skeletons can include commented source
+SQL definitions when the source catalog exposes them. Treat that output as
+sensitive schema or business-logic material.
+
 Use --input with a JSON report from a previous --format json run to re-render
 or apply --fail-on checks without connecting to the source. --input cannot be
 combined with a migration config (--config or a positional TOML path); use one
@@ -48,7 +52,7 @@ var planConfigPath string
 func init() {
 	planCmd.Flags().StringVar(&planConfigPath, "config", "", "path to migration TOML config file")
 	planCmd.Flags().StringVar(&planInputPath, "input", "", "read a previously saved JSON plan report instead of connecting to the source")
-	planCmd.Flags().StringVar(&planOutputDir, "output-dir", "", "directory to write hook skeleton files")
+	planCmd.Flags().StringVar(&planOutputDir, "output-dir", "", "directory to write hook skeleton files (may include commented source SQL definitions)")
 	planCmd.Flags().StringVar(&planFormat, "format", "text", "output format: text, json, or markdown")
 	// fail-on=none keeps exit 0 when introspection succeeds; errors/warnings gate CI on unsupported columns or high copy-risk severity.
 	planCmd.Flags().StringVar(&planFailOn, "fail-on", "none", "exit non-zero on findings: none, errors, or warnings")
@@ -212,31 +216,67 @@ type PlanRequiredExtension struct {
 	Mode    string `json:"mode"`
 }
 
+type PlanSourceView struct {
+	Name       string `json:"name"`
+	Dialect    string `json:"dialect,omitempty"`
+	Definition string `json:"definition,omitempty"`
+}
+
+type PlanSourceRoutine struct {
+	Name       string `json:"name"`
+	Type       string `json:"type,omitempty"`
+	Dialect    string `json:"dialect,omitempty"`
+	Definition string `json:"definition,omitempty"`
+}
+
+func (r PlanSourceRoutine) DisplayName() string {
+	if r.Type == "" {
+		return r.Name
+	}
+	return fmt.Sprintf("%s %s", r.Type, r.Name)
+}
+
 // PlanSourceTrigger is a trigger on the source database with its source table.
 type PlanSourceTrigger struct {
-	Name  string `json:"name"`
-	Table string `json:"table,omitempty"`
+	Name       string `json:"name"`
+	Table      string `json:"table,omitempty"`
+	Dialect    string `json:"dialect,omitempty"`
+	Definition string `json:"definition,omitempty"`
 }
 
 // PlanSourceObjects holds non-table source objects.
 type PlanSourceObjects struct {
-	Views    []string            `json:"views"`
-	Routines []string            `json:"routines"`
+	Views    []PlanSourceView    `json:"views"`
+	Routines []PlanSourceRoutine `json:"routines"`
 	Triggers []PlanSourceTrigger `json:"triggers"`
 }
 
 // MarshalJSON emits empty arrays for nil slices (including triggers) so saved reports stay consistent.
 func (p PlanSourceObjects) MarshalJSON() ([]byte, error) {
 	type out struct {
-		Views    []string            `json:"views"`
-		Routines []string            `json:"routines"`
+		Views    []PlanSourceView    `json:"views"`
+		Routines []PlanSourceRoutine `json:"routines"`
 		Triggers []PlanSourceTrigger `json:"triggers"`
 	}
 	return json.Marshal(out{
-		Views:    ensureStringSlice(p.Views),
-		Routines: ensureStringSlice(p.Routines),
+		Views:    ensurePlanViewsSlice(p.Views),
+		Routines: ensurePlanRoutinesSlice(p.Routines),
 		Triggers: ensurePlanTriggersSlice(p.Triggers),
 	})
+}
+
+func ensurePlanViewsSlice(v []PlanSourceView) []PlanSourceView {
+	if v == nil {
+		return []PlanSourceView{}
+	}
+	return v
+}
+
+func ensurePlanRoutinesSlice(r []PlanSourceRoutine) []PlanSourceRoutine {
+	if r == nil {
+		return []PlanSourceRoutine{}
+	}
+	return r
 }
 
 func ensurePlanTriggersSlice(t []PlanSourceTrigger) []PlanSourceTrigger {
@@ -249,15 +289,23 @@ func ensurePlanTriggersSlice(t []PlanSourceTrigger) []PlanSourceTrigger {
 // UnmarshalJSON accepts legacy trigger lists as JSON string arrays or the new object form.
 func (p *PlanSourceObjects) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Views    []string        `json:"views"`
-		Routines []string        `json:"routines"`
+		Views    json.RawMessage `json:"views"`
+		Routines json.RawMessage `json:"routines"`
 		Triggers json.RawMessage `json:"triggers"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	p.Views = ensureStringSlice(raw.Views)
-	p.Routines = ensureStringSlice(raw.Routines)
+	views, err := decodePlanSourceViews(raw.Views)
+	if err != nil {
+		return err
+	}
+	routines, err := decodePlanSourceRoutines(raw.Routines)
+	if err != nil {
+		return err
+	}
+	p.Views = views
+	p.Routines = routines
 	if len(raw.Triggers) == 0 || string(bytes.TrimSpace(raw.Triggers)) == "null" {
 		p.Triggers = []PlanSourceTrigger{}
 		return nil
@@ -276,6 +324,44 @@ func (p *PlanSourceObjects) UnmarshalJSON(data []byte) error {
 	}
 	p.Triggers = objs
 	return nil
+}
+
+func decodePlanSourceViews(data json.RawMessage) ([]PlanSourceView, error) {
+	if len(data) == 0 || string(bytes.TrimSpace(data)) == "null" {
+		return []PlanSourceView{}, nil
+	}
+	var strs []string
+	if err := json.Unmarshal(data, &strs); err == nil {
+		out := make([]PlanSourceView, len(strs))
+		for i, s := range strs {
+			out[i] = PlanSourceView{Name: s}
+		}
+		return out, nil
+	}
+	var objs []PlanSourceView
+	if err := json.Unmarshal(data, &objs); err != nil {
+		return nil, fmt.Errorf("source_objects.views: expected string array or object array: %w", err)
+	}
+	return objs, nil
+}
+
+func decodePlanSourceRoutines(data json.RawMessage) ([]PlanSourceRoutine, error) {
+	if len(data) == 0 || string(bytes.TrimSpace(data)) == "null" {
+		return []PlanSourceRoutine{}, nil
+	}
+	var strs []string
+	if err := json.Unmarshal(data, &strs); err == nil {
+		out := make([]PlanSourceRoutine, len(strs))
+		for i, s := range strs {
+			out[i] = parseLegacyPlanSourceRoutine(s)
+		}
+		return out, nil
+	}
+	var objs []PlanSourceRoutine
+	if err := json.Unmarshal(data, &objs); err != nil {
+		return nil, fmt.Errorf("source_objects.routines: expected string array or object array: %w", err)
+	}
+	return objs, nil
 }
 
 type PlanUnsupportedColumn struct {
@@ -662,12 +748,12 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 
 	// Source objects
 	if sourceObjects != nil {
-		report.SourceObjects.Views = ensureStringSlice(sourceObjects.Views)
-		report.SourceObjects.Routines = ensureStringSlice(sourceObjects.Routines)
+		report.SourceObjects.Views = planViewsFromSource(sourceObjects.Views)
+		report.SourceObjects.Routines = planRoutinesFromSource(sourceObjects.Routines)
 		report.SourceObjects.Triggers = planTriggersFromSource(sourceObjects.Triggers)
 	} else {
-		report.SourceObjects.Views = []string{}
-		report.SourceObjects.Routines = []string{}
+		report.SourceObjects.Views = []PlanSourceView{}
+		report.SourceObjects.Routines = []PlanSourceRoutine{}
 		report.SourceObjects.Triggers = []PlanSourceTrigger{}
 	}
 
@@ -751,11 +837,26 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 	return report
 }
 
-func ensureStringSlice(s []string) []string {
-	if s == nil {
-		return []string{}
+func planViewsFromSource(views []SourceView) []PlanSourceView {
+	if len(views) == 0 {
+		return []PlanSourceView{}
 	}
-	return s
+	out := make([]PlanSourceView, len(views))
+	for i, v := range views {
+		out[i] = PlanSourceView(v)
+	}
+	return out
+}
+
+func planRoutinesFromSource(routines []SourceRoutine) []PlanSourceRoutine {
+	if len(routines) == 0 {
+		return []PlanSourceRoutine{}
+	}
+	out := make([]PlanSourceRoutine, len(routines))
+	for i, r := range routines {
+		out[i] = PlanSourceRoutine(r)
+	}
+	return out
 }
 
 func planTriggersFromSource(tr []SourceTrigger) []PlanSourceTrigger {
@@ -937,6 +1038,10 @@ func writePlanText(w io.Writer, report *PlanReport) {
 	if len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 {
 		hasContent = true
 		fmt.Fprintf(w, "## Source Objects (require manual migration)\n\n")
+		if planSourceObjectsHaveDefinitions(*objs) {
+			fmt.Fprintf(w, "Saved JSON reports and generated hook skeletons may include commented source SQL definitions.\n")
+			fmt.Fprintf(w, "Treat that output as sensitive schema or business-logic material.\n\n")
+		}
 		if len(objs.Views) > 0 {
 			fmt.Fprintf(w, "Views (%d):\n", len(objs.Views))
 			if report.TableFilterReport != nil {
@@ -944,7 +1049,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				fmt.Fprintf(w, "  tables outside your include_tables/exclude_tables scope.\n")
 			}
 			for _, v := range objs.Views {
-				fmt.Fprintf(w, "  - %s\n", v)
+				fmt.Fprintf(w, "  - %s\n", v.Name)
 			}
 			fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
 		}
@@ -955,7 +1060,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				fmt.Fprintf(w, "  tables outside your include_tables/exclude_tables scope.\n")
 			}
 			for _, r := range objs.Routines {
-				fmt.Fprintf(w, "  - %s\n", r)
+				fmt.Fprintf(w, "  - %s\n", r.DisplayName())
 			}
 			fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
 		}
@@ -1186,7 +1291,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 				fmt.Fprintln(w)
 			}
 			for _, v := range objs.Views {
-				fmt.Fprintf(w, "- %s\n", markdownEscape(v))
+				fmt.Fprintf(w, "- %s\n", markdownEscape(v.Name))
 			}
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
@@ -1198,7 +1303,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 				fmt.Fprintln(w)
 			}
 			for _, r := range objs.Routines {
-				fmt.Fprintf(w, "- %s\n", markdownEscape(r))
+				fmt.Fprintf(w, "- %s\n", markdownEscape(r.DisplayName()))
 			}
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
@@ -1535,13 +1640,18 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 
 	var b strings.Builder
 	b.WriteString("-- after_all hook: objects requiring manual migration\n")
+	if planSourceObjectsHaveDefinitions(*objs) {
+		b.WriteString("-- Warning: commented source definitions below may expose schema details or business logic.\n")
+		b.WriteString("-- Treat this file as sensitive and do not run source SQL as PostgreSQL SQL verbatim.\n")
+	}
 	b.WriteString("-- Schema: {{schema}}\n\n")
 
 	if len(objs.Views) > 0 {
 		b.WriteString("-- Views\n")
 		b.WriteString("-- Recreate these views in PostgreSQL syntax.\n")
 		for _, v := range objs.Views {
-			fmt.Fprintf(&b, "-- TODO: CREATE VIEW %s.%s AS ...;\n", pgIdent("{{schema}}"), pgIdent(v))
+			fmt.Fprintf(&b, "-- TODO: CREATE VIEW %s.%s AS ...;\n", pgIdent("{{schema}}"), pgIdent(v.Name))
+			appendCommentedSourceDefinition(&b, v.Dialect, v.Definition, "Manual rewrite required before using this in PostgreSQL.")
 		}
 		b.WriteByte('\n')
 	}
@@ -1550,7 +1660,8 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 		b.WriteString("-- Routines (functions/procedures)\n")
 		b.WriteString("-- Rewrite these in PL/pgSQL or another PostgreSQL procedural language.\n")
 		for _, r := range objs.Routines {
-			fmt.Fprintf(&b, "-- TODO: %s — rewrite for PostgreSQL\n", r)
+			fmt.Fprintf(&b, "-- TODO: %s — rewrite for PostgreSQL\n", r.DisplayName())
+			appendCommentedSourceDefinition(&b, r.Dialect, r.Definition, "Informational source SQL/body only. Manual rewrite required for PostgreSQL.")
 		}
 		b.WriteByte('\n')
 	}
@@ -1564,6 +1675,7 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 			} else {
 				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...;\n", pgIdent(tg.Name))
 			}
+			appendCommentedSourceDefinition(&b, tg.Dialect, tg.Definition, "Informational source SQL only. Rebuild with PostgreSQL trigger functions.")
 		}
 		b.WriteByte('\n')
 	}
@@ -1592,6 +1704,80 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 	}
 
 	return b.String()
+}
+
+const maxPlanSourceDefinitionChars = 8000
+
+func appendCommentedSourceDefinition(b *strings.Builder, dialect, definition, note string) {
+	definition = strings.TrimSpace(normalizePlanSourceDefinition(definition))
+	if definition == "" {
+		return
+	}
+
+	if note != "" {
+		fmt.Fprintf(b, "-- %s\n", sanitizeSQLCommentText(note))
+	}
+	if dialect != "" {
+		fmt.Fprintf(b, "-- source dialect: %s\n", sanitizeSQLCommentText(dialect))
+	}
+
+	truncated := false
+	if definitionRunes := []rune(definition); len(definitionRunes) > maxPlanSourceDefinitionChars {
+		definition = strings.TrimSpace(string(definitionRunes[:maxPlanSourceDefinitionChars]))
+		truncated = true
+	}
+	for _, line := range strings.Split(definition, "\n") {
+		if strings.TrimSpace(line) == "" {
+			b.WriteString("--\n")
+			continue
+		}
+		fmt.Fprintf(b, "-- %s\n", strings.TrimRight(line, " \t"))
+	}
+	if truncated {
+		fmt.Fprintf(b, "-- [truncated after %d characters]\n", maxPlanSourceDefinitionChars)
+	}
+	b.WriteByte('\n')
+}
+
+func normalizePlanSourceDefinition(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return s
+}
+
+func parseLegacyPlanSourceRoutine(s string) PlanSourceRoutine {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return PlanSourceRoutine{}
+	}
+	parts := strings.SplitN(s, " ", 2)
+	if len(parts) == 2 {
+		t := strings.TrimSpace(parts[0])
+		name := strings.TrimSpace(parts[1])
+		if t != "" && name != "" && !strings.Contains(name, " ") {
+			return PlanSourceRoutine{Type: t, Name: name}
+		}
+	}
+	return PlanSourceRoutine{Name: s}
+}
+
+func planSourceObjectsHaveDefinitions(objs PlanSourceObjects) bool {
+	for _, v := range objs.Views {
+		if strings.TrimSpace(v.Definition) != "" {
+			return true
+		}
+	}
+	for _, r := range objs.Routines {
+		if strings.TrimSpace(r.Definition) != "" {
+			return true
+		}
+	}
+	for _, t := range objs.Triggers {
+		if strings.TrimSpace(t.Definition) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func sanitizeSQLCommentText(s string) string {

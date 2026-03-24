@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"strings"
 	"unicode"
 )
@@ -36,21 +35,4 @@ func toSnakeCase(s string) string {
 // relying on a manually maintained keyword list and keeps generated SQL stable.
 func pgIdent(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-}
-
-// collectStringRows is a helper to collect single-column string results.
-func collectStringRows(db *sql.DB, query, param string, out *[]string) error {
-	rows, err := db.Query(query, param)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var v string
-		if err := rows.Scan(&v); err != nil {
-			return err
-		}
-		*out = append(*out, v)
-	}
-	return rows.Err()
 }
