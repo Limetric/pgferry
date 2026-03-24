@@ -118,7 +118,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `workers` | int | `min(runtime.NumCPU(), 8)` | Parallel worker count for data loading. SQLite is internally capped at 1. |
 | `index_workers` | int | `workers` | Concurrent index builds during post-migration. |
 | `chunk_size` | int | `100000` | Key-range width for chunkable single-column numeric PK tables. Actual rows per chunk vary with key density. |
-| `copy_risk_analysis` | bool | `true` | Lightweight COUNT/MIN/MAX probes to flag awkward COPY chunking (huge tables, sparse keys, etc.). Feeds `plan` copy-risk output and optional migrate warnings. Turn off for quieter runs when you already know the shape. |
+| `copy_risk_analysis` | bool | `true` | Lightweight COUNT/MIN/MAX probes to flag awkward COPY chunking (huge tables, sparse keys, etc.). Feeds `plan` copy-risk output and optional migrate warnings. On long runs, emits periodic progress logs (current table and probe stage). Turn off for quieter runs when you already know the shape. |
 | `resume` | bool | `false` | Reuse `pgferry_checkpoint.json` after interruptions. |
 | `validation` | string | `"none"` | `"row_count"` compares per-table counts after load. `"sampled_hash"` adds bounded content fingerprints for deterministic primary-key-addressable rows. `pgferry validate` reuses this setting without rerunning migration stages. |
 

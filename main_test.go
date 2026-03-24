@@ -1,7 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"database/sql"
 	"errors"
+	"log"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -149,5 +154,48 @@ func TestBuildTargetPoolConfig_PreservesExplicitMaxConnsWhenLowerAndWarns(t *tes
 	}
 	if !strings.Contains(warning, "12") {
 		t.Fatalf("warning = %q, want effective concurrency", warning)
+	}
+}
+
+func TestRunStartupCopyRiskAnalysis_LogsProgress(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "startup-copy-risk.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, payload) VALUES (1, 'a')`); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "events",
+				PGName:     "events",
+				Columns: []Column{
+					{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "BIGINT"},
+				},
+				PrimaryKey: &Index{Columns: []string{"id"}},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	runStartupCopyRiskAnalysis(context.Background(), db, &sqliteSourceDB{}, schema, 10000)
+	out := buf.String()
+	if !strings.Contains(out, "copy risk analysis: probing 1 table(s)") {
+		t.Fatalf("missing start log:\n%s", out)
+	}
+	if !strings.Contains(out, "copy risk analysis: completed 1/1 table(s)") {
+		t.Fatalf("missing completion log:\n%s", out)
 	}
 }
