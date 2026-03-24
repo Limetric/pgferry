@@ -18,10 +18,11 @@ import (
 
 var configPath string
 
-// migrateLogFormatFlagDesc documents --log-format for migrate and root-with-config.
-const migrateLogFormatFlagDesc = `With json, one JSON object is written to stdout when the run finishes; human messages remain on stderr. JSON fields: version, duration_ms, mode, validation, success, error, stage (on failure), tables_migrated.`
+// migrateLogFormatFlagShort is the short --help line; full JSON field list is in migrateCmd.Long.
+const migrateLogFormatFlagShort = "migrate progress: text or json"
 
-var migrateLogFormat string
+// migrateLogFormatFlagDesc documents JSON mode for migrateCmd.Long and site docs.
+const migrateLogFormatFlagDesc = `With json, one JSON object is written to stdout when the run finishes; human messages remain on stderr. JSON fields: version, duration_ms, mode, validation, success, error, stage (on failure), tables_migrated (omitted when zero).`
 
 var rootCmd = &cobra.Command{
 	Use:   "pgferry [migration.toml]",
@@ -64,9 +65,8 @@ func init() {
 	rootCmd.Version = versionString()
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
-	rootCmd.Flags().StringVar(&migrateLogFormat, "log-format", "text", "migrate progress logs: text or json. "+migrateLogFormatFlagDesc)
+	rootCmd.PersistentFlags().String("log-format", "text", migrateLogFormatFlagShort)
 	migrateCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
-	migrateCmd.Flags().StringVar(&migrateLogFormat, "log-format", "text", "migrate progress logs: text or json. "+migrateLogFormatFlagDesc)
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(migrateCmd)
 	rootCmd.AddCommand(generateCmd)
@@ -107,11 +107,11 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	logFormat, err := parseMigrateLogFormat(migrateLogFormat)
+	opts, err := migrateOptionsFromCmd(cmd)
 	if err != nil {
 		return err
 	}
-	return runMigrationWithConfig(cfg, MigrateOptions{LogFormat: logFormat})
+	return runMigrationWithConfig(cfg, opts)
 }
 
 func resolveMigrationConfigPath(args []string) string {
@@ -223,6 +223,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	if err != nil {
 		return fmt.Errorf("introspect schema: %w", err)
 	}
+	stage = "filter"
 	filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
 	if err != nil {
 		return fmt.Errorf("filter schema tables: %w", err)

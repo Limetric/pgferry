@@ -7,7 +7,26 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
+
+func TestMigrateOptionsFromCmd(t *testing.T) {
+	opts, err := migrateOptionsFromCmd(nil)
+	if err != nil {
+		t.Fatalf("nil cmd: %v", err)
+	}
+	if opts.LogFormat != "text" {
+		t.Fatalf("nil cmd: LogFormat = %q, want text", opts.LogFormat)
+	}
+	opts, err = migrateOptionsFromCmd(&cobra.Command{})
+	if err != nil {
+		t.Fatalf("bare cmd: %v", err)
+	}
+	if opts.LogFormat != "text" {
+		t.Fatalf("bare cmd: LogFormat = %q, want text", opts.LogFormat)
+	}
+}
 
 func TestParseMigrateLogFormat(t *testing.T) {
 	tests := []struct {

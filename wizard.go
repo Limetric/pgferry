@@ -20,8 +20,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var generatedConfigRunner = func(cfg *MigrationConfig) error {
-	return runMigrationWithConfig(cfg, MigrateOptions{})
+// generatedConfigRunner runs the wizard’s post-generation migration; callers pass
+// MigrateOptions from migrateOptionsFromCmd(cmd) so --log-format matches migrate.
+var generatedConfigRunner = func(cfg *MigrationConfig, opts MigrateOptions) error {
+	return runMigrationWithConfig(cfg, opts)
 }
 
 type plannerFunc func(*MigrationConfig, io.Writer, PlanOptions) error
@@ -137,7 +139,11 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 
 	if nextStep == "run" {
 		fmt.Fprintln(w.out, w.styles.accent("Starting migration..."))
-		if err := generatedConfigRunner(cfg); err != nil {
+		opts, err := migrateOptionsFromCmd(cmd)
+		if err != nil {
+			return err
+		}
+		if err := generatedConfigRunner(cfg, opts); err != nil {
 			return err
 		}
 	}

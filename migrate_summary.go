@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // MigrateOptions configures migrate execution (CLI passes flags; wizard uses zero value).
@@ -25,6 +27,24 @@ type migrateJSONSummary struct {
 	Error          string `json:"error,omitempty"`
 	Stage          string `json:"stage,omitempty"`
 	TablesMigrated int    `json:"tables_migrated,omitempty"`
+}
+
+// migrateOptionsFromCmd reads --log-format (default text). cmd may be nil (tests).
+// If the flag is not registered on cmd (e.g. bare cobra.Command in tests), text is used.
+func migrateOptionsFromCmd(cmd *cobra.Command) (MigrateOptions, error) {
+	s := "text"
+	if cmd != nil && cmd.Flags().Lookup("log-format") != nil {
+		v, err := cmd.Flags().GetString("log-format")
+		if err != nil {
+			return MigrateOptions{}, err
+		}
+		s = v
+	}
+	lf, err := parseMigrateLogFormat(s)
+	if err != nil {
+		return MigrateOptions{}, err
+	}
+	return MigrateOptions{LogFormat: lf}, nil
 }
 
 func parseMigrateLogFormat(s string) (string, error) {
@@ -74,7 +94,10 @@ func writeMigrateJSONSummaryLine(w io.Writer, opts MigrateOptions, cfg *Migratio
 	if err != nil {
 		return fmt.Errorf("migrate json summary: %w", err)
 	}
-	if _, err := fmt.Fprintln(w, string(b)); err != nil {
+	if _, err := w.Write(b); err != nil {
+		return fmt.Errorf("write migrate json summary: %w", err)
+	}
+	if _, err := w.Write([]byte("\n")); err != nil {
 		return fmt.Errorf("write migrate json summary: %w", err)
 	}
 	return nil

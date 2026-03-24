@@ -91,7 +91,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 
 	var gotCfg *MigrationConfig
 	prevRunner := generatedConfigRunner
-	generatedConfigRunner = func(cfg *MigrationConfig) error {
+	generatedConfigRunner = func(cfg *MigrationConfig, _ MigrateOptions) error {
 		gotCfg = cfg
 		return nil
 	}
@@ -243,7 +243,7 @@ func TestRunGenerateWizardTestsConnectionsByDefault(t *testing.T) {
 	})
 
 	prevRunner := generatedConfigRunner
-	generatedConfigRunner = func(cfg *MigrationConfig) error { return nil }
+	generatedConfigRunner = func(cfg *MigrationConfig, _ MigrateOptions) error { return nil }
 	t.Cleanup(func() {
 		generatedConfigRunner = prevRunner
 	})
