@@ -501,7 +501,6 @@ func promptWizardAdvancedOptions(w *wizardPrompter, cfg *MigrationConfig, config
 		if err != nil {
 			return err
 		}
-		resumeDefault = resume
 
 		candidate := *cfg
 		candidate.Resume = resume
@@ -514,6 +513,7 @@ func promptWizardAdvancedOptions(w *wizardPrompter, cfg *MigrationConfig, config
 		}
 
 		cfg.Resume = resume
+		resumeDefault = resume
 		break
 	}
 
@@ -550,6 +550,8 @@ func promptWizardAdvancedOptions(w *wizardPrompter, cfg *MigrationConfig, config
 	return validateWizardConfig(*cfg, configDir)
 }
 
+// validateWizardConfig runs finalizeConfig on a copy so wizard re-prompts can
+// reuse the existing validation rules without mutating the in-progress config.
 func validateWizardConfig(cfg MigrationConfig, configDir string) error {
 	return finalizeConfig(&cfg, configDir)
 }

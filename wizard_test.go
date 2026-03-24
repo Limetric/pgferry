@@ -528,6 +528,15 @@ func TestCollectGeneratedConfigAdvancedResumeInvalidCombinationRePrompts(t *test
 	if !strings.Contains(out.String(), "resume is incompatible with unlogged_tables=true") {
 		t.Fatalf("wizard output missing resume incompatibility error, got:\n%s", out.String())
 	}
+	if count := strings.Count(out.String(), "Resume interrupted migrations"); count != 2 {
+		t.Fatalf("expected resume prompt twice, got %d in output:\n%s", count, out.String())
+	}
+	if strings.Contains(out.String(), "Resume interrupted migrations\n  Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate, or schema_only=true.\nAnswer [Y/n]: ") {
+		t.Fatalf("wizard output should not re-prompt resume with rejected true default, got:\n%s", out.String())
+	}
+	if count := strings.Count(out.String(), "Resume interrupted migrations\n  Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate, or schema_only=true.\nAnswer [y/N]: "); count != 2 {
+		t.Fatalf("expected resume prompt to keep the safe false default, got %d matches in output:\n%s", count, out.String())
+	}
 }
 
 func TestRenderConfigTOML_MariaDBUsesMySQLFamilyRendering(t *testing.T) {
