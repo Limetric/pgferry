@@ -46,12 +46,13 @@ Before you migrate anything, `pgferry plan` tells you what will need manual atte
 pgferry plan migration.toml
 pgferry plan migration.toml --output-dir hooks
 pgferry plan migration.toml --format json > plan.json
+pgferry plan migration.toml --format markdown > plan.md
 pgferry plan --input plan.json --format text
 ```
 
 With `--output-dir`, pgferry writes skeleton hook files you can fill in before the real run. When the source catalog exposes object definitions, those hook files can also include commented source SQL for views, routines, or triggers. Treat that output as sensitive schema or business-logic material.
 
-**Machine-readable and CI:** `--format json` is for diffing, dashboards, or filing tickets. `--fail-on errors` exits non-zero when there are unsupported column types; `--fail-on warnings` also fails on high-severity copy-risk findings. Your CI pipeline will finally care about migrations.
+**Machine-readable and CI:** `--format json` is for diffing, dashboards, or filing tickets. `--format markdown` pastes nicely into a PR comment or a wiki page. `--fail-on errors` exits non-zero when there are unsupported column types; `--fail-on warnings` also fails on high-severity copy-risk findings. Your CI pipeline will finally care about migrations.
 
 **Replay without the source:** `--input saved.json` renders a previous JSON report (text or JSON) without connecting to the database. You cannot combine `--input` with a TOML path or `--config` — pick one story.
 
@@ -101,6 +102,28 @@ pgferry validate migration.toml
 
 That command uses the existing TOML config, connects to the source and target, introspects the selected tables again, and runs the configured validation mode only. It does not rerun hooks, COPY, checkpoints, or post-load DDL.
 
+## Scripting migrate runs
+
+If something is consuming pgferry's output — a deploy script, a CI step, a status dashboard — `--log-format json` gives you one JSON object on stdout when the run finishes. Human progress and error messages stay on stderr, out of the way.
+
+```bash
+pgferry migrate migration.toml --log-format json
+pgferry migrate migration.toml --log-format json | jq '.success'
+```
+
+The JSON fields: `version`, `duration_ms`, `mode`, `validation`, `success`, `error` and `stage` (on failure), `tables_migrated` (omitted when zero).
+
+## Config path inspection
+
+Hooks and checkpoints live relative to your config file, which can get confusing when scripts move things around. `pgferry config paths` shows you exactly where pgferry will look — including whether each hook file actually exists on disk.
+
+```bash
+pgferry config paths migration.toml
+pgferry config paths migration.toml --json
+```
+
+No database connection required. It loads and validates the config, then prints the resolved absolute paths for the config file, config directory, checkpoint file, and every hook SQL path.
+
 ## Guides
 
 Every source engine has its own quirks. These guides cover what pgferry handles automatically and what you should watch out for.
@@ -117,6 +140,15 @@ When it's time for the real thing:
 - [First production migration checklist](/operations/first-production-migration-checklist/)
 - [Cutover checklist](/operations/cutover-checklist/)
 - [Common failures and recovery](/operations/common-failures-and-recovery/)
+
+## Build info
+
+`pgferry version` prints the version. `--verbose` adds the full commit hash, build date (if embedded at link time), and Go runtime version — handy for bug reports and support tickets.
+
+```bash
+pgferry version
+pgferry version --verbose
+```
 
 ## Full reference
 
