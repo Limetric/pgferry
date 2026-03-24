@@ -65,6 +65,16 @@ exclude_tables = ["audit_log"]
 
 Table filtering uses source table names, not the transformed PostgreSQL names.
 
+If you want prefix-style or wildcard matching, opt in explicitly:
+
+```toml
+table_filter_mode = "glob"
+include_tables = ["app_*", "audit_?"]
+exclude_tables = ["app_tmp_*"]
+```
+
+In glob mode, matching is case-insensitive and supports only `*` and `?`. `exclude_tables` is applied after `include_tables`, so excludes still win.
+
 - [How to read plan output](/operations/how-to-read-plan-output/)
 
 ## Hooks

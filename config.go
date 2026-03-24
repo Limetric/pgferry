@@ -18,6 +18,7 @@ type MigrationConfig struct {
 	Target                            TargetConfig      `toml:"target"`
 	PostGIS                           PostGISConfig     `toml:"postgis"`
 	Schema                            string            `toml:"schema"`
+	TableFilterMode                   string            `toml:"table_filter_mode"` // exact|glob
 	IncludeTables                     []string          `toml:"include_tables"`
 	ExcludeTables                     []string          `toml:"exclude_tables"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
@@ -132,6 +133,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 func defaultMigrationConfig() MigrationConfig {
 	return MigrationConfig{
 		OnSchemaExists:       "error",
+		TableFilterMode:      "exact",
 		SourceSnapshotMode:   "none",
 		UnloggedTables:       true,
 		PreserveDefaults:     true,
@@ -175,12 +177,21 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.Schema == "" {
 		return fmt.Errorf("schema is required")
 	}
-	includeTables, err := normalizeTableFilterEntries("include_tables", cfg.IncludeTables)
+	if cfg.TableFilterMode == "" {
+		cfg.TableFilterMode = "exact"
+	}
+	cfg.TableFilterMode = strings.ToLower(strings.TrimSpace(cfg.TableFilterMode))
+	switch cfg.TableFilterMode {
+	case "exact", "glob":
+	default:
+		return fmt.Errorf("table_filter_mode must be one of: exact, glob")
+	}
+	includeTables, err := normalizeTableFilterEntries("include_tables", cfg.TableFilterMode, cfg.IncludeTables)
 	if err != nil {
 		return err
 	}
 	cfg.IncludeTables = includeTables
-	excludeTables, err := normalizeTableFilterEntries("exclude_tables", cfg.ExcludeTables)
+	excludeTables, err := normalizeTableFilterEntries("exclude_tables", cfg.TableFilterMode, cfg.ExcludeTables)
 	if err != nil {
 		return err
 	}
@@ -414,7 +425,7 @@ func effectiveTypeMapping(cfg *MigrationConfig) TypeMappingConfig {
 	return tm
 }
 
-func normalizeTableFilterEntries(field string, entries []string) ([]string, error) {
+func normalizeTableFilterEntries(field, mode string, entries []string) ([]string, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
@@ -426,11 +437,18 @@ func normalizeTableFilterEntries(field string, entries []string) ([]string, erro
 		if name == "" {
 			return nil, fmt.Errorf("%s entries must be non-empty", field)
 		}
-		if strings.ContainsAny(name, "*?[]") {
+		if mode == "exact" && strings.ContainsAny(name, "*?[]") {
 			return nil, fmt.Errorf("%s entry %q is invalid: glob patterns are not supported; use exact source table names", field, raw)
+		}
+		if mode == "glob" {
+			if strings.ContainsAny(name, "[]\\") {
+				return nil, fmt.Errorf("%s entry %q is invalid glob pattern: only literal characters plus '*' and '?' are supported", field, raw)
+			}
 		}
 
 		key := normalizeTableFilterKey(name)
+		// Keep duplicate detection case-insensitive in both exact and glob modes so
+		// one logical filter is not spelled twice with only casing differences.
 		if prev, ok := seen[key]; ok {
 			return nil, fmt.Errorf("%s contains duplicate table name %q (conflicts with %q after normalization)", field, name, prev)
 		}

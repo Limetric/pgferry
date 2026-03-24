@@ -265,7 +265,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	if hasTableFilters(cfg) {
 		logTableFilterReport(filterReport)
 		if cfg.Resume {
-			log.Printf("table filter: resume enabled; changing include_tables/exclude_tables between runs will invalidate the checkpoint")
+			log.Printf("table filter: resume enabled; changing table_filter_mode/include_tables/exclude_tables between runs can invalidate the checkpoint")
 		}
 	}
 	log.Printf("found %d tables", len(schema.Tables))

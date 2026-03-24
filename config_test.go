@@ -357,6 +357,72 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_TableFiltersAllowGlobMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+table_filter_mode = "glob"
+include_tables = [" app_* ", "audit_?"]
+exclude_tables = ["app_tmp_*"]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+
+	if got := cfg.TableFilterMode; got != "glob" {
+		t.Fatalf("TableFilterMode = %q, want glob", got)
+	}
+	if got := strings.Join(cfg.IncludeTables, ","); got != "app_*,audit_?" {
+		t.Fatalf("IncludeTables = %q, want app_*,audit_?", got)
+	}
+	if got := strings.Join(cfg.ExcludeTables, ","); got != "app_tmp_*" {
+		t.Fatalf("ExcludeTables = %q, want app_tmp_*", got)
+	}
+}
+
+func TestLoadConfig_TableFiltersRejectInvalidGlobPattern(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+table_filter_mode = "glob"
+exclude_tables = ["tmp_["]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "invalid glob pattern") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadConfig_TableFiltersRejectEmptyEntries(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "filters.toml")

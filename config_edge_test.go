@@ -101,6 +101,22 @@ func TestFinalizeConfig_InvalidSourceSnapshotMode(t *testing.T) {
 	}
 }
 
+func TestFinalizeConfig_InvalidTableFilterMode(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.TableFilterMode = "prefix"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for invalid table_filter_mode")
+	}
+	if !strings.Contains(err.Error(), "table_filter_mode must be one of") {
+		t.Fatalf("expected table_filter_mode error, got: %v", err)
+	}
+}
+
 func TestFinalizeConfig_SQLiteSingleTxRejected(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Schema = "public"
@@ -408,7 +424,7 @@ func TestFinalizeConfig_PostGISMariaDBRejected(t *testing.T) {
 }
 
 func TestNormalizeTableFilterEntries_Empty(t *testing.T) {
-	got, err := normalizeTableFilterEntries("include_tables", nil)
+	got, err := normalizeTableFilterEntries("include_tables", "exact", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,14 +434,14 @@ func TestNormalizeTableFilterEntries_Empty(t *testing.T) {
 }
 
 func TestNormalizeTableFilterEntries_EmptyName(t *testing.T) {
-	_, err := normalizeTableFilterEntries("include_tables", []string{""})
+	_, err := normalizeTableFilterEntries("include_tables", "exact", []string{""})
 	if err == nil {
 		t.Fatal("expected error for empty name")
 	}
 }
 
 func TestNormalizeTableFilterEntries_GlobRejected(t *testing.T) {
-	_, err := normalizeTableFilterEntries("include_tables", []string{"user*"})
+	_, err := normalizeTableFilterEntries("include_tables", "exact", []string{"user*"})
 	if err == nil {
 		t.Fatal("expected error for glob pattern")
 	}
@@ -435,7 +451,7 @@ func TestNormalizeTableFilterEntries_GlobRejected(t *testing.T) {
 }
 
 func TestNormalizeTableFilterEntries_Duplicates(t *testing.T) {
-	_, err := normalizeTableFilterEntries("include_tables", []string{"Users", "users"})
+	_, err := normalizeTableFilterEntries("include_tables", "exact", []string{"Users", "users"})
 	if err == nil {
 		t.Fatal("expected error for case-insensitive duplicates")
 	}

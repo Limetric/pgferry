@@ -68,8 +68,9 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | Key | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `schema` | string | required | Target PostgreSQL schema name. |
-| `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Exact names only — no globs. |
-| `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied together with `include_tables` when both are set. |
+| `table_filter_mode` | string | `"exact"` | Table-filter matching mode. `"exact"` preserves current exact-name behavior. `"glob"` enables case-insensitive `*` and `?` patterns in `include_tables` and `exclude_tables`. Character classes like `[]` are intentionally not supported. |
+| `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Entries are exact names by default, or glob patterns when `table_filter_mode = "glob"`. |
+| `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied after `include_tables`, so excludes win when both match the same table. |
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
@@ -88,6 +89,10 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `copy_risk_analysis` | bool | `true` | Lightweight COUNT/MIN/MAX probes to flag awkward COPY chunking (huge tables, sparse keys, etc.). Feeds `plan` copy-risk output and optional migrate warnings. Turn off for quieter runs when you already know the shape. |
 | `resume` | bool | `false` | Reuse `pgferry_checkpoint.json` after interruptions. |
 | `validation` | string | `"none"` | `"row_count"` compares per-table counts after load. `"sampled_hash"` adds bounded content fingerprints for deterministic primary-key-addressable rows. `pgferry validate` reuses this setting without rerunning migration stages. |
+
+Table filters always match source table names, not the transformed PostgreSQL names. In `glob` mode the matching is case-insensitive, mirroring exact-mode normalization. If a filter entry matches no source table, pgferry fails early instead of silently migrating the wrong scope.
+
+Changing `table_filter_mode`, `include_tables`, or `exclude_tables` can change the selected table set. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
 
 ### `[source]`
 
