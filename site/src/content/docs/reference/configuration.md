@@ -103,7 +103,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `table_filter_mode` | string | `"exact"` | Table-filter matching mode. `"exact"` preserves current exact-name behavior. `"glob"` enables case-insensitive `*` and `?` patterns in `include_tables` and `exclude_tables`. Character classes like `[]` are intentionally not supported. |
 | `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Entries are exact names by default, or glob patterns when `table_filter_mode = "glob"`. |
 | `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied after `include_tables`, so excludes win when both match the same table. |
-| `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. |
+| `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
 | `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
@@ -240,6 +240,7 @@ The `database` parameter is required because pgferry extracts the DB name for in
 | Combination | Result |
 | --- | --- |
 | `resume = true` + `on_schema_exists = "recreate"` | Invalid because the target schema would be dropped. |
+| `resume = true` + `on_schema_exists = "use"` | Invalid because a resumed run would re-enter a now non-empty schema. |
 | `resume = true` + `schema_only = true` | Invalid because there is no data stage to resume. |
 | `resume = true` + `unlogged_tables = true` | Invalid because checkpointed progress could outlive crash-truncated tables. |
 | `schema_only = true` + `data_only = true` | Invalid. Choose one or neither. |
@@ -254,5 +255,6 @@ The `database` parameter is required because pgferry extracts the DB name for in
 - Use `unlogged_tables = false` whenever you also need `resume = true`.
 - Use `source_snapshot_mode = "single_tx"` when the source stays live during the migration and you need one consistent read view.
 - Keep `on_schema_exists = "error"` for the first production dry runs so you do not destroy previous target state by mistake.
+- Use `on_schema_exists = "use"` only when infrastructure or policy pre-creates the schema shell and you want pgferry to own everything inside it from empty.
 - Expect `data_only` to fail early on PostgreSQL roles that cannot run `ALTER TABLE ... DISABLE/ENABLE TRIGGER ALL`; rehearse that path with the real target role before cutover.
 - Prefer hooks for views, routines, cleanup SQL, or post-load validation queries that are specific to your application.

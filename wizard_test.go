@@ -170,7 +170,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		t.Fatalf("configDir = %q (resolved %q), want %q (resolved %q)", gotCfg.configDir, gotDir, dir, wantDir)
 	}
 	output := out.String()
-	if !strings.Contains(output, "If target schema already exists (default: error)\n  error: Safest default. Stops instead of touching an existing schema.\n  recreate: Drops and recreates the target schema. Fast for clean reruns, but destructive.\nChoice [error/recreate] [error]: ") {
+	if !strings.Contains(output, "If target schema already exists (default: error)\n  error: Safest default. Stops instead of touching an existing schema.\n  recreate: Drops and recreates the target schema. Fast for clean reruns, but destructive.\n  use: Keeps an already-created schema, but only if it exists and is empty.\nChoice [error/recreate/use] [error]: ") {
 		t.Fatalf("wizard output missing improved schema-exists choice layout, got:\n%s", output)
 	}
 	if !strings.Contains(output, "Map JSON columns to jsonb\n  jsonb is the default and usually the better PostgreSQL type for indexing and operators.") {
@@ -531,10 +531,10 @@ func TestCollectGeneratedConfigAdvancedResumeInvalidCombinationRePrompts(t *test
 	if count := strings.Count(out.String(), "Resume interrupted migrations"); count != 2 {
 		t.Fatalf("expected resume prompt twice, got %d in output:\n%s", count, out.String())
 	}
-	if strings.Contains(out.String(), "Resume interrupted migrations\n  Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate, or schema_only=true.\nAnswer [Y/n]: ") {
+	if strings.Contains(out.String(), "Resume interrupted migrations\n  Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate/use, or schema_only=true.\nAnswer [Y/n]: ") {
 		t.Fatalf("wizard output should not re-prompt resume with rejected true default, got:\n%s", out.String())
 	}
-	if count := strings.Count(out.String(), "Resume interrupted migrations\n  Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate, or schema_only=true.\nAnswer [y/N]: "); count != 2 {
+	if count := strings.Count(out.String(), "Resume interrupted migrations\n  Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate/use, or schema_only=true.\nAnswer [y/N]: "); count != 2 {
 		t.Fatalf("expected resume prompt to keep the safe false default, got %d matches in output:\n%s", count, out.String())
 	}
 }

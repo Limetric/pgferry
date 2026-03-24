@@ -654,6 +654,39 @@ func prepareTargetSchema(ctx context.Context, exec schemaExecutor, schema, onSch
 		if _, err := exec.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(schema))); err != nil {
 			return fmt.Errorf("create schema: %w", err)
 		}
+	case "use":
+		var exists bool
+		if err := exec.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = $1)", schema).Scan(&exists); err != nil {
+			return fmt.Errorf("check schema existence: %w", err)
+		}
+		if !exists {
+			return fmt.Errorf("schema %q must already exist in target database when on_schema_exists=use", schema)
+		}
+		var empty bool
+		if err := exec.QueryRow(ctx, `
+SELECT NOT EXISTS (
+	SELECT 1
+	FROM pg_class c
+	JOIN pg_namespace n ON n.oid = c.relnamespace
+	WHERE n.nspname = $1
+	UNION ALL
+	SELECT 1
+	FROM pg_type t
+	JOIN pg_namespace n ON n.oid = t.typnamespace
+	WHERE n.nspname = $1
+		AND t.typtype IN ('b', 'c', 'd', 'e', 'p', 'r')
+		AND t.typcategory <> 'A'
+	UNION ALL
+	SELECT 1
+	FROM pg_proc p
+	JOIN pg_namespace n ON n.oid = p.pronamespace
+	WHERE n.nspname = $1
+)`, schema).Scan(&empty); err != nil {
+			return fmt.Errorf("check schema emptiness: %w", err)
+		}
+		if !empty {
+			return fmt.Errorf("schema %q must be empty when on_schema_exists=use", schema)
+		}
 	default:
 		return fmt.Errorf("unsupported on_schema_exists value %q", onSchemaExists)
 	}

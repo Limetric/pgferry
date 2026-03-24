@@ -200,6 +200,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	cfg.OnSchemaExists, err = w.promptChoice("If target schema already exists", []wizardOption{
 		{key: "error", help: "Safest default. Stops instead of touching an existing schema."},
 		{key: "recreate", help: "Drops and recreates the target schema. Fast for clean reruns, but destructive."},
+		{key: "use", help: "Keeps an already-created schema, but only if it exists and is empty."},
 	}, cfg.OnSchemaExists)
 	if err != nil {
 		return nil, err
@@ -496,7 +497,7 @@ func promptWizardAdvancedOptions(w *wizardPrompter, cfg *MigrationConfig, config
 		resume, err := w.promptBoolGuided(
 			"Resume interrupted migrations",
 			resumeDefault,
-			"Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate, or schema_only=true.",
+			"Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate/use, or schema_only=true.",
 		)
 		if err != nil {
 			return err

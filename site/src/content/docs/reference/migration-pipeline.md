@@ -143,7 +143,7 @@ resume = true
 unlogged_tables = false
 ```
 
-Do not combine `resume = true` with `on_schema_exists = "recreate"` or `schema_only = true`.
+Do not combine `resume = true` with `on_schema_exists = "recreate"` or `"use"`, or with `schema_only = true`.
 
 ## Validation timing
 

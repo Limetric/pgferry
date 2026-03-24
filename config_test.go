@@ -784,6 +784,34 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_UseOnSchemaExists(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "use_mode.toml")
+
+	content := `
+schema = "target"
+on_schema_exists = "use"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.OnSchemaExists != "use" {
+		t.Fatalf("OnSchemaExists = %q, want %q", cfg.OnSchemaExists, "use")
+	}
+}
+
 func TestLoadConfig_InvalidSourceSnapshotMode(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "bad_snapshot_mode.toml")
@@ -1976,6 +2004,35 @@ dsn = "postgres://u:p@h:5432/db"
 	_, err := loadConfig(cfgFile)
 	if err == nil {
 		t.Fatal("expected error for resume + recreate")
+	}
+	if !strings.Contains(err.Error(), "resume") {
+		t.Errorf("error should mention resume, got: %v", err)
+	}
+}
+
+func TestLoadConfig_ResumeWithUseConflict(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "resume_use.toml")
+
+	content := `
+schema = "target"
+resume = true
+on_schema_exists = "use"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error for resume + use")
 	}
 	if !strings.Contains(err.Error(), "resume") {
 		t.Errorf("error should mention resume, got: %v", err)

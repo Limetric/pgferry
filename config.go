@@ -219,9 +219,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		cfg.OnSchemaExists = "error"
 	}
 	switch cfg.OnSchemaExists {
-	case "error", "recreate":
+	case "error", "recreate", "use":
 	default:
-		return fmt.Errorf("on_schema_exists must be one of: error, recreate")
+		return fmt.Errorf("on_schema_exists must be one of: error, recreate, use")
 	}
 	switch cfg.SourceSnapshotMode {
 	case "none", "single_tx":
@@ -306,6 +306,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 	if cfg.Resume && cfg.OnSchemaExists == "recreate" {
 		return fmt.Errorf("resume is incompatible with on_schema_exists=recreate (would destroy data to resume into)")
+	}
+	if cfg.Resume && cfg.OnSchemaExists == "use" {
+		return fmt.Errorf("resume is incompatible with on_schema_exists=use (a resumed run would re-enter a non-empty schema)")
 	}
 	if cfg.Resume && cfg.SchemaOnly {
 		return fmt.Errorf("resume is incompatible with schema_only (no data to resume)")

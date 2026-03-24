@@ -31,7 +31,8 @@ func (r fakeSchemaRow) Scan(dest ...any) error {
 }
 
 type fakeSchemaExec struct {
-	exists        bool
+	schemaExists  bool
+	schemaEmpty   bool
 	queryErr      error
 	execCalls     []string
 	execErrByStmt map[string]error
@@ -45,12 +46,15 @@ func (f *fakeSchemaExec) Exec(_ context.Context, sql string, _ ...any) (pgconn.C
 	return pgconn.CommandTag{}, nil
 }
 
-func (f *fakeSchemaExec) QueryRow(_ context.Context, _ string, _ ...any) pgx.Row {
-	return fakeSchemaRow{exists: f.exists, err: f.queryErr}
+func (f *fakeSchemaExec) QueryRow(_ context.Context, sql string, _ ...any) pgx.Row {
+	if strings.Contains(sql, "FROM pg_class") || strings.Contains(sql, "FROM pg_type") || strings.Contains(sql, "FROM pg_proc") {
+		return fakeSchemaRow{exists: f.schemaEmpty, err: f.queryErr}
+	}
+	return fakeSchemaRow{exists: f.schemaExists, err: f.queryErr}
 }
 
 func TestPrepareTargetSchema_ErrorModeSchemaExists(t *testing.T) {
-	exec := &fakeSchemaExec{exists: true}
+	exec := &fakeSchemaExec{schemaExists: true}
 	err := prepareTargetSchema(context.Background(), exec, "app", "error")
 	if err == nil {
 		t.Fatal("expected error when schema exists")
@@ -64,7 +68,7 @@ func TestPrepareTargetSchema_ErrorModeSchemaExists(t *testing.T) {
 }
 
 func TestPrepareTargetSchema_ErrorModeSchemaMissingCreates(t *testing.T) {
-	exec := &fakeSchemaExec{exists: false}
+	exec := &fakeSchemaExec{schemaExists: false}
 	err := prepareTargetSchema(context.Background(), exec, "app", "error")
 	if err != nil {
 		t.Fatalf("prepareTargetSchema() error: %v", err)
@@ -91,6 +95,39 @@ func TestPrepareTargetSchema_RecreateDropsThenCreates(t *testing.T) {
 	}
 	if exec.execCalls[1] != `CREATE SCHEMA "app"` {
 		t.Fatalf("unexpected second SQL: %s", exec.execCalls[1])
+	}
+}
+
+func TestPrepareTargetSchema_UseModeExistingEmptySchemaKeepsSchema(t *testing.T) {
+	exec := &fakeSchemaExec{schemaExists: true, schemaEmpty: true}
+	err := prepareTargetSchema(context.Background(), exec, "app", "use")
+	if err != nil {
+		t.Fatalf("prepareTargetSchema() error: %v", err)
+	}
+	if len(exec.execCalls) != 0 {
+		t.Fatalf("expected no Exec calls, got %d", len(exec.execCalls))
+	}
+}
+
+func TestPrepareTargetSchema_UseModeSchemaMissingErrors(t *testing.T) {
+	exec := &fakeSchemaExec{schemaExists: false}
+	err := prepareTargetSchema(context.Background(), exec, "app", "use")
+	if err == nil {
+		t.Fatal("expected error when schema is missing")
+	}
+	if !strings.Contains(err.Error(), "must already exist") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPrepareTargetSchema_UseModeNonEmptySchemaErrors(t *testing.T) {
+	exec := &fakeSchemaExec{schemaExists: true, schemaEmpty: false}
+	err := prepareTargetSchema(context.Background(), exec, "app", "use")
+	if err == nil {
+		t.Fatal("expected error when schema is not empty")
+	}
+	if !strings.Contains(err.Error(), "must be empty") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -41,6 +41,23 @@ func TestFinalizeConfig_ResumeIncompatibleWithRecreate(t *testing.T) {
 	}
 }
 
+func TestFinalizeConfig_ResumeIncompatibleWithUse(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.Resume = true
+	cfg.OnSchemaExists = "use"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for resume + use")
+	}
+	if !strings.Contains(err.Error(), "resume is incompatible with on_schema_exists=use") {
+		t.Fatalf("expected resume/use error, got: %v", err)
+	}
+}
+
 func TestFinalizeConfig_ResumeIncompatibleWithSchemaOnly(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Schema = "public"
