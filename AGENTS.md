@@ -33,6 +33,10 @@ POSTGRES_DSN="postgres://postgres:postgres@127.0.0.1:5432/pgferry_test?sslmode=d
 go test -tags integration -run TestIntegration_MSSQL -count=1 -v ./...
 ```
 
+## Documentation
+
+**Code changes must be reflected in the site.** The site source lives in `site/src/content/docs/`. When you add, remove, or change CLI flags, config options, behavior, or supported types, update the relevant docs pages — especially `reference/configuration.md`, `reference/type-mapping.md`, and any affected guides or examples.
+
 ## Key references
 
 - Operator tuning guide: <https://pgferry.com/operations/operator-tuning/>
