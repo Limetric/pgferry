@@ -100,19 +100,22 @@ func TestBuildPlanReport_Full(t *testing.T) {
 		},
 	}
 	objs := &SourceObjects{
-		Views:    []string{"v_active_users"},
-		Routines: []string{"FUNCTION calc_score"},
-		Triggers: []SourceTrigger{{Name: "trg_audit", Table: "users"}},
+		Views:    []SourceView{{Name: "v_active_users", Dialect: "mysql", Definition: "CREATE VIEW `v_active_users` AS SELECT 1"}},
+		Routines: []SourceRoutine{{Name: "calc_score", Type: "FUNCTION", Dialect: "mysql", Definition: "CREATE FUNCTION `calc_score`() AS RETURN 1"}},
+		Triggers: []SourceTrigger{{Name: "trg_audit", Table: "users", Dialect: "mysql", Definition: "CREATE TRIGGER `trg_audit` BEFORE INSERT ON `users` FOR EACH ROW SET @x = 1"}},
 	}
 	cfg := &MigrationConfig{TypeMapping: defaultTypeMappingConfig(), CleanOrphans: true}
 
 	report := buildPlanReport(schema, objs, nil, nil, nil, mysqlSrc, cfg, effectiveTypeMapping(cfg), PlanSummary{})
 
-	if len(report.SourceObjects.Views) != 1 || report.SourceObjects.Views[0] != "v_active_users" {
+	if len(report.SourceObjects.Views) != 1 || report.SourceObjects.Views[0].Name != "v_active_users" {
 		t.Errorf("views = %v, want [v_active_users]", report.SourceObjects.Views)
 	}
 	if len(report.SourceObjects.Routines) != 1 {
 		t.Errorf("routines = %d, want 1", len(report.SourceObjects.Routines))
+	}
+	if report.SourceObjects.Routines[0].DisplayName() != "FUNCTION calc_score" {
+		t.Errorf("routine display = %q, want FUNCTION calc_score", report.SourceObjects.Routines[0].DisplayName())
 	}
 	if len(report.SourceObjects.Triggers) != 1 || report.SourceObjects.Triggers[0].Name != "trg_audit" || report.SourceObjects.Triggers[0].Table != "users" {
 		t.Errorf("triggers = %+v, want one trigger trg_audit on users", report.SourceObjects.Triggers)
@@ -403,7 +406,7 @@ func TestWritePlanText_WithContent(t *testing.T) {
 			},
 		},
 		SourceObjects: PlanSourceObjects{
-			Views: []string{"v_users"},
+			Views: []PlanSourceView{{Name: "v_users"}},
 		},
 		UnsupportedColumns: []PlanUnsupportedColumn{
 			{Table: "mystery", Column: "payload", SourceType: "geometry", Reason: "unsupported MySQL type \"geometry\""},
@@ -680,8 +683,8 @@ func TestWritePlanText_SourceObjectsScopeNotesWithTableFilters(t *testing.T) {
 			SelectedTables: []string{"orders"},
 		},
 		SourceObjects: PlanSourceObjects{
-			Views:    []string{"v_all"},
-			Routines: []string{"FUNCTION f"},
+			Views:    []PlanSourceView{{Name: "v_all", Dialect: "sqlite", Definition: "CREATE VIEW v_all AS SELECT 1"}},
+			Routines: []PlanSourceRoutine{{Name: "f", Type: "FUNCTION"}},
 			Triggers: []PlanSourceTrigger{{Name: "trg_t", Table: "orders"}},
 		},
 	}
@@ -694,10 +697,24 @@ func TestWritePlanText_SourceObjectsScopeNotesWithTableFilters(t *testing.T) {
 		"Routines (1):",
 		"Triggers (1):",
 		"trg_t (on orders)",
+		"Treat that output as sensitive schema or business-logic material.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("text output missing %q, got:\n%s", want, got)
 		}
+	}
+}
+
+func TestWritePlanJSON_LegacyViewsAndRoutinesStringArray(t *testing.T) {
+	var p PlanSourceObjects
+	if err := json.Unmarshal([]byte(`{"views":["v_old"],"routines":["FUNCTION legacy"],"triggers":[]}`), &p); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(p.Views) != 1 || p.Views[0].Name != "v_old" {
+		t.Fatalf("views = %+v", p.Views)
+	}
+	if len(p.Routines) != 1 || p.Routines[0].DisplayName() != "FUNCTION legacy" {
+		t.Fatalf("routines = %+v", p.Routines)
 	}
 }
 
@@ -873,8 +890,8 @@ func TestWritePlanJSON(t *testing.T) {
 			},
 		},
 		SourceObjects: PlanSourceObjects{
-			Views:    []string{"v_users"},
-			Routines: []string{"FUNCTION foo"},
+			Views:    []PlanSourceView{{Name: "v_users", Dialect: "sqlite", Definition: "CREATE VIEW v_users AS SELECT 1"}},
+			Routines: []PlanSourceRoutine{{Name: "foo", Type: "FUNCTION", Dialect: "mssql", Definition: "CREATE FUNCTION foo() RETURNS INT AS BEGIN RETURN 1 END"}},
 		},
 		SchemaSemanticWarnings: []SchemaSemanticWarning{
 			{
@@ -917,8 +934,11 @@ func TestWritePlanJSON(t *testing.T) {
 		t.Fatalf("decode JSON: %v", err)
 	}
 
-	if len(decoded.SourceObjects.Views) != 1 || decoded.SourceObjects.Views[0] != "v_users" {
+	if len(decoded.SourceObjects.Views) != 1 || decoded.SourceObjects.Views[0].Name != "v_users" {
 		t.Errorf("views = %v", decoded.SourceObjects.Views)
+	}
+	if len(decoded.SourceObjects.Routines) != 1 || decoded.SourceObjects.Routines[0].DisplayName() != "FUNCTION foo" {
+		t.Errorf("routines = %v", decoded.SourceObjects.Routines)
 	}
 	if len(decoded.RequiredExtensions) != 1 {
 		t.Errorf("required extensions = %d", len(decoded.RequiredExtensions))
@@ -1131,8 +1151,14 @@ func TestWritePlanText_TableChunkPlan(t *testing.T) {
 func TestWritePlanJSON_Deterministic(t *testing.T) {
 	report := &PlanReport{
 		SourceObjects: PlanSourceObjects{
-			Views:    []string{"b_view", "a_view"},
-			Routines: []string{"FUNCTION z", "FUNCTION a"},
+			Views: []PlanSourceView{
+				{Name: "b_view", Dialect: "sqlite", Definition: "CREATE VIEW b_view AS SELECT 2"},
+				{Name: "a_view", Dialect: "sqlite", Definition: "CREATE VIEW a_view AS SELECT 1"},
+			},
+			Routines: []PlanSourceRoutine{
+				{Name: "z", Type: "FUNCTION", Dialect: "mssql", Definition: "CREATE FUNCTION z() RETURNS INT AS BEGIN RETURN 1 END"},
+				{Name: "a", Type: "FUNCTION", Dialect: "mssql", Definition: "CREATE FUNCTION a() RETURNS INT AS BEGIN RETURN 1 END"},
+			},
 		},
 		GeneratedColumns: []PlanGeneratedColumn{
 			{Table: "t1", Column: "c1", Expression: "expr1"},
@@ -1213,9 +1239,9 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 	dir := t.TempDir()
 	report := &PlanReport{
 		SourceObjects: PlanSourceObjects{
-			Views:    []string{"v_summary"},
-			Routines: []string{"FUNCTION calc"},
-			Triggers: []PlanSourceTrigger{{Name: "trg_audit"}},
+			Views:    []PlanSourceView{{Name: "v_summary", Dialect: "sqlite", Definition: "CREATE VIEW v_summary AS SELECT 1 AS total"}},
+			Routines: []PlanSourceRoutine{{Name: "calc", Type: "FUNCTION", Dialect: "mssql", Definition: "CREATE FUNCTION calc() RETURNS INT AS BEGIN RETURN 1 END"}},
+			Triggers: []PlanSourceTrigger{{Name: "trg_audit", Dialect: "mysql", Definition: "CREATE TRIGGER `trg_audit` BEFORE INSERT ON `orders` FOR EACH ROW SET @x = 1"}},
 		},
 		SkippedIndexes: []PlanSkippedIndex{
 			{Table: "orders", Index: "idx_ft", Reason: "FULLTEXT not supported"},
@@ -1240,10 +1266,42 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 		"{{schema}}",
 		`"{{schema}}"."v_summary"`,
 		`"{{schema}}"."orders"`,
+		"source dialect: sqlite",
+		"source dialect: mssql",
+		"source dialect: mysql",
+		"CREATE VIEW v_summary AS SELECT 1 AS total",
+		"CREATE FUNCTION calc() RETURNS INT AS BEGIN RETURN 1 END",
+		"Treat this file as sensitive",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("after_all.sql missing %q", want)
 		}
+	}
+}
+
+func TestWriteHookSkeletons_AfterAll_TruncatesLargeDefinitions(t *testing.T) {
+	dir := t.TempDir()
+	largeDefinition := "CREATE VIEW v_big AS SELECT '" + strings.Repeat("x", maxPlanSourceDefinitionChars+50) + "'"
+	report := &PlanReport{
+		SourceObjects: PlanSourceObjects{
+			Views: []PlanSourceView{{Name: "v_big", Dialect: "sqlite", Definition: largeDefinition}},
+		},
+	}
+
+	if err := writeHookSkeletons(dir, report, "app"); err != nil {
+		t.Fatalf("writeHookSkeletons: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "after_all.sql"))
+	if err != nil {
+		t.Fatalf("read after_all.sql: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "[truncated after") {
+		t.Fatalf("after_all.sql should note truncation, got:\n%s", content)
+	}
+	if strings.Contains(content, strings.Repeat("x", maxPlanSourceDefinitionChars+10)) {
+		t.Fatalf("after_all.sql should not contain the full oversized definition")
 	}
 }
 
@@ -1363,7 +1421,7 @@ func TestWriteHookSkeletons_CreatesDir(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "hooks")
 	report := &PlanReport{
 		SourceObjects: PlanSourceObjects{
-			Views: []string{"v_test"},
+			Views: []PlanSourceView{{Name: "v_test"}},
 		},
 	}
 

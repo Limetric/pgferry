@@ -449,11 +449,17 @@ func TestSQLiteIntrospectSourceObjects(t *testing.T) {
 		t.Fatalf("IntrospectSourceObjects: %v", err)
 	}
 
-	if len(objs.Views) != 1 || objs.Views[0] != "v_users" {
+	if len(objs.Views) != 1 || objs.Views[0].Name != "v_users" {
 		t.Errorf("views = %v, want [v_users]", objs.Views)
+	}
+	if !strings.Contains(objs.Views[0].Definition, "CREATE VIEW v_users AS SELECT id, name FROM users") {
+		t.Fatalf("view definition = %q", objs.Views[0].Definition)
 	}
 	if len(objs.Triggers) != 1 || objs.Triggers[0].Name != "trg_users" || objs.Triggers[0].Table != "users" {
 		t.Errorf("triggers = %v, want one trigger trg_users on users", objs.Triggers)
+	}
+	if !strings.Contains(objs.Triggers[0].Definition, "CREATE TRIGGER trg_users AFTER INSERT ON users BEGIN SELECT 1; END") {
+		t.Fatalf("trigger definition = %q", objs.Triggers[0].Definition)
 	}
 	if len(objs.Routines) != 0 {
 		t.Errorf("routines = %v, want empty", objs.Routines)

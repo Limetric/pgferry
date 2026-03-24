@@ -49,7 +49,7 @@ pgferry plan migration.toml --format json > plan.json
 pgferry plan --input plan.json --format text
 ```
 
-With `--output-dir`, pgferry writes skeleton hook files you can fill in before the real run.
+With `--output-dir`, pgferry writes skeleton hook files you can fill in before the real run. When the source catalog exposes object definitions, those hook files can also include commented source SQL for views, routines, or triggers. Treat that output as sensitive schema or business-logic material.
 
 **Machine-readable and CI:** `--format json` is for diffing, dashboards, or filing tickets. `--fail-on errors` exits non-zero when there are unsupported column types; `--fail-on warnings` also fails on high-severity copy-risk findings. Your CI pipeline will finally care about migrations.
 

@@ -2,16 +2,40 @@ package main
 
 import "fmt"
 
+// SourceView is a source-database view that may include an informational source definition.
+type SourceView struct {
+	Name       string
+	Dialect    string
+	Definition string
+}
+
+// SourceRoutine is a source-database routine that may include an informational source definition.
+type SourceRoutine struct {
+	Name       string
+	Type       string
+	Dialect    string
+	Definition string
+}
+
+func (r SourceRoutine) DisplayName() string {
+	if r.Type == "" {
+		return r.Name
+	}
+	return fmt.Sprintf("%s %s", r.Type, r.Name)
+}
+
 // SourceTrigger is a source-database trigger attached to a specific table.
 type SourceTrigger struct {
-	Name  string
-	Table string // source table the trigger is on (empty if unknown)
+	Name       string
+	Table      string // source table the trigger is on (empty if unknown)
+	Dialect    string
+	Definition string
 }
 
 // SourceObjects holds non-table source objects that require manual migration.
 type SourceObjects struct {
-	Views    []string
-	Routines []string
+	Views    []SourceView
+	Routines []SourceRoutine
 	Triggers []SourceTrigger
 }
 
@@ -32,10 +56,10 @@ func sourceObjectWarnings(objs *SourceObjects) []string {
 		),
 	)
 	for _, v := range objs.Views {
-		warnings = append(warnings, fmt.Sprintf("view: %s", v))
+		warnings = append(warnings, fmt.Sprintf("view: %s", v.Name))
 	}
 	for _, r := range objs.Routines {
-		warnings = append(warnings, fmt.Sprintf("routine: %s", r))
+		warnings = append(warnings, fmt.Sprintf("routine: %s", r.DisplayName()))
 	}
 	for _, t := range objs.Triggers {
 		if t.Table != "" {

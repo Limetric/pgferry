@@ -27,8 +27,9 @@ pgferry reports certain objects instead of guessing how to recreate them. Hooks 
 
 1. Run `pgferry plan migration.toml --output-dir hooks`.
 2. Use the generated hook skeletons as the starting point.
-3. Keep application-specific SQL in hook files rather than scattering it through runbooks.
-4. Rehearse the exact hook set before the final cutover run.
+3. Treat the generated files as sensitive if they include commented source SQL definitions from the source catalog.
+4. Keep application-specific SQL in hook files rather than scattering it through runbooks.
+5. Rehearse the exact hook set before the final cutover run.
 
 ## Example
 
