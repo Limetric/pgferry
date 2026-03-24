@@ -15,7 +15,7 @@ func TestFormatVersionVerbose(t *testing.T) {
 		want    []string
 	}{
 		{
-			name:    "release omits commit line uses version only",
+			name:    "release version with known commit",
 			version: "v1.0.0",
 			commit:  "abc123",
 			date:    "",
@@ -23,6 +23,30 @@ func TestFormatVersionVerbose(t *testing.T) {
 			want: []string{
 				"Version: v1.0.0",
 				"Commit: abc123",
+				"Go: go1.22.0",
+			},
+		},
+		{
+			name:    "release with build date",
+			version: "v1.0.0",
+			commit:  "abc123fullhash",
+			date:    "2024-06-01T12:00:00Z",
+			goVer:   "go1.22.0",
+			want: []string{
+				"Version: v1.0.0",
+				"Commit: abc123fullhash",
+				"Build date: 2024-06-01T12:00:00Z",
+				"Go: go1.22.0",
+			},
+		},
+		{
+			name:    "empty commit skips commit line",
+			version: "dev",
+			commit:  "",
+			date:    "",
+			goVer:   "go1.22.0",
+			want: []string{
+				"Version: dev",
 				"Go: go1.22.0",
 			},
 		},
