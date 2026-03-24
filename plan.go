@@ -208,6 +208,7 @@ type PlanReport struct {
 	OrphanCleanupCandidates []PlanOrphanCleanupCandidate `json:"orphan_cleanup_candidates"`
 	TemporalWarnings        []PlanTemporalWarning        `json:"temporal_warnings"`
 	CollationWarnings       []string                     `json:"collation_warnings"`
+	ETA                     *PlanETA                     `json:"eta,omitempty"`
 }
 
 type PlanRequiredExtension struct {
@@ -834,6 +835,8 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		report.CollationWarnings = warnings
 	}
 
+	eta := computePlanETA(report)
+	report.ETA = &eta
 	return report
 }
 
@@ -871,6 +874,7 @@ func planTriggersFromSource(tr []SourceTrigger) []PlanSourceTrigger {
 }
 
 func writePlanJSON(w io.Writer, report *PlanReport) error {
+	ensureReportETA(report)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(report)
@@ -912,6 +916,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		fmt.Fprintln(w, "No manual follow-up items detected.")
 		return
 	}
+	ensureReportETA(report)
 
 	hasContent := false
 
@@ -930,6 +935,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t snake_case_identifiers=%t\n",
 			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.SnakeCaseIDs)
 		fmt.Fprintln(w)
+		writePlanETAText(w, report.ETA)
 	}
 
 	if report.TableFilterReport != nil {
@@ -1183,6 +1189,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 		fmt.Fprintln(w, "No manual follow-up items detected.")
 		return
 	}
+	ensureReportETA(report)
 
 	hasContent := false
 
@@ -1212,6 +1219,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 			rows = append(rows, []string{"Estimated Rows", formatInt64Thousands(s.TotalEstimatedRows)})
 		}
 		writeMarkdownTable(w, []string{"Field", "Value"}, rows)
+		writePlanETAMarkdown(w, report.ETA)
 	}
 
 	if report.TableFilterReport != nil {
