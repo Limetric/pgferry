@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAnalyzeCopyRiskTable_LargeNonChunkable(t *testing.T) {
@@ -252,7 +253,7 @@ func TestCollectCopyRiskFindings_SQLite(t *testing.T) {
 		},
 	}
 
-	findings, err := collectCopyRiskFindings(context.Background(), db, &sqliteSourceDB{}, schema, 10000)
+	findings, err := collectCopyRiskFindings(context.Background(), db, &sqliteSourceDB{}, schema, 10000, nil)
 	if err != nil {
 		t.Fatalf("collectCopyRiskFindings() error: %v", err)
 	}
@@ -279,6 +280,51 @@ func TestSortCopyRiskFindings_DeterministicSeverityAndNameOrder(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("sorted findings = %v, want %v", got, want)
 		}
+	}
+}
+
+func TestCopyRiskProbeProgressLogger_Heartbeat(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	p := newCopyRiskProbeProgressLogger(27, 5*time.Millisecond)
+	p.Start()
+	p.StartTableProbe("orders")
+	time.Sleep(12 * time.Millisecond)
+	p.FinishTableProbe()
+	p.Stop()
+
+	out := buf.String()
+	for _, want := range []string{
+		"copy risk analysis: probing 27 table(s)",
+		"still probing",
+		"current_table=orders",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("log output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestCopyRiskProbeProgressLogger_StopLogsCompletion(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	p := newCopyRiskProbeProgressLogger(2, time.Millisecond)
+	p.Start()
+	p.StartTableProbe("a")
+	p.FinishTableProbe()
+	p.StartTableProbe("b")
+	p.FinishTableProbe()
+	p.Stop()
+
+	out := buf.String()
+	if !strings.Contains(out, "copy risk analysis: completed 2/2 table(s)") {
+		t.Fatalf("log output missing completion line:\n%s", out)
 	}
 }
 
@@ -377,7 +423,7 @@ func TestCollectCopyRiskFindingsAndTableChunkPlan_QueryError(t *testing.T) {
 			},
 		},
 	}
-	_, _, err := collectCopyRiskFindingsAndTableChunkPlan(context.Background(), failQueryQuerier{}, &mysqlSourceDB{}, schema, 1000)
+	_, _, err := collectCopyRiskFindingsAndTableChunkPlan(context.Background(), failQueryQuerier{}, &mysqlSourceDB{}, schema, 1000, nil)
 	if err == nil {
 		t.Fatal("expected error from COUNT query")
 	}

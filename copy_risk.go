@@ -7,6 +7,8 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 )
 
 const (
@@ -16,6 +18,10 @@ const (
 	copyRiskPoorDensityMinChunks            = 16
 	copyRiskBigintRowsThreshold     int64   = 5_000_000
 )
+
+// copyRiskProbeProgressInterval is the cadence for "still probing" heartbeats during
+// copy-risk COUNT/MIN/MAX analysis (plan and migrate). Tests may override.
+var copyRiskProbeProgressInterval = 10 * time.Second
 
 // PlanCopyRiskFinding describes a table whose runtime COPY behavior is likely
 // to be operationally risky even though migration remains supported.
@@ -59,14 +65,151 @@ func queryExactRowCount(ctx context.Context, source dbQuerier, src SourceDB, tab
 	return count.Int64, nil
 }
 
-func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64) ([]PlanCopyRiskFinding, error) {
-	findings, _, err := collectCopyRiskFindingsAndTableChunkPlan(ctx, source, src, schema, chunkSize)
+func collectCopyRiskFindings(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64, progress *copyRiskProbeProgressLogger) ([]PlanCopyRiskFinding, error) {
+	findings, _, err := collectCopyRiskFindingsAndTableChunkPlan(ctx, source, src, schema, chunkSize, progress)
 	return findings, err
+}
+
+// copyRiskProbeProgressLogger emits time-based start, heartbeat, and completion logs for
+// copy-risk probes. Callers invoke Start before and Stop after the probe loop; when nil
+// is passed to collect*, logging is skipped.
+type copyRiskProbeProgressLogger struct {
+	total        int
+	interval     time.Duration
+	done         chan struct{}
+	wg           sync.WaitGroup
+	mu           sync.Mutex
+	completed    int
+	currentTable string
+	currentStage string
+	started      bool
+}
+
+func newCopyRiskProbeProgressLogger(total int, interval time.Duration) *copyRiskProbeProgressLogger {
+	return &copyRiskProbeProgressLogger{total: total, interval: interval}
+}
+
+// Start logs once and starts a background ticker for heartbeats until Stop.
+func (p *copyRiskProbeProgressLogger) Start() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if p.started {
+		p.mu.Unlock()
+		return
+	}
+	p.started = true
+	total := p.total
+	interval := p.interval
+	p.mu.Unlock()
+
+	log.Printf("copy risk analysis: probing %d table(s)", total)
+	if interval <= 0 || total == 0 {
+		return
+	}
+
+	p.mu.Lock()
+	p.done = make(chan struct{})
+	done := p.done
+	p.mu.Unlock()
+
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				p.mu.Lock()
+				completed := p.completed
+				tot := p.total
+				table := p.currentTable
+				stage := p.currentStage
+				p.mu.Unlock()
+				if completed >= tot {
+					return
+				}
+				log.Printf("copy risk analysis: still probing %d/%d table(s); current_table=%s stage=%s", completed, tot, table, stage)
+			case <-done:
+				return
+			}
+		}
+	}()
+}
+
+// Stop ends heartbeats and logs completion.
+func (p *copyRiskProbeProgressLogger) Stop() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	if !p.started {
+		p.mu.Unlock()
+		return
+	}
+	ch := p.done
+	total := p.total
+	completed := p.completed
+	p.mu.Unlock()
+	if ch != nil {
+		close(ch)
+		p.wg.Wait()
+	}
+	log.Printf("copy risk analysis: completed %d/%d table(s)", completed, total)
+}
+
+func (p *copyRiskProbeProgressLogger) StartTableProbe(pgTableName string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.currentTable = pgTableName
+	p.currentStage = "count"
+}
+
+func (p *copyRiskProbeProgressLogger) setStage(stage string) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.currentStage = stage
+}
+
+func (p *copyRiskProbeProgressLogger) FinishTableProbe() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.completed++
+	p.currentTable = ""
+	p.currentStage = ""
+}
+
+// runStartupCopyRiskAnalysis runs advisory copy-risk probes during migrate startup (same
+// collector as plan). Errors are logged and do not fail the migration.
+func runStartupCopyRiskAnalysis(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64) {
+	if schema == nil {
+		return
+	}
+	progress := newCopyRiskProbeProgressLogger(len(schema.Tables), copyRiskProbeProgressInterval)
+	progress.Start()
+	copyRisks, err := collectCopyRiskFindings(ctx, source, src, schema, chunkSize, progress)
+	progress.Stop()
+	if err != nil {
+		log.Printf("WARN: copy risk analysis skipped: %v", err)
+	} else {
+		logCopyRiskFindings(copyRisks, chunkSize)
+	}
 }
 
 // collectCopyRiskFindingsAndTableChunkPlan runs the same per-table COUNT/MIN/MAX probes as copy risk
 // analysis and returns both risk findings and a full per-table chunk plan.
-func collectCopyRiskFindingsAndTableChunkPlan(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64) ([]PlanCopyRiskFinding, []PlanTableChunkInfo, error) {
+func collectCopyRiskFindingsAndTableChunkPlan(ctx context.Context, source dbQuerier, src SourceDB, schema *Schema, chunkSize int64, progress *copyRiskProbeProgressLogger) ([]PlanCopyRiskFinding, []PlanTableChunkInfo, error) {
 	if schema == nil {
 		return []PlanCopyRiskFinding{}, []PlanTableChunkInfo{}, nil
 	}
@@ -74,30 +217,37 @@ func collectCopyRiskFindingsAndTableChunkPlan(ctx context.Context, source dbQuer
 	findings := make([]PlanCopyRiskFinding, 0, len(schema.Tables))
 	chunkPlan := make([]PlanTableChunkInfo, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
+		progress.StartTableProbe(table.PGName)
 		rowCount, err := queryExactRowCount(ctx, source, src, table)
 		if err != nil {
 			return nil, nil, err
 		}
 		if rowCount == 0 {
+			progress.FinishTableProbe()
 			continue
 		}
 
 		key := chunkKeyForTable(table, src)
 		if key == nil {
+			progress.setStage("analyze")
 			findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, nil, 0, 0)...)
 			chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, nil, 0, 0))
+			progress.FinishTableProbe()
 			continue
 		}
 
+		progress.setStage("min_max")
 		min, max, hasRows, err := queryMinMax(ctx, source, src, table, *key)
 		if err != nil {
 			return nil, nil, err
 		}
 		if !hasRows {
+			progress.FinishTableProbe()
 			continue
 		}
 		findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, key, min, max)...)
 		chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, key, min, max))
+		progress.FinishTableProbe()
 	}
 
 	sortCopyRiskFindings(findings)
@@ -350,8 +500,4 @@ func copyRiskCategoryTitle(category string) string {
 
 func int64Ptr(v int64) *int64 {
 	return &v
-}
-
-func logCopyRiskProbeStart(tableCount int) {
-	log.Printf("copy risk analysis: probing %d table(s) with COUNT(*) and eligible PK MIN/MAX checks", tableCount)
 }

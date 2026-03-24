@@ -514,8 +514,11 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	copyRisks := []PlanCopyRiskFinding{}
 	tableChunkPlan := []PlanTableChunkInfo{}
 	if cfg.CopyRiskAnalysis {
-		logCopyRiskProbeStart(len(schema.Tables))
-		if findings, chunks, err := collectCopyRiskFindingsAndTableChunkPlan(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
+		progress := newCopyRiskProbeProgressLogger(len(schema.Tables), copyRiskProbeProgressInterval)
+		progress.Start()
+		findings, chunks, err := collectCopyRiskFindingsAndTableChunkPlan(ctx, sourceDB, src, schema, cfg.ChunkSize, progress)
+		progress.Stop()
+		if err != nil {
 			log.Printf("WARN: copy risk analysis skipped: %v", err)
 		} else {
 			copyRisks = findings

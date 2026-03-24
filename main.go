@@ -324,16 +324,11 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		}
 	}
 	if !cfg.SchemaOnly && cfg.CopyRiskAnalysis {
-		logCopyRiskProbeStart(len(schema.Tables))
 		// Startup copy-risk probing is advisory only during live migrations.
 		// Operators still get signal when probes succeed, but transient source
 		// errors here should not block a migration whose core semantics are
 		// otherwise unchanged.
-		if copyRisks, err := collectCopyRiskFindings(ctx, sourceDB, src, schema, cfg.ChunkSize); err != nil {
-			log.Printf("WARN: copy risk analysis skipped: %v", err)
-		} else {
-			logCopyRiskFindings(copyRisks, cfg.ChunkSize)
-		}
+		runStartupCopyRiskAnalysis(ctx, sourceDB, src, schema, cfg.ChunkSize)
 	}
 	if typeErrs := collectUnsupportedTypeErrors(schema, typeMap, src.MapType); len(typeErrs) > 0 {
 		var b strings.Builder

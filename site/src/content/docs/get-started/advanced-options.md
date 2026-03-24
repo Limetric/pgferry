@@ -50,6 +50,8 @@ That command stays read-only. It loads the same config-relative checkpoint file 
 
 Before you migrate anything, `pgferry plan` tells you what will need manual attention: views, routines, generated columns, skipped indexes, collation warnings, copy-risk hints (when `copy_risk_analysis` is on), and required extensions like `citext` or PostGIS.
 
+When `copy_risk_analysis` is enabled, COUNT/MIN/MAX probes can take a while on large schemas. Both `pgferry plan` and the advisory copy-risk pass at `pgferry migrate` startup log periodic progress (start, time-based “still probing” lines with the current table and stage, and a completion summary) so long runs do not look hung.
+
 ```bash
 pgferry plan migration.toml
 pgferry plan migration.toml --output-dir hooks

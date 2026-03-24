@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -1613,6 +1614,47 @@ func TestRunPlanWithConfig_TableChunkPlanWhenCopyRiskEnabled(t *testing.T) {
 	}
 	if row.EstimatedRows != 2 {
 		t.Fatalf("estimated rows = %d, want 2", row.EstimatedRows)
+	}
+}
+
+func TestRunPlanWithConfig_CopyRiskProgressLogs(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-copy-risk-progress.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO events (id, payload) VALUES (1, 'a'), (1000000, 'b')`); err != nil {
+		t.Fatalf("insert rows: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:           "app",
+		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
+		CopyRiskAnalysis: true,
+		ChunkSize:        100000,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+
+	var logBuf bytes.Buffer
+	prevLog := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(prevLog)
+
+	var outBuf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &outBuf, PlanOptions{Format: "json"}); err != nil {
+		t.Fatalf("runPlanWithConfig: %v", err)
+	}
+	logOut := logBuf.String()
+	if !strings.Contains(logOut, "copy risk analysis: probing 1 table(s)") {
+		t.Fatalf("missing start log:\n%s", logOut)
+	}
+	if !strings.Contains(logOut, "copy risk analysis: completed 1/1 table(s)") {
+		t.Fatalf("missing completion log:\n%s", logOut)
 	}
 }
 
