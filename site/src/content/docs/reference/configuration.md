@@ -3,10 +3,11 @@ title: Configuration
 description: Full TOML reference for pgferry migration configs, including defaults, safe starting points, and source-specific constraints.
 ---
 
-Every migration is driven by a single TOML file:
+Every migration run is driven by a single TOML file:
 
 ```bash
 pgferry migrate migration.toml
+pgferry validate migration.toml
 ```
 
 If you want the fastest safe starting point, use the wizard first:
@@ -86,7 +87,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `chunk_size` | int | `100000` | Key-range width for chunkable single-column numeric PK tables. Actual rows per chunk vary with key density. |
 | `copy_risk_analysis` | bool | `true` | Lightweight COUNT/MIN/MAX probes to flag awkward COPY chunking (huge tables, sparse keys, etc.). Feeds `plan` copy-risk output and optional migrate warnings. Turn off for quieter runs when you already know the shape. |
 | `resume` | bool | `false` | Reuse `pgferry_checkpoint.json` after interruptions. |
-| `validation` | string | `"none"` | `"row_count"` compares per-table counts after load. `"sampled_hash"` adds bounded content fingerprints for deterministic primary-key-addressable rows. |
+| `validation` | string | `"none"` | `"row_count"` compares per-table counts after load. `"sampled_hash"` adds bounded content fingerprints for deterministic primary-key-addressable rows. `pgferry validate` reuses this setting without rerunning migration stages. |
 
 ### `[source]`
 
@@ -211,6 +212,7 @@ The `database` parameter is required because pgferry extracts the DB name for in
 ## Practical guidance
 
 - Run `pgferry plan migration.toml` before the first real migration.
+- Use `pgferry validate migration.toml` when you need to rerun built-in validation later without rerunning schema creation or data copy.
 - Use [Operator tuning](/operations/operator-tuning/) when runtime is dominated by PostgreSQL settings, source pressure, or network distance rather than config shape alone.
 - Use `unlogged_tables = false` whenever you also need `resume = true`.
 - Use `source_snapshot_mode = "single_tx"` when the source stays live during the migration and you need one consistent read view.

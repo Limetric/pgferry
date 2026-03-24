@@ -14,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 )
 
 // connectivityPingTimeout bounds the parallel source/target connectivity check.
@@ -109,7 +108,10 @@ func runRoot(cmd *cobra.Command, args []string) error {
 }
 
 func runMigration(cmd *cobra.Command, args []string) error {
-	cfgPath := resolveMigrationConfigPath(args)
+	cfgPath, err := resolveOptionalConfigPath(configPath, args)
+	if err != nil {
+		return err
+	}
 	if cfgPath == "" {
 		return missingMigrationConfigError()
 	}
@@ -127,10 +129,11 @@ func runMigration(cmd *cobra.Command, args []string) error {
 }
 
 func resolveMigrationConfigPath(args []string) string {
-	if len(args) > 0 {
-		return args[0]
+	cfgPath, err := resolveOptionalConfigPath(configPath, args)
+	if err != nil {
+		return ""
 	}
-	return configPath
+	return cfgPath
 }
 
 func missingMigrationConfigError() error {
@@ -236,27 +239,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	}
 	defer pgPool.Close()
 
-	srcLabel := strings.ToLower(src.Name())
-	log.Printf("pinging %s and PostgreSQL...", srcLabel)
-	pingCtx, pingCancel := context.WithTimeout(ctx, connectivityPingTimeout)
-	defer pingCancel()
-	var srcPingErr, pgPingErr error
-	var g errgroup.Group
-	g.Go(func() error {
-		if err := sourceDB.PingContext(pingCtx); err != nil {
-			srcPingErr = fmt.Errorf("ping %s: %w", srcLabel, err)
-		}
-		return nil
-	})
-	g.Go(func() error {
-		// pgxpool.Ping honors the context deadline (network I/O is cancellable).
-		if err := pgPool.Ping(pingCtx); err != nil {
-			pgPingErr = fmt.Errorf("ping postgres: %w", err)
-		}
-		return nil
-	})
-	g.Wait()
-	if err := errors.Join(srcPingErr, pgPingErr); err != nil {
+	if err := pingSourceAndTarget(ctx, src, sourceDB, pgPool); err != nil {
 		return err
 	}
 
