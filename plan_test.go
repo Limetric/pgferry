@@ -527,6 +527,152 @@ func TestWritePlanText_TableFilters(t *testing.T) {
 	}
 }
 
+func TestRenderPlanReport_MarkdownWithContent(t *testing.T) {
+	report := &PlanReport{
+		Summary: PlanSummary{
+			SourceType:         "mysql",
+			SourceDatabase:     "prod|db",
+			TargetSchema:       "app",
+			TableCount:         2,
+			TotalEstimatedRows: 1234,
+			Workers:            4,
+			IndexWorkers:       2,
+			ChunkSize:          5000,
+			UnloggedTables:     true,
+			Resume:             true,
+			Validation:         "row_count",
+			SnapshotMode:       "single_tx",
+			CopyRiskAnalysis:   true,
+			PreserveDefaults:   true,
+			CleanOrphans:       true,
+			SnakeCaseIDs:       true,
+		},
+		TableFilterReport: &PlanTableFilterReport{
+			TotalTables:       3,
+			SelectedTables:    []string{"orders", "sessions|2024"},
+			SkippedTables:     []string{"legacy"},
+			OverlappingTables: []string{`orders (excluded by "orders")`},
+			SkippedForeignKeys: []PlanSkippedForeignKey{
+				{
+					Table:    "orders",
+					Name:     "fk_orders_customer",
+					RefTable: "customers|archive",
+					Reason:   "referenced table customers|archive is not in the selected table set",
+				},
+			},
+		},
+		RequiredExtensions: []PlanRequiredExtension{
+			{Name: "citext", Feature: "ci_as_citext", Mode: "create_if_missing"},
+		},
+		CopyRiskFindings: []PlanCopyRiskFinding{
+			{
+				Category:            "poor_range_density",
+				Severity:            "medium",
+				Table:               "sessions|2024",
+				Chunkable:           true,
+				ChunkKey:            "id",
+				ChunkKeyType:        "bigint",
+				Reason:              "Sparse id space can create mostly empty chunks.",
+				EstimatedRows:       1000,
+				MinPK:               int64Ptr(1),
+				MaxPK:               int64Ptr(1000000),
+				EstimatedChunkCount: 100,
+				RangeDensity:        0.001,
+				Recommendation:      "Validate throughput on production-like data.",
+			},
+		},
+		TableChunkPlan: []PlanTableChunkInfo{
+			{
+				Table:           "sessions|2024",
+				EstimatedRows:   1000,
+				Chunkable:       true,
+				ChunkKey:        "id",
+				ChunkKeyType:    "bigint",
+				MinPK:           int64Ptr(1),
+				MaxPK:           int64Ptr(1000000),
+				EstimatedChunks: 100,
+			},
+		},
+		SourceObjects: PlanSourceObjects{
+			Views:    []string{"v_users|wiki"},
+			Routines: []string{"FUNCTION sync_users()"},
+			Triggers: []PlanSourceTrigger{{Name: "trg_audit", Table: "orders|2024"}},
+		},
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{Table: "mystery|table", Column: "payload", SourceType: "geometry", Reason: `unsupported MySQL type "geometry|point"`},
+		},
+		SchemaSemanticWarnings: []SchemaSemanticWarning{
+			{
+				Category:            "defaults",
+				ObjectType:          "column",
+				ObjectName:          "events.created_at",
+				Disposition:         "skipped",
+				Reason:              `SQLite default "(datetime('now')|utc)" is not recreated automatically.`,
+				RecommendedFollowUp: "Recreate the PostgreSQL DEFAULT manually.",
+			},
+		},
+		GeneratedColumns: []PlanGeneratedColumn{
+			{Table: "orders", Column: "total", Expression: "price|qty"},
+		},
+		SkippedIndexes: []PlanSkippedIndex{
+			{Table: "products", Index: "idx_ft_name", Reason: "FULLTEXT|SPATIAL indexes are not supported"},
+		},
+		OrphanCleanupCandidates: []PlanOrphanCleanupCandidate{
+			{Table: "orders", ForeignKey: "fk_orders_customer", Columns: []string{"customer_id"}, RefTable: "customers", RefColumns: []string{"id"}, Action: "delete"},
+		},
+		TemporalWarnings: []PlanTemporalWarning{
+			{
+				Category:    "mysql_datetime_without_timezone",
+				Summary:     "1 MySQL datetime column maps to PostgreSQL timestamp without timezone.",
+				Columns:     1,
+				Examples:    []string{"orders.created_at"},
+				Remediation: `Use type_mapping.datetime_as_timestamptz = true if values are instants.`,
+			},
+		},
+		CollationWarnings: []string{"Column users.email uses collation utf8mb4_general_ci|legacy"},
+	}
+
+	var buf bytes.Buffer
+	if err := renderPlanReport(report, &buf, PlanOptions{Format: "markdown"}); err != nil {
+		t.Fatalf("renderPlanReport(markdown): %v", err)
+	}
+
+	got := buf.String()
+	for _, want := range []string{
+		"# Migration Plan Report",
+		"## Summary",
+		"| Field | Value |",
+		"prod\\|db",
+		"## Table Filters",
+		"sessions\\|2024",
+		"## Required Extensions (1)",
+		"`citext`",
+		"## Copy Risk Findings (1)",
+		"| Table | Severity | Category | Chunking | Estimated Rows | Recommendation |",
+		"## Table Chunk Plan (1)",
+		"| Table | Estimated Rows | Chunking | Key | Range |",
+		"## Source Objects",
+		"v_users\\|wiki",
+		"## Unsupported Columns (1)",
+		"| Table | Column | Source Type | Reason |",
+		"mystery\\|table",
+		`geometry\|point`,
+		"## Schema Semantic Warnings (1)",
+		"## Generated Columns (1)",
+		"price\\|qty",
+		"## Skipped Indexes (1)",
+		"FULLTEXT\\|SPATIAL",
+		"## Orphan Cleanup Candidates (1)",
+		"## Temporal Warnings (1)",
+		"## Collation Warnings (1)",
+		"utf8mb4_general_ci\\|legacy",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("markdown output missing %q, got:\n%s", want, got)
+		}
+	}
+}
+
 func TestWritePlanText_SourceObjectsScopeNotesWithTableFilters(t *testing.T) {
 	report := &PlanReport{
 		TableFilterReport: &PlanTableFilterReport{
@@ -867,6 +1013,89 @@ func TestWritePlanText_TableChunkPlan_LongTableName(t *testing.T) {
 	}
 }
 
+func TestRenderPlanReport_MarkdownFailOn(t *testing.T) {
+	report := &PlanReport{
+		UnsupportedColumns: []PlanUnsupportedColumn{
+			{Table: "weird", Column: "x", SourceType: "FROBNOZZ", Reason: "unsupported"},
+		},
+	}
+
+	var buf bytes.Buffer
+	err := renderPlanReport(report, &buf, PlanOptions{Format: "markdown", FailOn: "errors"})
+	var pf *PlanFindingsError
+	if !errors.As(err, &pf) {
+		t.Fatalf("renderPlanReport() error = %v, want *PlanFindingsError", err)
+	}
+	if pf.UnsupportedColumns != 1 {
+		t.Fatalf("UnsupportedColumns = %d, want 1", pf.UnsupportedColumns)
+	}
+	if !strings.Contains(buf.String(), "FAIL: 1 unsupported column(s)") {
+		t.Fatalf("markdown output missing FAIL summary:\n%s", buf.String())
+	}
+}
+
+func TestRenderPlanReport_MarkdownShortAlias(t *testing.T) {
+	report := &PlanReport{}
+
+	var buf bytes.Buffer
+	if err := renderPlanReport(report, &buf, PlanOptions{Format: "md"}); err != nil {
+		t.Fatalf("renderPlanReport(md): %v", err)
+	}
+	if !strings.Contains(buf.String(), "# Migration Plan Report") {
+		t.Fatalf("markdown alias output missing document heading:\n%s", buf.String())
+	}
+}
+
+func TestWritePlanMarkdown_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	writePlanMarkdown(&buf, &PlanReport{})
+	got := buf.String()
+	if !strings.Contains(got, "# Migration Plan Report") {
+		t.Fatalf("missing markdown document heading:\n%s", got)
+	}
+	if !strings.Contains(got, "No manual follow-up items detected.") {
+		t.Fatalf("missing empty markdown message:\n%s", got)
+	}
+}
+
+func TestMarkdownEscape_BackticksAndBackslashes(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "concat(`first`,`last`)", want: "concat(\\`first\\`,\\`last\\`)"},
+		{in: `\|`, want: `\\|`},
+		{in: `path\name`, want: `path\name`},
+	}
+
+	for _, tt := range tests {
+		if got := markdownEscape(tt.in); got != tt.want {
+			t.Fatalf("markdownEscape(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestWriteMarkdownTable_PadsAndTruncatesRows(t *testing.T) {
+	var buf bytes.Buffer
+	writeMarkdownTable(&buf, []string{"A", "B"}, [][]string{
+		{"left"},
+		{"x", "y", "z"},
+	})
+	got := buf.String()
+	for _, want := range []string{
+		"| A | B |",
+		"| left |  |",
+		"| x | y |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("table output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "| x | y | z |") {
+		t.Fatalf("table output should truncate extra cells:\n%s", got)
+	}
+}
+
 func TestWritePlanText_TableChunkPlan(t *testing.T) {
 	report := &PlanReport{
 		TableChunkPlan: []PlanTableChunkInfo{
@@ -1196,8 +1425,8 @@ func TestRunPlanWithConfig_InvalidFormat(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unsupported format")
 	}
-	if !strings.Contains(err.Error(), "text or json") {
-		t.Fatalf("error = %v, want mention of text or json", err)
+	if !strings.Contains(err.Error(), "text, json, or markdown") {
+		t.Fatalf("error = %v, want mention of text, json, or markdown", err)
 	}
 }
 
@@ -1577,6 +1806,21 @@ func TestRunPlan_InvalidFailOn(t *testing.T) {
 	}
 }
 
+func TestRunPlan_InvalidFormat(t *testing.T) {
+	snapshotPlanGlobals(t)
+
+	planFormat = "yaml"
+	planFailOn = "none"
+
+	err := runPlan(&cobra.Command{}, []string{"any.toml"})
+	if !errors.Is(err, errInvalidPlanFormat) {
+		t.Fatalf("runPlan() error = %v, want errInvalidPlanFormat", err)
+	}
+	if err.Error() != "--format must be text, json, or markdown" {
+		t.Fatalf("runPlan() error = %q", err.Error())
+	}
+}
+
 func TestRunPlanFromInput_Text(t *testing.T) {
 	snapshotPlanGlobals(t)
 
@@ -1627,6 +1871,59 @@ func TestRunPlanFromInput_Text(t *testing.T) {
 
 	if directText.String() != fromInput.String() {
 		t.Fatalf("text mismatch\n--- direct ---\n%s\n--- from input ---\n%s", directText.String(), fromInput.String())
+	}
+}
+
+func TestRunPlanFromInput_Markdown(t *testing.T) {
+	snapshotPlanGlobals(t)
+
+	dbPath := filepath.Join(t.TempDir(), "plan-from-input-markdown.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+
+	cfg := &MigrationConfig{
+		Schema:      "app",
+		Source:      SourceConfig{Type: "sqlite", DSN: dbPath},
+		TypeMapping: defaultTypeMappingConfig(),
+	}
+
+	var jsonBuf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &jsonBuf, PlanOptions{Format: "json"}); err != nil {
+		t.Fatalf("runPlanWithConfig json: %v", err)
+	}
+
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	if err := os.WriteFile(jsonPath, jsonBuf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write json: %v", err)
+	}
+
+	var directMarkdown bytes.Buffer
+	if err := runPlanWithConfig(cfg, &directMarkdown, PlanOptions{Format: "markdown"}); err != nil {
+		t.Fatalf("runPlanWithConfig markdown: %v", err)
+	}
+
+	planInputPath = jsonPath
+	planFormat = "markdown"
+	planFailOn = "none"
+	planConfigPath = ""
+	planOutputDir = ""
+
+	var fromInput bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&fromInput)
+	if err := runPlan(cmd, nil); err != nil {
+		t.Fatalf("runPlan from input markdown: %v", err)
+	}
+
+	if directMarkdown.String() != fromInput.String() {
+		t.Fatalf("markdown mismatch\n--- direct ---\n%s\n--- from input ---\n%s", directMarkdown.String(), fromInput.String())
 	}
 }
 
