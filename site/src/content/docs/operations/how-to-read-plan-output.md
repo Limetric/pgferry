@@ -15,6 +15,17 @@ description: Treat pgferry plan output as a worklist, not a warning dump.
 - required PostgreSQL extensions
 - collation warnings
 - copy risk findings (when `copy_risk_analysis` is enabled — large or awkward tables worth a second look before COPY day)
+- **ETA (copy phase only)** (when `copy_risk_analysis` is enabled and row estimates exist) — a deliberately wide time range with **low** confidence; it is a planning heuristic for the data-copy window, not a promise for the full migration
+
+## Copy-phase ETA
+
+When `copy_risk_analysis` is on, `plan` can show an **estimated copy window** (seconds range in JSON; human-readable range in text and Markdown). Treat it as a rough cutover planning signal:
+
+- It **excludes** validation, index builds, foreign keys, hooks, sequence reset, triggers, orphan cleanup, and other post-copy work.
+- It **widens** when snapshot mode is `single_tx` (sequential copy) or when copy-risk findings flag sparse ranges, huge chunk counts, or large non-chunkable tables.
+- If there is not enough signal (for example `copy_risk_analysis` is off, or estimated rows are zero), the report says **ETA unavailable** with a short reason instead of guessing.
+
+In `--format json`, the `eta` object is machine-readable (`scope` is always `copy_only` when present). `basis_workers` is the **effective** COPY parallelism used for the math (for example `1` when `source_snapshot_mode` is `single_tx`, even if `workers` in config is higher). Older saved reports without an `eta` block get one filled in when you re-render with `--input`.
 
 ## How to respond
 
@@ -27,6 +38,7 @@ description: Treat pgferry plan output as a worklist, not a warning dump.
 | view/routine/trigger warning | write `after_all` hook SQL or separate DDL |
 | extension requirement | install it up front or let pgferry create it when supported |
 | copy risk finding | sanity-check chunking strategy, `chunk_size`, or table shape before the long run |
+| copy-phase ETA | use only as a ballpark for COPY duration; read the listed exclusions and widening notes |
 
 ## JSON output and replays
 

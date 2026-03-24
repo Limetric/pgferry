@@ -48,7 +48,7 @@ That command stays read-only. It loads the same config-relative checkpoint file 
 
 ## Plan and preflight
 
-Before you migrate anything, `pgferry plan` tells you what will need manual attention: views, routines, generated columns, skipped indexes, collation warnings, copy-risk hints (when `copy_risk_analysis` is on), and required extensions like `citext` or PostGIS.
+Before you migrate anything, `pgferry plan` tells you what will need manual attention: views, routines, generated columns, skipped indexes, collation warnings, copy-risk hints (when `copy_risk_analysis` is on), and required extensions like `citext` or PostGIS. With `copy_risk_analysis` enabled, it can also print a **copy-phase-only** ETA range (low confidence) to help schedule the data-load window — it does **not** cover hooks, validation, indexes, foreign keys, or other post-copy steps; see [how to read plan output](/operations/how-to-read-plan-output/).
 
 ```bash
 pgferry plan migration.toml

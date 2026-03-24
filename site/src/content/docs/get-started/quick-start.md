@@ -69,7 +69,7 @@ If you already know your source type and want a fuller starter instead, jump to:
 pgferry plan migration.toml
 ```
 
-`plan` is the part where pgferry tells you the truth before PostgreSQL gets involved. If there are views, routines, generated columns, skipped indexes, or required extensions, this is where you find out.
+`plan` is the part where pgferry tells you the truth before PostgreSQL gets involved. If there are views, routines, generated columns, skipped indexes, or required extensions, this is where you find out. With `copy_risk_analysis` on, you also get a rough **copy-phase** ETA band (not a full migration timeline).
 
 This step is technically optional — the same way riding your bike without checking the weather is technically optional. You can skip it, but don't be surprised when it rains.
 
