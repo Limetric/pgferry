@@ -39,7 +39,7 @@ go test -tags integration -run TestIntegration_MSSQL -count=1 -v ./...
 
 ## Key references
 
-- Operator tuning guide: <https://pgferry.com/operations/operator-tuning/>
+- Operator tuning guide: <https://www.pgferry.com/operations/operator-tuning/>
 - Source abstraction interface: `source.go` (`SourceDB` interface, `newSourceDB` factory)
 - Migration pipeline: `main.go:runMigration`
 - Integration tests use build tag `//go:build integration`
