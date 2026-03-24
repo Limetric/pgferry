@@ -1291,7 +1291,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 				fmt.Fprintln(w)
 			}
 			for _, v := range objs.Views {
-				fmt.Fprintf(w, "- %s\n", markdownEscape(v))
+				fmt.Fprintf(w, "- %s\n", markdownEscape(v.Name))
 			}
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
@@ -1303,7 +1303,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 				fmt.Fprintln(w)
 			}
 			for _, r := range objs.Routines {
-				fmt.Fprintf(w, "- %s\n", markdownEscape(r))
+				fmt.Fprintf(w, "- %s\n", markdownEscape(r.DisplayName()))
 			}
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))

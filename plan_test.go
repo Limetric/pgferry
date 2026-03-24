@@ -598,8 +598,8 @@ func TestRenderPlanReport_MarkdownWithContent(t *testing.T) {
 			},
 		},
 		SourceObjects: PlanSourceObjects{
-			Views:    []string{"v_users|wiki"},
-			Routines: []string{"FUNCTION sync_users()"},
+			Views:    []PlanSourceView{{Name: "v_users|wiki"}},
+			Routines: []PlanSourceRoutine{{Name: "sync_users()", Type: "FUNCTION"}},
 			Triggers: []PlanSourceTrigger{{Name: "trg_audit", Table: "orders|2024"}},
 		},
 		UnsupportedColumns: []PlanUnsupportedColumn{
