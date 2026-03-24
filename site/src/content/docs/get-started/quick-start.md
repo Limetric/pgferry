@@ -54,6 +54,8 @@ In an interactive terminal, plain `pgferry` also opens the wizard. It asks the u
 
 Use the wizard to generate `migration.toml`.
 
+If you want to stay on the simplest path, skip the optional advanced section and accept the defaults. If you already know you want built-in validation, resume support, or non-default `chunk_size` / `index_workers`, the wizard can now capture those too without sending you straight into manual TOML edits.
+
 If you already know your source type and want a fuller starter instead, jump to:
 
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)

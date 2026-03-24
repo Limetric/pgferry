@@ -18,6 +18,8 @@ pgferry wizard
 
 Shorthand: `pgferry run` is the same as `migrate`, and `generate` / `init` are aliases for `wizard` — use whichever muscle memory you have.
 
+The wizard keeps the default path short, then offers an optional advanced section for `validation`, `resume`, `chunk_size`, and `index_workers`. If you skip that section, the generated TOML stays on the minimal safe/default path.
+
 ## Minimal config
 
 ```toml
