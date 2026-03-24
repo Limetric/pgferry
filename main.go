@@ -18,6 +18,12 @@ import (
 
 var configPath string
 
+// migrateLogFormatFlagShort is the short --help line; full JSON field list is in migrateCmd.Long.
+const migrateLogFormatFlagShort = "migrate progress: text or json"
+
+// migrateLogFormatFlagDesc documents JSON mode for migrateCmd.Long and site docs.
+const migrateLogFormatFlagDesc = `With json, one JSON object is written to stdout when the run finishes; human messages remain on stderr. JSON fields: version, duration_ms, mode, validation, success, error, stage (on failure), tables_migrated (omitted when zero).`
+
 var rootCmd = &cobra.Command{
 	Use:   "pgferry [migration.toml]",
 	Short: "Source database to PostgreSQL migration tool",
@@ -45,6 +51,7 @@ var migrateCmd = &cobra.Command{
 	Use:     "migrate [migration.toml]",
 	Aliases: []string{"run"},
 	Short:   "Run a migration from a TOML config file",
+	Long:    "Run a migration from a TOML config file.\n\n" + migrateLogFormatFlagDesc,
 	Args:    cobra.MaximumNArgs(1),
 	RunE:    runMigration,
 }
@@ -65,6 +72,7 @@ func init() {
 	rootCmd.Version = versionString()
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
+	rootCmd.PersistentFlags().String("log-format", "text", migrateLogFormatFlagShort)
 	migrateCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	versionCmd.Flags().BoolVarP(&versionVerbose, "verbose", "v", false, "print detailed build metadata")
 	rootCmd.AddCommand(versionCmd)
@@ -107,7 +115,11 @@ func runMigration(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return runMigrationWithConfig(cfg)
+	opts, err := migrateOptionsFromCmd(cmd)
+	if err != nil {
+		return err
+	}
+	return runMigrationWithConfig(cfg, opts)
 }
 
 func resolveMigrationConfigPath(args []string) string {
@@ -137,9 +149,22 @@ func isInteractiveDevice(v any) bool {
 	return info.Mode()&os.ModeCharDevice != 0
 }
 
-func runMigrationWithConfig(cfg *MigrationConfig) error {
+func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err error) {
 	ctx := context.Background()
 	start := time.Now()
+	stage := "source"
+	tableCount := 0
+
+	defer func() {
+		writeErr := writeMigrateJSONSummaryLine(os.Stdout, opts, cfg, start, tableCount, stage, err)
+		if writeErr != nil {
+			if err == nil {
+				err = writeErr
+			} else {
+				fmt.Fprintf(os.Stderr, "%v\n", writeErr)
+			}
+		}
+	}()
 
 	// Force unlogged_tables=false in split modes (no bulk load benefit)
 	if cfg.SchemaOnly || cfg.DataOnly {
@@ -200,16 +225,19 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	}
 
 	// 2. Introspect source schema
+	stage = "introspect"
 	log.Printf("introspecting %s schema '%s'...", src.Name(), dbName)
 	schema, err := src.IntrospectSchema(sourceDB, dbName)
 	if err != nil {
 		return fmt.Errorf("introspect schema: %w", err)
 	}
+	stage = "filter"
 	filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
 	if err != nil {
 		return fmt.Errorf("filter schema tables: %w", err)
 	}
 	schema = filteredSchema
+	tableCount = len(schema.Tables)
 	if hasTableFilters(cfg) {
 		logTableFilterReport(filterReport)
 		if cfg.Resume {
@@ -303,6 +331,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	sourceDB.Close()
 
 	// 3. Connect to PostgreSQL
+	stage = "target"
 	log.Printf("connecting to PostgreSQL...")
 	poolCfg, poolWarning, err := buildTargetPoolConfig(cfg)
 	if err != nil {
@@ -334,6 +363,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 
 	// 4. Create schema based on configured conflict behavior
 	if !cfg.DataOnly {
+		stage = "schema"
 		log.Printf("preparing schema '%s'...", cfg.Schema)
 		if err := prepareTargetSchema(ctx, pgPool, cfg.Schema, cfg.OnSchemaExists); err != nil {
 			return err
@@ -355,6 +385,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	}
 
 	if !cfg.SchemaOnly {
+		stage = "data"
 		err := runDataMigrationPhase(
 			cfg.DataOnly,
 			log.Printf,
@@ -406,6 +437,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 
 	// Validation
 	if cfg.Validation != "none" && !cfg.SchemaOnly {
+		stage = "validation"
 		logValidationPlan(cfg.Validation, cfg.SourceSnapshotMode)
 		log.Printf("running post-load validation (mode=%s)...", cfg.Validation)
 		if _, err := validateMigration(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, cfg.Validation, cfg.Workers, typeMap); err != nil {
@@ -415,6 +447,7 @@ func runMigrationWithConfig(cfg *MigrationConfig) error {
 	}
 
 	// 9. Post-migration: SET LOGGED, PKs, indexes, hooks, FKs, sequences, triggers
+	stage = "post_migrate"
 	log.Printf("running post-migration steps...")
 	if err := postMigrate(ctx, pgPool, schema, cfg); err != nil {
 		return fmt.Errorf("post-migrate: %w", err)
