@@ -20,8 +20,9 @@ const (
 )
 
 // copyRiskProbeProgressInterval is the cadence for "still probing" heartbeats during
-// copy-risk COUNT/MIN/MAX analysis (plan and migrate). Tests may override.
-var copyRiskProbeProgressInterval = 10 * time.Second
+// copy-risk COUNT/MIN/MAX analysis (plan and migrate). Tests pass explicit intervals to
+// newCopyRiskProbeProgressLogger.
+const copyRiskProbeProgressInterval = 10 * time.Second
 
 // PlanCopyRiskFinding describes a table whose runtime COPY behavior is likely
 // to be operationally risky even though migration remains supported.
@@ -83,6 +84,7 @@ type copyRiskProbeProgressLogger struct {
 	currentTable string
 	currentStage string
 	started      bool
+	stopped      bool
 }
 
 func newCopyRiskProbeProgressLogger(total int, interval time.Duration) *copyRiskProbeProgressLogger {
@@ -99,11 +101,13 @@ func (p *copyRiskProbeProgressLogger) Start() {
 		p.mu.Unlock()
 		return
 	}
+	p.stopped = false
 	p.started = true
 	total := p.total
 	interval := p.interval
 	p.mu.Unlock()
 
+	// Log start without holding the mutex so slow logging cannot block heartbeat updates.
 	log.Printf("copy risk analysis: probing %d table(s)", total)
 	if interval <= 0 || total == 0 {
 		return
@@ -139,19 +143,26 @@ func (p *copyRiskProbeProgressLogger) Start() {
 	}()
 }
 
-// Stop ends heartbeats and logs completion.
+// Stop ends heartbeats and logs completion. It is safe to call more than once.
 func (p *copyRiskProbeProgressLogger) Stop() {
 	if p == nil {
 		return
 	}
 	p.mu.Lock()
-	if !p.started {
+	switch {
+	case p.stopped:
+		p.mu.Unlock()
+		return
+	case !p.started:
 		p.mu.Unlock()
 		return
 	}
 	ch := p.done
 	total := p.total
 	completed := p.completed
+	p.done = nil
+	p.started = false
+	p.stopped = true
 	p.mu.Unlock()
 	if ch != nil {
 		close(ch)
@@ -217,37 +228,39 @@ func collectCopyRiskFindingsAndTableChunkPlan(ctx context.Context, source dbQuer
 	findings := make([]PlanCopyRiskFinding, 0, len(schema.Tables))
 	chunkPlan := make([]PlanTableChunkInfo, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
-		progress.StartTableProbe(table.PGName)
-		rowCount, err := queryExactRowCount(ctx, source, src, table)
-		if err != nil {
+		if err := func(table Table) error {
+			progress.StartTableProbe(table.PGName)
+			defer progress.FinishTableProbe()
+			rowCount, err := queryExactRowCount(ctx, source, src, table)
+			if err != nil {
+				return err
+			}
+			if rowCount == 0 {
+				return nil
+			}
+
+			key := chunkKeyForTable(table, src)
+			if key == nil {
+				progress.setStage("analyze")
+				findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, nil, 0, 0)...)
+				chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, nil, 0, 0))
+				return nil
+			}
+
+			progress.setStage("min_max")
+			min, max, hasRows, err := queryMinMax(ctx, source, src, table, *key)
+			if err != nil {
+				return err
+			}
+			if !hasRows {
+				return nil
+			}
+			findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, key, min, max)...)
+			chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, key, min, max))
+			return nil
+		}(table); err != nil {
 			return nil, nil, err
 		}
-		if rowCount == 0 {
-			progress.FinishTableProbe()
-			continue
-		}
-
-		key := chunkKeyForTable(table, src)
-		if key == nil {
-			progress.setStage("analyze")
-			findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, nil, 0, 0)...)
-			chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, nil, 0, 0))
-			progress.FinishTableProbe()
-			continue
-		}
-
-		progress.setStage("min_max")
-		min, max, hasRows, err := queryMinMax(ctx, source, src, table, *key)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !hasRows {
-			progress.FinishTableProbe()
-			continue
-		}
-		findings = append(findings, analyzeCopyRiskTable(table, src, rowCount, chunkSize, key, min, max)...)
-		chunkPlan = append(chunkPlan, buildPlanTableChunkInfo(table, src, rowCount, chunkSize, key, min, max))
-		progress.FinishTableProbe()
 	}
 
 	sortCopyRiskFindings(findings)

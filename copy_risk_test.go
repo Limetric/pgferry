@@ -308,6 +308,25 @@ func TestCopyRiskProbeProgressLogger_Heartbeat(t *testing.T) {
 	}
 }
 
+func TestCopyRiskProbeProgressLogger_StopTwiceSafe(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	p := newCopyRiskProbeProgressLogger(1, 0)
+	p.Start()
+	p.StartTableProbe("t")
+	p.FinishTableProbe()
+	p.Stop()
+	p.Stop()
+
+	out := buf.String()
+	if strings.Count(out, "copy risk analysis: completed") != 1 {
+		t.Fatalf("want exactly one completion log, got:\n%s", out)
+	}
+}
+
 func TestCopyRiskProbeProgressLogger_StopLogsCompletion(t *testing.T) {
 	var buf bytes.Buffer
 	prev := log.Writer()
