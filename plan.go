@@ -353,7 +353,7 @@ func decodePlanSourceRoutines(data json.RawMessage) ([]PlanSourceRoutine, error)
 	if err := json.Unmarshal(data, &strs); err == nil {
 		out := make([]PlanSourceRoutine, len(strs))
 		for i, s := range strs {
-			out[i] = PlanSourceRoutine{Name: s}
+			out[i] = parseLegacyPlanSourceRoutine(s)
 		}
 		return out, nil
 	}
@@ -835,13 +835,6 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 	}
 
 	return report
-}
-
-func ensureStringSlice(s []string) []string {
-	if s == nil {
-		return []string{}
-	}
-	return s
 }
 
 func planViewsFromSource(views []SourceView) []PlanSourceView {
@@ -1725,12 +1718,12 @@ func appendCommentedSourceDefinition(b *strings.Builder, dialect, definition, no
 		fmt.Fprintf(b, "-- %s\n", sanitizeSQLCommentText(note))
 	}
 	if dialect != "" {
-		fmt.Fprintf(b, "/* source dialect: %s */\n", sanitizeSQLCommentText(dialect))
+		fmt.Fprintf(b, "-- source dialect: %s\n", sanitizeSQLCommentText(dialect))
 	}
 
 	truncated := false
-	if len(definition) > maxPlanSourceDefinitionChars {
-		definition = strings.TrimSpace(definition[:maxPlanSourceDefinitionChars])
+	if definitionRunes := []rune(definition); len(definitionRunes) > maxPlanSourceDefinitionChars {
+		definition = strings.TrimSpace(string(definitionRunes[:maxPlanSourceDefinitionChars]))
 		truncated = true
 	}
 	for _, line := range strings.Split(definition, "\n") {
@@ -1750,6 +1743,22 @@ func normalizePlanSourceDefinition(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 	return s
+}
+
+func parseLegacyPlanSourceRoutine(s string) PlanSourceRoutine {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return PlanSourceRoutine{}
+	}
+	parts := strings.SplitN(s, " ", 2)
+	if len(parts) == 2 {
+		t := strings.TrimSpace(parts[0])
+		name := strings.TrimSpace(parts[1])
+		if t != "" && name != "" && !strings.Contains(name, " ") {
+			return PlanSourceRoutine{Type: t, Name: name}
+		}
+	}
+	return PlanSourceRoutine{Name: s}
 }
 
 func planSourceObjectsHaveDefinitions(objs PlanSourceObjects) bool {

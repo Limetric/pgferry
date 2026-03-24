@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
@@ -716,6 +717,9 @@ func TestWritePlanJSON_LegacyViewsAndRoutinesStringArray(t *testing.T) {
 	if len(p.Routines) != 1 || p.Routines[0].DisplayName() != "FUNCTION legacy" {
 		t.Fatalf("routines = %+v", p.Routines)
 	}
+	if p.Routines[0].Type != "FUNCTION" || p.Routines[0].Name != "legacy" {
+		t.Fatalf("legacy routine parsing = %+v", p.Routines[0])
+	}
 }
 
 func TestWritePlanJSON_LegacyTriggersStringArray(t *testing.T) {
@@ -1281,7 +1285,7 @@ func TestWriteHookSkeletons_AfterAll(t *testing.T) {
 
 func TestWriteHookSkeletons_AfterAll_TruncatesLargeDefinitions(t *testing.T) {
 	dir := t.TempDir()
-	largeDefinition := "CREATE VIEW v_big AS SELECT '" + strings.Repeat("x", maxPlanSourceDefinitionChars+50) + "'"
+	largeDefinition := "CREATE VIEW v_big AS SELECT '" + strings.Repeat("x", maxPlanSourceDefinitionChars) + "界'"
 	report := &PlanReport{
 		SourceObjects: PlanSourceObjects{
 			Views: []PlanSourceView{{Name: "v_big", Dialect: "sqlite", Definition: largeDefinition}},
@@ -1302,6 +1306,21 @@ func TestWriteHookSkeletons_AfterAll_TruncatesLargeDefinitions(t *testing.T) {
 	}
 	if strings.Contains(content, strings.Repeat("x", maxPlanSourceDefinitionChars+10)) {
 		t.Fatalf("after_all.sql should not contain the full oversized definition")
+	}
+	if !utf8.ValidString(content) {
+		t.Fatalf("after_all.sql should stay valid UTF-8")
+	}
+}
+
+func TestAppendCommentedSourceDefinition_UsesLineCommentsForDialect(t *testing.T) {
+	var b strings.Builder
+	appendCommentedSourceDefinition(&b, "mysql */ SELECT 1;", "CREATE VIEW v AS SELECT 1", "")
+	got := b.String()
+	if strings.Contains(got, "/* source dialect:") {
+		t.Fatalf("dialect header should not use block comments, got:\n%s", got)
+	}
+	if !strings.Contains(got, "-- source dialect: mysql */ SELECT 1;") {
+		t.Fatalf("missing line-comment dialect header, got:\n%s", got)
 	}
 }
 
