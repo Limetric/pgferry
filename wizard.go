@@ -20,7 +20,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var generatedConfigRunner = runMigrationWithConfig
+var generatedConfigRunner = func(cfg *MigrationConfig) error {
+	return runMigrationWithConfig(cfg, MigrateOptions{})
+}
 
 type plannerFunc func(*MigrationConfig, io.Writer, PlanOptions) error
 
