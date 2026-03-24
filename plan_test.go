@@ -1046,6 +1046,56 @@ func TestRenderPlanReport_MarkdownShortAlias(t *testing.T) {
 	}
 }
 
+func TestWritePlanMarkdown_Empty(t *testing.T) {
+	var buf bytes.Buffer
+	writePlanMarkdown(&buf, &PlanReport{})
+	got := buf.String()
+	if !strings.Contains(got, "# Migration Plan Report") {
+		t.Fatalf("missing markdown document heading:\n%s", got)
+	}
+	if !strings.Contains(got, "No manual follow-up items detected.") {
+		t.Fatalf("missing empty markdown message:\n%s", got)
+	}
+}
+
+func TestMarkdownEscape_BackticksAndBackslashes(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "concat(`first`,`last`)", want: "concat(\\`first\\`,\\`last\\`)"},
+		{in: `\|`, want: `\\|`},
+		{in: `path\name`, want: `path\name`},
+	}
+
+	for _, tt := range tests {
+		if got := markdownEscape(tt.in); got != tt.want {
+			t.Fatalf("markdownEscape(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestWriteMarkdownTable_PadsAndTruncatesRows(t *testing.T) {
+	var buf bytes.Buffer
+	writeMarkdownTable(&buf, []string{"A", "B"}, [][]string{
+		{"left"},
+		{"x", "y", "z"},
+	})
+	got := buf.String()
+	for _, want := range []string{
+		"| A | B |",
+		"| left |  |",
+		"| x | y |",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("table output missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "| x | y | z |") {
+		t.Fatalf("table output should truncate extra cells:\n%s", got)
+	}
+}
+
 func TestWritePlanText_TableChunkPlan(t *testing.T) {
 	report := &PlanReport{
 		TableChunkPlan: []PlanTableChunkInfo{

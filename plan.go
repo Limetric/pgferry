@@ -1334,6 +1334,7 @@ func writeMarkdownTable(w io.Writer, headers []string, rows [][]string) {
 	}
 	fmt.Fprintln(w)
 	for _, row := range rows {
+		row = normalizeMarkdownTableRow(row, len(headers))
 		fmt.Fprint(w, "|")
 		for _, cell := range row {
 			fmt.Fprintf(w, " %s |", markdownEscape(cell))
@@ -1343,14 +1344,26 @@ func writeMarkdownTable(w io.Writer, headers []string, rows [][]string) {
 	fmt.Fprintln(w)
 }
 
+func normalizeMarkdownTableRow(row []string, width int) []string {
+	if len(row) > width {
+		return row[:width]
+	}
+	if len(row) == width {
+		return row
+	}
+	out := make([]string, width)
+	copy(out, row)
+	return out
+}
+
 func markdownEscape(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.TrimSpace(s)
 	replacer := strings.NewReplacer(
-		`\\`, `\\\\`,
 		`|`, `\|`,
+		"`", "\\`",
 		"*", `\*`,
 		"[", `\[`,
 		"]", `\]`,
@@ -1372,10 +1385,11 @@ func formatMarkdownChunking(risk PlanCopyRiskFinding) string {
 	if !risk.Chunkable {
 		return "full copy"
 	}
-	parts := []string{risk.ChunkKey}
+	first := risk.ChunkKey
 	if risk.ChunkKeyType != "" {
-		parts[0] += " (" + risk.ChunkKeyType + ")"
+		first += " (" + risk.ChunkKeyType + ")"
 	}
+	parts := []string{first}
 	if risk.MinPK != nil && risk.MaxPK != nil {
 		parts = append(parts, fmt.Sprintf("range=%d..%d", *risk.MinPK, *risk.MaxPK))
 	}
