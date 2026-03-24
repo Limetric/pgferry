@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -290,11 +291,11 @@ func TestLoadConfig_DSNEnvOverrides(t *testing.T) {
 			b.WriteString("[source]\n")
 			b.WriteString("type = \"mysql\"\n")
 			if tt.sourceDSN != "" {
-				b.WriteString("dsn = \"" + tt.sourceDSN + "\"\n")
+				b.WriteString("dsn = " + strconv.Quote(tt.sourceDSN) + "\n")
 			}
 			b.WriteString("\n[target]\n")
 			if tt.targetDSN != "" {
-				b.WriteString("dsn = \"" + tt.targetDSN + "\"\n")
+				b.WriteString("dsn = " + strconv.Quote(tt.targetDSN) + "\n")
 			}
 
 			if err := os.WriteFile(cfgFile, []byte(b.String()), 0644); err != nil {

@@ -61,6 +61,8 @@ type = "mysql"
 [target]
 ```
 
+`[source].type` is still required so pgferry knows which source backend and validation rules to apply.
+
 ## Recommended starting points
 
 Use one of these before you start tuning smaller details.

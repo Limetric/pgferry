@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -137,9 +138,11 @@ func loadConfig(path string) (*MigrationConfig, error) {
 
 func applyConfigEnvOverrides(cfg *MigrationConfig) {
 	if dsn := strings.TrimSpace(os.Getenv(sourceDSNEnvVar)); dsn != "" {
+		log.Printf("config: source.dsn overridden via %s", sourceDSNEnvVar)
 		cfg.Source.DSN = dsn
 	}
 	if dsn := strings.TrimSpace(os.Getenv(targetDSNEnvVar)); dsn != "" {
+		log.Printf("config: target.dsn overridden via %s", targetDSNEnvVar)
 		cfg.Target.DSN = dsn
 	}
 }
