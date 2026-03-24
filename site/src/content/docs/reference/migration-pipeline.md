@@ -128,6 +128,8 @@ pgferry chunks a table only when it has a single-column numeric primary key.
 
 When `resume = true`, pgferry stores progress in `pgferry_checkpoint.json` next to the config file.
 
+Use `pgferry checkpoint status migration.toml` when you want to inspect that file as human-readable progress instead of opening the JSON directly.
+
 ### What the checkpoint protects
 
 - completed table copies

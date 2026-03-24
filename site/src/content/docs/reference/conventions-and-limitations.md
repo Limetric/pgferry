@@ -126,6 +126,7 @@ Important details:
 - progress flushes are batched
 - a checkpoint is deleted automatically after a successful migration
 - old or incompatible checkpoints are rejected instead of reused unsafely
+- `pgferry checkpoint status migration.toml` prints the stored table/chunk progress and compatibility summary without connecting to any database
 
 ## Source-specific caveats
 

@@ -35,6 +35,14 @@ Long migrations fail. Networks drop, disks fill, someone trips over a cable. Whe
 
 One thing to keep in mind: pair `resume = true` with `unlogged_tables = false`. Unlogged tables don't survive a PostgreSQL crash, which would defeat the purpose of resuming.
 
+If you need to debug a partial run without reading raw JSON by hand:
+
+```bash
+pgferry checkpoint status migration.toml
+```
+
+That command stays read-only. It loads the same config-relative checkpoint file pgferry would use for resume, then prints per-table chunk progress, copied-row totals, and any stored compatibility metadata. If no checkpoint exists yet, it prints a clear "no checkpoint" message instead of failing.
+
 - [When resume is worth it](/operations/when-resume-is-worth-it/)
 - [When unlogged tables are safe](/operations/when-unlogged-tables-are-safe/)
 

@@ -1,0 +1,71 @@
+{
+  "version": 2,
+  "started_at": "2026-03-24T06:15:00Z",
+  "compatibility": {
+    "fingerprint": "fp-v2",
+    "summary": {
+      "source_type": "mysql",
+      "source_db_name": "appdb",
+      "target_schema": "app",
+      "source_snapshot_mode": "none",
+      "snake_case_identifiers": false,
+      "schema_only": false,
+      "data_only": false,
+      "unlogged_tables": false,
+      "chunk_size": 100000,
+      "type_mapping": {
+        "tinyint1_as_boolean": false,
+        "binary16_as_uuid": false,
+        "datetime_as_timestamptz": false,
+        "json_as_jsonb": true,
+        "mysql_collation_map": null,
+        "mariadb_collation_map": null,
+        "sqlite_collation_map": null,
+        "mssql_collation_map": null
+      },
+      "hooks": [
+        {
+          "phase": "before_data",
+          "path": "hooks/before.sql",
+          "sha256": "abc123"
+        }
+      ],
+      "tables": [
+        {
+          "source_name": "orders",
+          "pg_name": "orders",
+          "chunk_key": "id",
+          "table_hash": "orders-hash"
+        },
+        {
+          "source_name": "users",
+          "pg_name": "users",
+          "table_hash": "users-hash"
+        }
+      ]
+    }
+  },
+  "tables": {
+    "users": {
+      "chunk_count": 0,
+      "completed_chunks": {},
+      "full_table_done": true,
+      "total_rows_copied": 1000
+    },
+    "orders": {
+      "chunk_count": 3,
+      "completed_chunks": {
+        "0": {
+          "completed_at": "2026-03-24T06:16:00Z",
+          "rows_copied": 500
+        },
+        "1": {
+          "completed_at": "2026-03-24T06:17:00Z",
+          "rows_copied": 300
+        }
+      },
+      "full_table_done": false,
+      "total_rows_copied": 800
+    }
+  }
+}
