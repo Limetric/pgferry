@@ -8,14 +8,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
+
+// connectivityPingTimeout bounds the parallel source/target connectivity check.
+const connectivityPingTimeout = 30 * time.Second
 
 var configPath string
 
@@ -217,7 +220,9 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	sourceDB.SetMaxOpenConns(1)
 
 	// Open the PostgreSQL pool before introspection so we can ping source and
-	// target in parallel (fail-fast with lower wall-clock latency).
+	// target in parallel (fail-fast with lower wall-clock latency). The pool may
+	// sit idle until introspection finishes; that trades a longer-held target
+	// connection for parallel ping latency (see #156).
 	poolCfg, poolWarning, err := buildTargetPoolConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("connect postgres: %w", err)
@@ -231,32 +236,28 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	}
 	defer pgPool.Close()
 
-	log.Printf("pinging %s and PostgreSQL...", src.Name())
-	pingCtx, pingCancel := context.WithTimeout(ctx, 30*time.Second)
+	srcLabel := strings.ToLower(src.Name())
+	log.Printf("pinging %s and PostgreSQL...", srcLabel)
+	pingCtx, pingCancel := context.WithTimeout(ctx, connectivityPingTimeout)
 	defer pingCancel()
-	var wg sync.WaitGroup
-	var pingErrs []error
-	var mu sync.Mutex
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
+	var srcPingErr, pgPingErr error
+	var g errgroup.Group
+	g.Go(func() error {
 		if err := sourceDB.PingContext(pingCtx); err != nil {
-			mu.Lock()
-			pingErrs = append(pingErrs, fmt.Errorf("ping %s: %w", strings.ToLower(src.Name()), err))
-			mu.Unlock()
+			srcPingErr = fmt.Errorf("ping %s: %w", srcLabel, err)
 		}
-	}()
-	go func() {
-		defer wg.Done()
+		return nil
+	})
+	g.Go(func() error {
+		// pgxpool.Ping honors the context deadline (network I/O is cancellable).
 		if err := pgPool.Ping(pingCtx); err != nil {
-			mu.Lock()
-			pingErrs = append(pingErrs, fmt.Errorf("ping postgres: %w", err))
-			mu.Unlock()
+			pgPingErr = fmt.Errorf("ping postgres: %w", err)
 		}
-	}()
-	wg.Wait()
-	if len(pingErrs) > 0 {
-		return errors.Join(pingErrs...)
+		return nil
+	})
+	g.Wait()
+	if err := errors.Join(srcPingErr, pgPingErr); err != nil {
+		return err
 	}
 
 	dbName, err := src.ExtractDBName(cfg.Source.DSN)
@@ -367,7 +368,9 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	}
 	logTemporalWarnings(collectTemporalWarnings(schema, cfg.Source.Type, typeMap))
 
-	// Close introspection connection — data migration opens its own connections
+	// Release the introspection source handle before data migration (which opens
+	// its own connections). defer sourceDB.Close() still runs at function exit;
+	// sql.DB.Close is idempotent.
 	sourceDB.Close()
 
 	// 3. PostgreSQL pool (opened and pinged earlier; still used below)
