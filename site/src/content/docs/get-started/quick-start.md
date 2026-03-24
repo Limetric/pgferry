@@ -81,6 +81,16 @@ The migrate command runs the full pipeline:
 6. add primary keys, indexes, foreign keys, and sequences
 7. run remaining hooks and finalize
 
+## Re-run validation
+
+If you want to re-check source vs target later without rerunning DDL or COPY:
+
+```bash
+pgferry validate migration.toml
+```
+
+That reuses the same `validation = "row_count"` or `validation = "sampled_hash"` setting from the TOML file and compares the current source state against the already-loaded PostgreSQL target.
+
 ## Next step
 
 After the first run, move to:

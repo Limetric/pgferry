@@ -18,6 +18,7 @@ Use the reference section when you already understand the basic flow and need ex
 | Question | Start here |
 | --- | --- |
 | Which flags matter for a first production run? | [Configuration](/reference/configuration/#recommended-starting-points) |
+| How do I rerun built-in validation without migrating again? | [Migration Pipeline](/reference/migration-pipeline/#standalone-validate) and [Configuration](/reference/configuration/#full-reference) |
 | Which options only apply to MySQL-family or MSSQL sources? | [Configuration](/reference/configuration/#source-specific-constraints) and [Type Mapping](/reference/type-mapping/) |
 | What happens in `schema_only` or `data_only` mode? | [Migration Pipeline](/reference/migration-pipeline/#modes) |
 | When do hook files run? | [Hooks](/reference/hooks/#phases) |

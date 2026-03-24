@@ -153,6 +153,24 @@ This is intentional:
 - hook-driven cleanup or transforms can run first
 - expensive post-load objects are not built yet if validation finds a mismatch
 
+## Standalone validate
+
+```bash
+pgferry validate migration.toml
+```
+
+This command is outside the migrate pipeline. It loads the same TOML config, reconnects to the source and target, introspects the selected tables, and reruns the configured validation mode only.
+
+It skips:
+
+- schema creation
+- data COPY
+- hooks
+- checkpoints
+- post-load DDL like indexes, foreign keys, and sequence reset
+
+Use it when you want to compare the current source state against an already-loaded target after cutover or on a later check.
+
 ## Practical operating advice
 
 - Use the full pipeline for most rehearsals and first production attempts.

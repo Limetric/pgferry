@@ -2,14 +2,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 )
 
 var validateConfigPath string
@@ -34,9 +32,9 @@ func init() {
 }
 
 func runValidate(_ *cobra.Command, args []string) error {
-	cfgPath := validateConfigPath
-	if len(args) > 0 {
-		cfgPath = args[0]
+	cfgPath, err := resolveOptionalConfigPath(validateConfigPath, args)
+	if err != nil {
+		return err
 	}
 	if cfgPath == "" {
 		return missingValidateConfigError()
@@ -69,48 +67,19 @@ func runValidateWithConfig(cfg *MigrationConfig) error {
 
 	log.Printf("pgferry validate — %s source vs PostgreSQL target", src.Name())
 
-	sourceDB, err := src.OpenDB(cfg.Source.DSN)
-	if err != nil {
-		return err
-	}
-	defer sourceDB.Close()
-	sourceDB.SetMaxOpenConns(1)
-
 	pgPool, err := openValidateTargetPool(ctx, cfg)
 	if err != nil {
 		return err
 	}
 	defer pgPool.Close()
 
-	if err := pingValidateConnections(ctx, src, sourceDB, pgPool); err != nil {
-		return err
-	}
-
-	dbName, err := src.ExtractDBName(cfg.Source.DSN)
+	schema, err := loadValidateSchema(ctx, src, pgPool, cfg)
 	if err != nil {
 		return err
-	}
-
-	log.Printf("introspecting %s schema '%s'...", src.Name(), dbName)
-	schema, err := src.IntrospectSchema(sourceDB, dbName)
-	if err != nil {
-		return fmt.Errorf("introspect schema: %w", err)
-	}
-	filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
-	if err != nil {
-		return fmt.Errorf("filter schema tables: %w", err)
-	}
-	schema = filteredSchema
-	if hasTableFilters(cfg) {
-		logTableFilterReport(filterReport)
 	}
 
 	typeMap := effectiveTypeMapping(cfg)
-
-	// Release the introspection handle before validation opens its own source connections.
-	sourceDB.Close()
-
-	logValidationPlan(mode, cfg.SourceSnapshotMode)
+	logStandaloneValidationPlan(mode)
 	log.Printf("running standalone validation (mode=%s)...", mode)
 	if _, err := validateMigration(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, mode, cfg.Workers, typeMap); err != nil {
 		return fmt.Errorf("validation: %w", err)
@@ -135,36 +104,46 @@ func openValidateTargetPool(ctx context.Context, cfg *MigrationConfig) (*pgxpool
 	return pgPool, nil
 }
 
-func pingValidateConnections(ctx context.Context, src SourceDB, sourceDB pingContextDB, pgPool *pgxpool.Pool) error {
-	srcLabel := strings.ToLower(src.Name())
-	log.Printf("pinging %s and PostgreSQL...", srcLabel)
-
-	pingCtx, pingCancel := context.WithTimeout(ctx, connectivityPingTimeout)
-	defer pingCancel()
-
-	var srcPingErr error
-	var pgPingErr error
-	var g errgroup.Group
-	g.Go(func() error {
-		if err := sourceDB.PingContext(pingCtx); err != nil {
-			srcPingErr = fmt.Errorf("ping %s: %w", srcLabel, err)
-		}
-		return nil
-	})
-	g.Go(func() error {
-		if err := pgPool.Ping(pingCtx); err != nil {
-			pgPingErr = fmt.Errorf("ping postgres: %w", err)
-		}
-		return nil
-	})
-	g.Wait()
-
-	if err := errors.Join(srcPingErr, pgPingErr); err != nil {
-		return err
+func loadValidateSchema(ctx context.Context, src SourceDB, pgPool *pgxpool.Pool, cfg *MigrationConfig) (*Schema, error) {
+	sourceDB, err := src.OpenDB(cfg.Source.DSN)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	defer sourceDB.Close()
+	sourceDB.SetMaxOpenConns(1)
+
+	if err := pingSourceAndTarget(ctx, src, sourceDB, pgPool); err != nil {
+		return nil, err
+	}
+
+	dbName, err := src.ExtractDBName(cfg.Source.DSN)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("introspecting %s schema '%s'...", src.Name(), dbName)
+	schema, err := src.IntrospectSchema(sourceDB, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect schema: %w", err)
+	}
+	filteredSchema, filterReport, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("filter schema tables: %w", err)
+	}
+	if hasTableFilters(cfg) {
+		logTableFilterReport(filterReport)
+	}
+	return filteredSchema, nil
 }
 
-type pingContextDB interface {
-	PingContext(context.Context) error
+func logStandaloneValidationPlan(mode string) {
+	log.Printf("validation mode: %s", validationModeSummary(mode))
+	log.Printf("validation caveat: standalone validate compares the current source state against already-loaded target data; if the source changed after migrate, mismatches may reflect drift after the original load")
+	log.Printf("validation caveat: standalone validate does not rerun after_data hooks; validate the same target state those hooks already produced")
+	switch mode {
+	case validationModeRowCount:
+		log.Printf("validation caveat: row_count does not compare row contents, transformed values, or per-row semantics")
+	case validationModeSampledHash:
+		log.Printf("validation caveat: sampled_hash is intentionally bounded: it samples deterministic rows and only compares columns with supported canonical fingerprints")
+	}
 }

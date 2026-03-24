@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,6 +59,24 @@ func TestRunValidate_UsesConfigFlag(t *testing.T) {
 	}
 }
 
+func TestRunValidate_RejectsConfigFlagAndPositionalPathTogether(t *testing.T) {
+	cfgPath := writeValidateTestConfig(t, "validation = \"row_count\"\n")
+
+	prevConfigPath := validateConfigPath
+	t.Cleanup(func() {
+		validateConfigPath = prevConfigPath
+	})
+	validateConfigPath = cfgPath
+
+	err := runValidate(&cobra.Command{}, []string{"other.toml"})
+	if err == nil {
+		t.Fatal("runValidate() error = nil, want conflict error")
+	}
+	if !strings.Contains(err.Error(), "provide either a positional migration.toml path or --config, not both") {
+		t.Fatalf("runValidate() error = %q, want config conflict", err.Error())
+	}
+}
+
 func TestRunValidate_MissingConfig(t *testing.T) {
 	prevConfigPath := validateConfigPath
 	t.Cleanup(func() {
@@ -75,6 +94,22 @@ func TestRunValidate_MissingConfig(t *testing.T) {
 	}
 }
 
+func TestRunValidate_NonexistentConfigFile(t *testing.T) {
+	prevConfigPath := validateConfigPath
+	t.Cleanup(func() {
+		validateConfigPath = prevConfigPath
+	})
+	validateConfigPath = ""
+
+	err := runValidate(&cobra.Command{}, []string{"does-not-exist.toml"})
+	if err == nil {
+		t.Fatal("runValidate() error = nil, want read config error")
+	}
+	if !strings.Contains(err.Error(), "read config") {
+		t.Fatalf("runValidate() error = %q, want read config error", err.Error())
+	}
+}
+
 func TestRunValidateWithConfig_RejectsDisabledValidation(t *testing.T) {
 	err := runValidateWithConfig(&MigrationConfig{Validation: validationModeNone})
 	if err == nil {
@@ -82,6 +117,35 @@ func TestRunValidateWithConfig_RejectsDisabledValidation(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "validation disabled") {
 		t.Fatalf("runValidateWithConfig() error = %q, want disabled validation message", err.Error())
+	}
+}
+
+func TestLogStandaloneValidationPlan(t *testing.T) {
+	var buf strings.Builder
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	logStandaloneValidationPlan(validationModeSampledHash)
+
+	out := buf.String()
+	for _, want := range []string{
+		"validation mode: sampled_hash",
+		"current source state",
+		"does not rerun after_data hooks",
+		"samples deterministic rows",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("log output missing %q:\n%s", want, out)
+		}
+	}
+	for _, notWant := range []string{
+		"single_tx applies only to the COPY phase",
+		"re-reads the source after COPY",
+	} {
+		if strings.Contains(out, notWant) {
+			t.Fatalf("log output unexpectedly contains %q:\n%s", notWant, out)
+		}
 	}
 }
 

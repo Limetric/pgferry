@@ -91,7 +91,15 @@ Trust, but verify. pgferry can compare source and target after the load to make 
 - `validation = "row_count"` — fast per-table count comparison. Good enough for most runs.
 - `validation = "sampled_hash"` — checks counts plus a bounded deterministic content sample on primary-key-addressable rows. Stronger, but still not a full proof of correctness.
 
-Note that validation runs after `after_data` hooks and re-reads the current source state, not the earlier COPY snapshot. If the source is live, keep that in mind.
+During `pgferry migrate`, validation runs after `after_data` hooks and re-reads the current source state, not the earlier COPY snapshot. If the source is live, keep that in mind.
+
+If you want to rerun the same built-in validation later without touching schema or data load again:
+
+```bash
+pgferry validate migration.toml
+```
+
+That command uses the existing TOML config, connects to the source and target, introspects the selected tables again, and runs the configured validation mode only. It does not rerun hooks, COPY, checkpoints, or post-load DDL.
 
 ## Guides
 
