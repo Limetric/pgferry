@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestCheckpointStatus_PrintsMissingCheckpointMessage(t *testing.T) {
@@ -13,22 +15,15 @@ func TestCheckpointStatus_PrintsMissingCheckpointMessage(t *testing.T) {
 
 	var buf bytes.Buffer
 	prevCfg := checkpointStatusConfigPath
-	if err := checkpointStatusCmd.Flags().Set("config", ""); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-		rootCmd.SetArgs(nil)
 		checkpointStatusConfigPath = prevCfg
 	})
 
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"checkpoint", "status", cfgPath})
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
 
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("Execute() error: %v", err)
+	if err := runCheckpointStatus(cmd, []string{cfgPath}); err != nil {
+		t.Fatalf("runCheckpointStatus() error: %v", err)
 	}
 
 	out := buf.String()
@@ -53,22 +48,15 @@ func TestCheckpointStatus_PrintsV2CheckpointSummary(t *testing.T) {
 
 	var buf bytes.Buffer
 	prevCfg := checkpointStatusConfigPath
-	if err := checkpointStatusCmd.Flags().Set("config", ""); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-		rootCmd.SetArgs(nil)
 		checkpointStatusConfigPath = prevCfg
 	})
 
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"checkpoint", "status", cfgPath})
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
 
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("Execute() error: %v", err)
+	if err := runCheckpointStatus(cmd, []string{cfgPath}); err != nil {
+		t.Fatalf("runCheckpointStatus() error: %v", err)
 	}
 
 	out := buf.String()
@@ -107,22 +95,15 @@ func TestCheckpointStatus_PrintsLegacyV1CheckpointSummary(t *testing.T) {
 
 	var buf bytes.Buffer
 	prevCfg := checkpointStatusConfigPath
-	if err := checkpointStatusCmd.Flags().Set("config", ""); err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() {
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-		rootCmd.SetArgs(nil)
 		checkpointStatusConfigPath = prevCfg
 	})
 
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"checkpoint", "status", cfgPath})
+	cmd := &cobra.Command{}
+	cmd.SetOut(&buf)
 
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("Execute() error: %v", err)
+	if err := runCheckpointStatus(cmd, []string{cfgPath}); err != nil {
+		t.Fatalf("runCheckpointStatus() error: %v", err)
 	}
 
 	out := buf.String()
@@ -152,6 +133,39 @@ func TestCheckpointStatus_UnsupportedCheckpointVersion(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported checkpoint version 99") {
 		t.Fatalf("error = %v, want unsupported version message", err)
+	}
+}
+
+func TestCheckpointStatus_UnknownStartedAtRendersExplicitly(t *testing.T) {
+	var buf bytes.Buffer
+	state := &CheckpointState{
+		Version: checkpointVersion,
+		Tables: map[string]*TableCheckpoint{
+			"users": {CompletedChunks: map[int]ChunkResult{}},
+		},
+	}
+
+	if err := writeCheckpointStatusText(&buf, "/tmp/pgferry_checkpoint.json", state); err != nil {
+		t.Fatalf("writeCheckpointStatusText() error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "started_at: (unknown)") {
+		t.Fatalf("output missing unknown started_at marker:\n%s", buf.String())
+	}
+}
+
+func TestCheckpointStatus_MalformedConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "migration.toml")
+	if err := os.WriteFile(cfgPath, []byte("schema = [\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := runCheckpointStatus(&cobra.Command{}, []string{cfgPath})
+	if err == nil {
+		t.Fatal("expected parse config error")
+	}
+	if !strings.Contains(err.Error(), "parse config") {
+		t.Fatalf("error = %v, want parse config error", err)
 	}
 }
 

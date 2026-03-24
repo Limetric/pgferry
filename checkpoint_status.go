@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -40,7 +39,7 @@ func runCheckpointStatus(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfgPath) == "" {
+	if cfgPath == "" {
 		return missingCheckpointStatusConfigError()
 	}
 
