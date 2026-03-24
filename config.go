@@ -12,6 +12,11 @@ import (
 
 const defaultChunkSize int64 = 100000
 
+const (
+	sourceDSNEnvVar = "PGFERRY_SOURCE_DSN"
+	targetDSNEnvVar = "PGFERRY_TARGET_DSN"
+)
+
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
 	Source                            SourceConfig      `toml:"source"`
@@ -117,6 +122,7 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		}
 		return nil, fmt.Errorf("unknown config keys: %s", strings.Join(keys, ", "))
 	}
+	applyConfigEnvOverrides(&cfg)
 
 	absPath, err := filepath.Abs(path)
 	if err != nil {
@@ -127,6 +133,15 @@ func loadConfig(path string) (*MigrationConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+func applyConfigEnvOverrides(cfg *MigrationConfig) {
+	if dsn := strings.TrimSpace(os.Getenv(sourceDSNEnvVar)); dsn != "" {
+		cfg.Source.DSN = dsn
+	}
+	if dsn := strings.TrimSpace(os.Getenv(targetDSNEnvVar)); dsn != "" {
+		cfg.Target.DSN = dsn
+	}
 }
 
 func defaultMigrationConfig() MigrationConfig {

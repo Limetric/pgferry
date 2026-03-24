@@ -33,6 +33,34 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 
 Any PostgreSQL `sslmode` is supported. `sslmode=disable` is just a local example.
 
+## Environment overrides for secrets
+
+If you do not want credentials committed into the TOML, pgferry can override the DSNs from environment variables after loading the file:
+
+```bash
+export PGFERRY_SOURCE_DSN='root:root@tcp(127.0.0.1:3306)/source_db'
+export PGFERRY_TARGET_DSN='postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable'
+pgferry migrate migration.toml
+```
+
+Rules:
+
+- `PGFERRY_SOURCE_DSN` overrides `source.dsn` when set to a non-empty value.
+- `PGFERRY_TARGET_DSN` overrides `target.dsn` when set to a non-empty value.
+- Empty strings do not override the TOML.
+- Validation still runs on the effective DSNs after the override is applied.
+
+That means a committed config can omit the secret values entirely:
+
+```toml
+schema = "app"
+
+[source]
+type = "mysql"
+
+[target]
+```
+
 ## Recommended starting points
 
 Use one of these before you start tuning smaller details.
@@ -94,7 +122,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `type` | string | required | `"mysql"`, `"mariadb"`, `"sqlite"`, or `"mssql"`. |
-| `dsn` | string | required | Source connection string or SQLite file path/URI. |
+| `dsn` | string | required unless `PGFERRY_SOURCE_DSN` is set | Source connection string or SQLite file path/URI. |
 | `charset` | string | `"utf8mb4"` | MySQL and MariaDB only. Injected into the DSN unless already present. |
 | `source_schema` | string | `"dbo"` | MSSQL only. Limits introspection to one source schema. |
 
@@ -102,7 +130,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `dsn` | string | required | PostgreSQL connection string. If it does not set `pool_max_conns`, pgferry raises target pool `MaxConns` to at least `max(workers, index_workers)`. If `pool_max_conns` is set explicitly, pgferry preserves it and warns when it is lower than that concurrency. |
+| `dsn` | string | required unless `PGFERRY_TARGET_DSN` is set | PostgreSQL connection string. If it does not set `pool_max_conns`, pgferry raises target pool `MaxConns` to at least `max(workers, index_workers)`. If `pool_max_conns` is set explicitly, pgferry preserves it and warns when it is lower than that concurrency. |
 
 ### `[type_mapping]`
 

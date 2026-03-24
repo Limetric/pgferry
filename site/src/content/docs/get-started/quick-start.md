@@ -32,6 +32,16 @@ Any PostgreSQL `sslmode` is supported. `sslmode=disable` is only shown here beca
 
 The wizard will prompt you for both of these, so you don't need to get the format perfect from memory.
 
+If you prefer to keep secrets out of the TOML, set them at runtime instead:
+
+```bash
+export PGFERRY_SOURCE_DSN='root:root@tcp(127.0.0.1:3306)/source_db'
+export PGFERRY_TARGET_DSN='postgres://user:pass@host:5432/dbname?sslmode=disable'
+pgferry migrate migration.toml
+```
+
+`PGFERRY_SOURCE_DSN` overrides `source.dsn` and `PGFERRY_TARGET_DSN` overrides `target.dsn` when they are set to non-empty values.
+
 ## 1. Run the wizard
 
 ```bash

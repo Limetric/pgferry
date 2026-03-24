@@ -59,6 +59,16 @@ dsn = "postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable"
 
 Any PostgreSQL `sslmode` is supported. `sslmode=disable` is just a local example.
 
+If you want to keep secrets out of the committed TOML, set them at runtime instead:
+
+```bash
+export PGFERRY_SOURCE_DSN='root:root@tcp(127.0.0.1:3306)/source_db'
+export PGFERRY_TARGET_DSN='postgres://postgres:postgres@127.0.0.1:5432/target_db?sslmode=disable'
+pgferry migrate migration.toml
+```
+
+Non-empty `PGFERRY_SOURCE_DSN` and `PGFERRY_TARGET_DSN` override `source.dsn` and `target.dsn`.
+
 `pgferry migration.toml` remains supported as a shorthand for `pgferry migrate migration.toml`.
 
 ## Examples
