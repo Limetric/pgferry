@@ -26,6 +26,8 @@ func hasTableFilters(cfg *MigrationConfig) bool {
 	return cfg != nil && (len(cfg.IncludeTables) > 0 || len(cfg.ExcludeTables) > 0)
 }
 
+// Some unit tests and internal callers build MigrationConfig values directly
+// without running finalizeConfig first, so keep an exact-mode fallback here.
 func effectiveTableFilterMode(cfg *MigrationConfig) string {
 	if cfg == nil {
 		return "exact"
@@ -114,9 +116,6 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 				report.OverlappingTables = append(report.OverlappingTables, fmt.Sprintf("%s (excluded by %q)", name, excludeName))
 			}
 		}
-		for _, name := range cfg.ExcludeTables {
-			delete(selected, normalizeTableFilterKey(name))
-		}
 	} else {
 		for _, table := range schema.Tables {
 			matched, err := tableMatchesAnyFilterEntry(mode, table.SourceName, cfg.IncludeTables)
@@ -127,6 +126,13 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 				selected[normalizeTableFilterKey(table.SourceName)] = true
 			}
 		}
+	}
+
+	if mode == "exact" {
+		for _, name := range cfg.ExcludeTables {
+			delete(selected, normalizeTableFilterKey(name))
+		}
+	} else {
 		for _, table := range schema.Tables {
 			excludeName, err := firstMatchingTableFilterEntry(mode, table.SourceName, cfg.ExcludeTables)
 			if err != nil {
@@ -136,7 +142,7 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 				continue
 			}
 			key := normalizeTableFilterKey(table.SourceName)
-			if selected[key] {
+			if selected[key] && len(cfg.IncludeTables) > 0 {
 				report.OverlappingTables = append(report.OverlappingTables, fmt.Sprintf("%s (excluded by %q)", table.SourceName, excludeName))
 			}
 			delete(selected, key)

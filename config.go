@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -445,12 +444,11 @@ func normalizeTableFilterEntries(field, mode string, entries []string) ([]string
 			if strings.ContainsAny(name, "[]\\") {
 				return nil, fmt.Errorf("%s entry %q is invalid glob pattern: only literal characters plus '*' and '?' are supported", field, raw)
 			}
-			if _, err := path.Match(normalizeTableFilterKey(name), normalizeTableFilterKey(name)); err != nil {
-				return nil, fmt.Errorf("%s entry %q is invalid glob pattern: %w", field, raw, err)
-			}
 		}
 
 		key := normalizeTableFilterKey(name)
+		// Keep duplicate detection case-insensitive in both exact and glob modes so
+		// one logical filter is not spelled twice with only casing differences.
 		if prev, ok := seen[key]; ok {
 			return nil, fmt.Errorf("%s contains duplicate table name %q (conflicts with %q after normalization)", field, name, prev)
 		}

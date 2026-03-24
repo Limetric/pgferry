@@ -180,6 +180,71 @@ func TestFilterSchemaTables_GlobModeRejectsUnmatchedPattern(t *testing.T) {
 	}
 }
 
+func TestFilterSchemaTables_GlobModeExcludeOnly(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "App_Orders", PGName: "app_orders"},
+			{SourceName: "App_AuditLog", PGName: "app_audit_log"},
+			{SourceName: "Audit_1", PGName: "audit_1"},
+		},
+	}
+	cfg := &MigrationConfig{
+		TableFilterMode: "glob",
+		ExcludeTables:   []string{"app_*"},
+	}
+
+	filtered, report, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+
+	if got := len(filtered.Tables); got != 1 {
+		t.Fatalf("filtered table count = %d, want 1", got)
+	}
+	if got := filtered.Tables[0].SourceName; got != "Audit_1" {
+		t.Fatalf("filtered table = %q, want Audit_1", got)
+	}
+	if got := strings.Join(report.SelectedTables, ","); got != "Audit_1" {
+		t.Fatalf("selected tables = %q, want Audit_1", got)
+	}
+	if got := strings.Join(report.SkippedTables, ","); got != "App_Orders,App_AuditLog" {
+		t.Fatalf("skipped tables = %q, want App_Orders,App_AuditLog", got)
+	}
+	if got := len(report.OverlappingTables); got != 0 {
+		t.Fatalf("overlapping tables = %v, want none", report.OverlappingTables)
+	}
+}
+
+func TestFilterSchemaTables_ExactModeExcludeOnly(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "Accounts", PGName: "accounts"},
+			{SourceName: "AuditLog", PGName: "audit_log"},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeTables: []string{"auditlog"},
+	}
+
+	filtered, report, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+
+	if got := len(filtered.Tables); got != 1 {
+		t.Fatalf("filtered table count = %d, want 1", got)
+	}
+	if got := filtered.Tables[0].SourceName; got != "Accounts" {
+		t.Fatalf("filtered table = %q, want Accounts", got)
+	}
+	if got := strings.Join(report.SelectedTables, ","); got != "Accounts" {
+		t.Fatalf("selected tables = %q, want Accounts", got)
+	}
+	if got := strings.Join(report.SkippedTables, ","); got != "AuditLog" {
+		t.Fatalf("skipped tables = %q, want AuditLog", got)
+	}
+}
+
 func TestFilterSchemaTables_RejectsEmptyResult(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
