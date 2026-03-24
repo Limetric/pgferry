@@ -3,18 +3,20 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"strings"
 )
 
 // PlanETA is a conservative, copy-phase-only time estimate derived from plan
 // introspection. It is not an end-to-end migration ETA.
 type PlanETA struct {
-	Scope             string   `json:"scope,omitempty"`
-	Available         bool     `json:"available"`
-	LowSeconds        int64    `json:"low_seconds,omitempty"`
-	HighSeconds       int64    `json:"high_seconds,omitempty"`
-	Confidence        string   `json:"confidence,omitempty"`
-	BasisRows         int64    `json:"basis_rows,omitempty"`
+	Scope       string `json:"scope,omitempty"`
+	Available   bool   `json:"available"`
+	LowSeconds  int64  `json:"low_seconds,omitempty"`
+	HighSeconds int64  `json:"high_seconds,omitempty"`
+	Confidence  string `json:"confidence,omitempty"`
+	BasisRows   int64  `json:"basis_rows,omitempty"`
+	// BasisWorkers is effective COPY parallelism used for the estimate (e.g. 1 when source_snapshot_mode is single_tx).
 	BasisWorkers      int      `json:"basis_workers,omitempty"`
 	Assumptions       []string `json:"assumptions,omitempty"`
 	UnavailableReason string   `json:"unavailable_reason,omitempty"`
@@ -28,6 +30,8 @@ const (
 	planETAPessimisticRowsPerSecPerWorker int64 = 2000
 )
 
+// ensureReportETA fills ETA when absent (e.g. pgferry plan --input on JSON saved before this field
+// existed). Fresh runs already set report.ETA in buildPlanReport.
 func ensureReportETA(report *PlanReport) {
 	if report == nil || report.ETA != nil {
 		return
@@ -44,14 +48,18 @@ func computePlanETA(r *PlanReport) PlanETA {
 	}
 	s := r.Summary
 	if !planSummaryHasData(s) {
-		out.UnavailableReason = "plan summary is missing"
+		out.UnavailableReason = "plan summary incomplete"
 		return out
 	}
 	if !s.CopyRiskAnalysis {
 		out.UnavailableReason = "copy_risk_analysis is disabled"
 		return out
 	}
-	if s.TotalEstimatedRows <= 0 {
+	if s.TotalEstimatedRows < 0 {
+		out.UnavailableReason = "estimated row count is invalid"
+		return out
+	}
+	if s.TotalEstimatedRows == 0 {
 		out.UnavailableReason = "estimated row count is zero"
 		return out
 	}
@@ -97,18 +105,8 @@ func computePlanETA(r *PlanReport) PlanETA {
 	poorTables := countDistinctTablesWithCategory(r.CopyRiskFindings, "poor_range_density")
 	nonChunkTables := countDistinctTablesWithCategory(r.CopyRiskFindings, "non_chunkable_large_table")
 
-	// Widen the slow bound when copy-risk signals say runtime will be less predictable.
-	hiMul := int64(100)
-	for i := 0; i < minInt(5, nHighFindings); i++ {
-		hiMul = hiMul * 110 / 100
-	}
-	for i := 0; i < minInt(8, nPoorFindings); i++ {
-		hiMul = hiMul * 104 / 100
-	}
-	for i := 0; i < minInt(3, nNonChunkFindings); i++ {
-		hiMul = hiMul * 115 / 100
-	}
-	highSeconds = highSeconds * hiMul / 100
+	hiMul := planETACopyRiskHighBoundMultiplier(nHighFindings, nPoorFindings, nNonChunkFindings)
+	highSeconds = scaleHighSecondsByPercentMultiplier(highSeconds, hiMul)
 	if highSeconds < lowSeconds {
 		highSeconds = lowSeconds
 	}
@@ -143,19 +141,37 @@ func computePlanETA(r *PlanReport) PlanETA {
 	out.HighSeconds = highSeconds
 	out.Confidence = "low"
 	out.BasisRows = rows
-	out.BasisWorkers = s.Workers
-	if out.BasisWorkers < 1 {
-		out.BasisWorkers = 1
-	}
+	out.BasisWorkers = effectiveWorkers
 	out.Assumptions = assumptions
 	return out
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
+// planETACopyRiskHighBoundMultiplier returns a percent-style multiplier (e.g. 135 = 1.35×) applied to
+// the pessimistic duration bound. Each stacked finding category widens the slow bound a step.
+func planETACopyRiskHighBoundMultiplier(nHighFindings, nPoorFindings, nNonChunkFindings int) int64 {
+	hiMul := int64(100)
+	for range min(5, nHighFindings) {
+		hiMul = hiMul * 110 / 100
 	}
-	return b
+	for range min(8, nPoorFindings) {
+		hiMul = hiMul * 104 / 100
+	}
+	for range min(3, nNonChunkFindings) {
+		hiMul = hiMul * 115 / 100
+	}
+	return hiMul
+}
+
+// scaleHighSecondsByPercentMultiplier multiplies highSeconds by hiMul/100 (hiMul is typically ~100–400).
+// Guards int64 overflow on the multiply step.
+func scaleHighSecondsByPercentMultiplier(highSeconds, hiMul int64) int64 {
+	if hiMul <= 0 {
+		return highSeconds
+	}
+	if hiMul > 0 && highSeconds > math.MaxInt64/hiMul {
+		return math.MaxInt64
+	}
+	return highSeconds * hiMul / 100
 }
 
 func divideCeil64(a, b int64) int64 {
@@ -228,7 +244,7 @@ func writePlanETAText(w io.Writer, eta *PlanETA) {
 	if eta == nil {
 		return
 	}
-	fmt.Fprintf(w, "## ETA (copy phase only)\n\n")
+	fmt.Fprintf(w, "### ETA (copy phase only)\n\n")
 	if !eta.Available {
 		if eta.UnavailableReason != "" {
 			fmt.Fprintf(w, "ETA unavailable (%s)\n\n", eta.UnavailableReason)
@@ -239,7 +255,7 @@ func writePlanETAText(w io.Writer, eta *PlanETA) {
 	}
 	fmt.Fprintf(w, "  estimated_copy_window: %s\n", formatPlanETADurationWindow(eta.LowSeconds, eta.HighSeconds))
 	fmt.Fprintf(w, "  confidence: %s\n", eta.Confidence)
-	fmt.Fprintf(w, "  basis: %s estimated rows across %d worker(s)\n", formatInt64Thousands(eta.BasisRows), eta.BasisWorkers)
+	fmt.Fprintf(w, "  basis: %s estimated rows across %d effective worker(s)\n", formatInt64Thousands(eta.BasisRows), eta.BasisWorkers)
 	fmt.Fprintf(w, "  notes:\n")
 	for _, a := range eta.Assumptions {
 		fmt.Fprintf(w, "    - %s\n", a)
@@ -265,7 +281,7 @@ func writePlanETAMarkdown(w io.Writer, eta *PlanETA) {
 	tableRows := [][]string{
 		{"Estimated copy window", markdownCode(formatPlanETADurationWindow(eta.LowSeconds, eta.HighSeconds))},
 		{"Confidence", markdownEscape(eta.Confidence)},
-		{"Basis", fmt.Sprintf("%s estimated rows across %d worker(s)", formatInt64Thousands(eta.BasisRows), eta.BasisWorkers)},
+		{"Basis", fmt.Sprintf("%s estimated rows across %d effective worker(s)", formatInt64Thousands(eta.BasisRows), eta.BasisWorkers)},
 	}
 	writeMarkdownTable(w, []string{"Field", "Value"}, tableRows)
 	fmt.Fprintln(w, "### Notes")

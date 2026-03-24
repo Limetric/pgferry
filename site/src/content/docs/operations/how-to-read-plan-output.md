@@ -25,7 +25,7 @@ When `copy_risk_analysis` is on, `plan` can show an **estimated copy window** (s
 - It **widens** when snapshot mode is `single_tx` (sequential copy) or when copy-risk findings flag sparse ranges, huge chunk counts, or large non-chunkable tables.
 - If there is not enough signal (for example `copy_risk_analysis` is off, or estimated rows are zero), the report says **ETA unavailable** with a short reason instead of guessing.
 
-In `--format json`, the `eta` object is machine-readable (`scope` is always `copy_only` when present). Older saved reports without an `eta` block get one filled in when you re-render with `--input`.
+In `--format json`, the `eta` object is machine-readable (`scope` is always `copy_only` when present). `basis_workers` is the **effective** COPY parallelism used for the math (for example `1` when `source_snapshot_mode` is `single_tx`, even if `workers` in config is higher). Older saved reports without an `eta` block get one filled in when you re-render with `--input`.
 
 ## How to respond
 

@@ -86,6 +86,37 @@ func TestComputePlanETA_ParallelBaseline(t *testing.T) {
 	}
 }
 
+func TestComputePlanETA_SingleTXBasisWorkersMatchesEffectiveParallelism(t *testing.T) {
+	r := &PlanReport{
+		Summary: PlanSummary{
+			SourceType:         "mysql",
+			CopyRiskAnalysis:   true,
+			TotalEstimatedRows: 1_000_000,
+			Workers:            8,
+			SnapshotMode:       "single_tx",
+		},
+	}
+	e := computePlanETA(r)
+	if !e.Available || e.BasisWorkers != 1 {
+		t.Fatalf("BasisWorkers = %d, want 1 (effective parallelism)", e.BasisWorkers)
+	}
+}
+
+func TestComputePlanETA_NegativeRowsUnavailable(t *testing.T) {
+	r := &PlanReport{
+		Summary: PlanSummary{
+			SourceType:         "mysql",
+			CopyRiskAnalysis:   true,
+			TotalEstimatedRows: -1,
+			Workers:            4,
+		},
+	}
+	e := computePlanETA(r)
+	if e.Available || !strings.Contains(e.UnavailableReason, "invalid") {
+		t.Fatalf("got %+v reason=%q", e, e.UnavailableReason)
+	}
+}
+
 func TestComputePlanETA_SingleTXWidensVersusParallel(t *testing.T) {
 	const rows int64 = 10_000_000
 	parallel := &PlanReport{
@@ -207,5 +238,22 @@ func TestWritePlanETAText_Unavailable(t *testing.T) {
 	writePlanETAText(&buf, e)
 	if !strings.Contains(buf.String(), "ETA unavailable") {
 		t.Fatalf("got %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "### ETA (copy phase only)") {
+		t.Fatalf("expected ### heading in text: %q", buf.String())
+	}
+}
+
+func TestWritePlanETAMarkdown_Unavailable(t *testing.T) {
+	e := &PlanETA{
+		Scope:             "copy_only",
+		Available:         false,
+		UnavailableReason: "copy_risk_analysis is disabled",
+	}
+	var buf bytes.Buffer
+	writePlanETAMarkdown(&buf, e)
+	s := buf.String()
+	if !strings.Contains(s, "ETA unavailable") || !strings.Contains(s, "## ETA (copy phase only)") {
+		t.Fatalf("got %q", s)
 	}
 }
