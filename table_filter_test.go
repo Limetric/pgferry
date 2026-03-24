@@ -126,6 +126,60 @@ func TestFilterSchemaTables_RejectsUnknownExcludeTableName(t *testing.T) {
 	}
 }
 
+func TestFilterSchemaTables_GlobModeMatchesPatternsAndExcludeWins(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "App_Orders", PGName: "app_orders"},
+			{SourceName: "App_AuditLog", PGName: "app_audit_log"},
+			{SourceName: "audit_1", PGName: "audit_1"},
+			{SourceName: "LegacyUsers", PGName: "legacy_users"},
+		},
+	}
+	cfg := &MigrationConfig{
+		TableFilterMode: "glob",
+		IncludeTables:   []string{"app_*", "AUDIT_?"},
+		ExcludeTables:   []string{"app_audit*"},
+	}
+
+	filtered, report, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+
+	if got := len(filtered.Tables); got != 2 {
+		t.Fatalf("filtered table count = %d, want 2", got)
+	}
+	if got := strings.Join(report.SelectedTables, ","); got != "App_Orders,audit_1" {
+		t.Fatalf("selected tables = %q, want App_Orders,audit_1", got)
+	}
+	if got := strings.Join(report.SkippedTables, ","); got != "App_AuditLog,LegacyUsers" {
+		t.Fatalf("skipped tables = %q, want App_AuditLog,LegacyUsers", got)
+	}
+	if got := strings.Join(report.OverlappingTables, ","); got != "App_AuditLog (excluded by \"app_audit*\")" {
+		t.Fatalf("overlapping tables = %q, want App_AuditLog (excluded by \"app_audit*\")", got)
+	}
+}
+
+func TestFilterSchemaTables_GlobModeRejectsUnmatchedPattern(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "Orders", PGName: "orders"},
+		},
+	}
+	cfg := &MigrationConfig{
+		TableFilterMode: "glob",
+		IncludeTables:   []string{"app_*"},
+	}
+
+	_, _, err := filterSchemaTables(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "include_tables entries did not match any source table") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestFilterSchemaTables_RejectsEmptyResult(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

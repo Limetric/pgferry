@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"path"
 	"strings"
 )
 
@@ -23,6 +24,17 @@ type skippedForeignKey struct {
 
 func hasTableFilters(cfg *MigrationConfig) bool {
 	return cfg != nil && (len(cfg.IncludeTables) > 0 || len(cfg.ExcludeTables) > 0)
+}
+
+func effectiveTableFilterMode(cfg *MigrationConfig) string {
+	if cfg == nil {
+		return "exact"
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.TableFilterMode))
+	if mode == "" {
+		return "exact"
+	}
+	return mode
 }
 
 // filterTriggersBySelectedTables keeps triggers whose Table is in the filtered schema's
@@ -63,6 +75,7 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 	if !hasTableFilters(cfg) {
 		return schema, report, nil
 	}
+	mode := effectiveTableFilterMode(cfg)
 
 	tableKeys := make(map[string]string, len(schema.Tables))
 	for _, table := range schema.Tables {
@@ -73,23 +86,27 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 		tableKeys[key] = table.SourceName
 	}
 
-	if missing := missingTableFilterEntries(cfg.IncludeTables, tableKeys); len(missing) > 0 {
+	if missing, err := missingTableFilterEntries(mode, cfg.IncludeTables, schema.Tables); err != nil {
+		return nil, report, err
+	} else if len(missing) > 0 {
 		return nil, report, fmt.Errorf("include_tables entries did not match any source table: %s", strings.Join(missing, ", "))
 	}
-	if missing := missingTableFilterEntries(cfg.ExcludeTables, tableKeys); len(missing) > 0 {
+	if missing, err := missingTableFilterEntries(mode, cfg.ExcludeTables, schema.Tables); err != nil {
+		return nil, report, err
+	} else if len(missing) > 0 {
 		return nil, report, fmt.Errorf("exclude_tables entries did not match any source table: %s", strings.Join(missing, ", "))
 	}
 
 	selected := make(map[string]bool, len(schema.Tables))
-	excluded := make(map[string]string, len(cfg.ExcludeTables))
-	for _, name := range cfg.ExcludeTables {
-		excluded[normalizeTableFilterKey(name)] = name
-	}
 	if len(cfg.IncludeTables) == 0 {
 		for key := range tableKeys {
 			selected[key] = true
 		}
-	} else {
+	} else if mode == "exact" {
+		excluded := make(map[string]string, len(cfg.ExcludeTables))
+		for _, name := range cfg.ExcludeTables {
+			excluded[normalizeTableFilterKey(name)] = name
+		}
 		for _, name := range cfg.IncludeTables {
 			key := normalizeTableFilterKey(name)
 			selected[key] = true
@@ -97,9 +114,33 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 				report.OverlappingTables = append(report.OverlappingTables, fmt.Sprintf("%s (excluded by %q)", name, excludeName))
 			}
 		}
-	}
-	for _, name := range cfg.ExcludeTables {
-		delete(selected, normalizeTableFilterKey(name))
+		for _, name := range cfg.ExcludeTables {
+			delete(selected, normalizeTableFilterKey(name))
+		}
+	} else {
+		for _, table := range schema.Tables {
+			matched, err := tableMatchesAnyFilterEntry(mode, table.SourceName, cfg.IncludeTables)
+			if err != nil {
+				return nil, report, err
+			}
+			if matched {
+				selected[normalizeTableFilterKey(table.SourceName)] = true
+			}
+		}
+		for _, table := range schema.Tables {
+			excludeName, err := firstMatchingTableFilterEntry(mode, table.SourceName, cfg.ExcludeTables)
+			if err != nil {
+				return nil, report, err
+			}
+			if excludeName == "" {
+				continue
+			}
+			key := normalizeTableFilterKey(table.SourceName)
+			if selected[key] {
+				report.OverlappingTables = append(report.OverlappingTables, fmt.Sprintf("%s (excluded by %q)", table.SourceName, excludeName))
+			}
+			delete(selected, key)
+		}
 	}
 
 	if len(selected) == 0 {
@@ -147,18 +188,78 @@ func shouldKeepFilteredForeignKey(fk ForeignKey, cfg *MigrationConfig, selected 
 	return true, ""
 }
 
-func missingTableFilterEntries(entries []string, tableKeys map[string]string) []string {
+func missingTableFilterEntries(mode string, entries []string, tables []Table) ([]string, error) {
 	if len(entries) == 0 {
-		return nil
+		return nil, nil
 	}
 
+	tableNames := sourceTableNames(tables)
 	var missing []string
 	for _, name := range entries {
-		if _, ok := tableKeys[normalizeTableFilterKey(name)]; !ok {
+		matched, err := filterEntryMatchesAnyTable(mode, name, tableNames)
+		if err != nil {
+			return nil, err
+		}
+		if !matched {
 			missing = append(missing, name)
 		}
 	}
-	return missing
+	return missing, nil
+}
+
+func sourceTableNames(tables []Table) []string {
+	names := make([]string, 0, len(tables))
+	for _, table := range tables {
+		names = append(names, table.SourceName)
+	}
+	return names
+}
+
+func filterEntryMatchesAnyTable(mode, entry string, tableNames []string) (bool, error) {
+	for _, tableName := range tableNames {
+		matched, err := tableFilterEntryMatches(mode, entry, tableName)
+		if err != nil {
+			return false, err
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func tableMatchesAnyFilterEntry(mode, tableName string, entries []string) (bool, error) {
+	entry, err := firstMatchingTableFilterEntry(mode, tableName, entries)
+	if err != nil {
+		return false, err
+	}
+	return entry != "", nil
+}
+
+func firstMatchingTableFilterEntry(mode, tableName string, entries []string) (string, error) {
+	for _, entry := range entries {
+		matched, err := tableFilterEntryMatches(mode, entry, tableName)
+		if err != nil {
+			return "", err
+		}
+		if matched {
+			return entry, nil
+		}
+	}
+	return "", nil
+}
+
+func tableFilterEntryMatches(mode, entry, tableName string) (bool, error) {
+	switch mode {
+	case "glob":
+		matched, err := path.Match(normalizeTableFilterKey(entry), normalizeTableFilterKey(tableName))
+		if err != nil {
+			return false, fmt.Errorf("match table filter %q against %q: %w", entry, tableName, err)
+		}
+		return matched, nil
+	default:
+		return normalizeTableFilterKey(entry) == normalizeTableFilterKey(tableName), nil
+	}
 }
 
 func cloneTable(table Table) Table {
