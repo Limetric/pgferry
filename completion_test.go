@@ -6,21 +6,12 @@ import (
 	"testing"
 )
 
-// Smoke-test Cobra's InitDefaultCompletionCmd: pgferry does not register a custom
-// "completion" command; Cobra injects completion bash|zsh|fish|powershell on Execute.
+// Smoke-test Cobra's default completion command: pgferry does not register a custom
+// "completion" command; Cobra still generates the standard shell script.
 func TestCompletionBashOutput(t *testing.T) {
 	var buf bytes.Buffer
-	rootCmd.SetOut(&buf)
-	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"completion", "bash"})
-	t.Cleanup(func() {
-		rootCmd.SetArgs(nil)
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-	})
-
-	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	if err := rootCmd.GenBashCompletionV2(&buf, true); err != nil {
+		t.Fatalf("GenBashCompletionV2() error = %v", err)
 	}
 	out := buf.String()
 	if len(out) == 0 {
