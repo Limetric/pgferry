@@ -19,13 +19,10 @@
 			"Bash(go test:*)",
 			"Bash(go build:*)",
 			"Bash(go vet:*)",
-			"mcp__context7-free__*",
 			"mcp__context7__*",
-			"mcp__exa__*",
-			"mcp__brave-search__*",
-			"mcp__github__*"
+			"mcp__exa__*"
 		]
 	},
-	"enabledMcpjsonServers": ["context7", "context7-free", "github", "svelte", "exa", "brave-search"],
+	"enabledMcpjsonServers": ["context7", "exa"],
 	"enableAllProjectMcpServers": true
 }
