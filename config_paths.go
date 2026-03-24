@@ -24,7 +24,9 @@ var configPathsCmd = &cobra.Command{
 	Short: "Print resolved paths for the config file, checkpoint, and hook SQL files",
 	Long: `Load a migration TOML (same validation as migrate) and print absolute paths for
 the config file, the config directory, the resume checkpoint file, and each hook
-SQL path. Does not connect to any database.`,
+SQL path. Does not connect to any database.
+
+Pass the config as a positional argument or via --config, not both.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runConfigPaths,
 }
@@ -37,11 +39,19 @@ func init() {
 }
 
 func runConfigPaths(cmd *cobra.Command, args []string) error {
-	cfgPath := configPathsConfigPath
+	flagPath := strings.TrimSpace(configPathsConfigPath)
+	var posPath string
 	if len(args) > 0 {
-		cfgPath = args[0]
+		posPath = strings.TrimSpace(args[0])
 	}
-	if strings.TrimSpace(cfgPath) == "" {
+	if flagPath != "" && posPath != "" {
+		return fmt.Errorf("provide either a positional migration.toml path or --config, not both")
+	}
+	cfgPath := flagPath
+	if cfgPath == "" {
+		cfgPath = posPath
+	}
+	if cfgPath == "" {
 		return fmt.Errorf("migration config path required: pgferry config paths <migration.toml> or pgferry config paths --config <path>")
 	}
 
@@ -97,10 +107,7 @@ func writeConfigPathsJSON(out io.Writer, absCfg string, cfg *MigrationConfig, ch
 
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(doc); err != nil {
-		return err
-	}
-	return nil
+	return enc.Encode(doc)
 }
 
 func hookPathEntries(cfg *MigrationConfig, rels []string) []hookPathEntry {
@@ -120,22 +127,10 @@ func hookPathEntries(cfg *MigrationConfig, rels []string) []hookPathEntry {
 }
 
 func writeConfigPathsText(out io.Writer, absCfg string, cfg *MigrationConfig, checkpoint string) error {
-	w := func(format string, a ...any) error {
-		_, err := fmt.Fprintf(out, format, a...)
-		return err
-	}
-	if err := w("config_file: %s\n", absCfg); err != nil {
-		return err
-	}
-	if err := w("config_dir: %s\n", cfg.configDir); err != nil {
-		return err
-	}
-	if err := w("checkpoint: %s  exists: %s\n", checkpoint, yesNo(pathExists(checkpoint))); err != nil {
-		return err
-	}
-	if err := w("\n"); err != nil {
-		return err
-	}
+	fmt.Fprintf(out, "config_file: %s\n", absCfg)
+	fmt.Fprintf(out, "config_dir: %s\n", cfg.configDir)
+	fmt.Fprintf(out, "checkpoint: %s  exists: %s\n", checkpoint, yesNo(pathExists(checkpoint)))
+	fmt.Fprintln(out)
 
 	phases := []struct {
 		name  string
@@ -147,20 +142,14 @@ func writeConfigPathsText(out io.Writer, absCfg string, cfg *MigrationConfig, ch
 		{"hooks.after_all", cfg.Hooks.AfterAll},
 	}
 	for _, ph := range phases {
-		if err := w("%s:\n", ph.name); err != nil {
-			return err
-		}
+		fmt.Fprintf(out, "%s:\n", ph.name)
 		if len(ph.files) == 0 {
-			if err := w("  (none)\n"); err != nil {
-				return err
-			}
+			fmt.Fprint(out, "  (none)\n")
 			continue
 		}
 		for _, f := range ph.files {
 			resolved := cfg.resolvePath(f)
-			if err := w("  %s  %s  exists: %s\n", f, resolved, yesNo(pathExists(resolved))); err != nil {
-				return err
-			}
+			fmt.Fprintf(out, "  %s  %s  exists: %s\n", f, resolved, yesNo(pathExists(resolved)))
 		}
 	}
 	return nil

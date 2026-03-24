@@ -60,12 +60,6 @@ after_all = []
 		rootCmd.SetArgs(nil)
 		configPathsJSON = prevJSON
 		configPathsConfigPath = prevCfg
-		if err := configPathsCmd.Flags().Set("json", "false"); err != nil {
-			t.Fatal(err)
-		}
-		if err := configPathsCmd.Flags().Set("config", ""); err != nil {
-			t.Fatal(err)
-		}
 	})
 
 	rootCmd.SetOut(&buf)
@@ -130,7 +124,10 @@ before_data = ["a.sql"]
 	var buf bytes.Buffer
 	prevJSON := configPathsJSON
 	prevCfg := configPathsConfigPath
-	if err := configPathsCmd.Flags().Set("json", "true"); err != nil {
+	if err := configPathsCmd.Flags().Set("json", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if err := configPathsCmd.Flags().Set("config", ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -139,9 +136,6 @@ before_data = ["a.sql"]
 		rootCmd.SetArgs(nil)
 		configPathsJSON = prevJSON
 		configPathsConfigPath = prevCfg
-		if err := configPathsCmd.Flags().Set("json", "false"); err != nil {
-			t.Fatal(err)
-		}
 	})
 
 	rootCmd.SetOut(&buf)
@@ -156,14 +150,23 @@ before_data = ["a.sql"]
 	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
 		t.Fatalf("json decode: %v\n%s", err, buf.String())
 	}
-	if doc.ConfigFile != cfgFile {
-		t.Fatalf("config_file = %q, want %q", doc.ConfigFile, cfgFile)
+	wantCfgAbs, err := filepath.Abs(cfgFile)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if doc.ConfigDir != dir {
-		t.Fatalf("config_dir = %q, want %q", doc.ConfigDir, dir)
+	if doc.ConfigFile != wantCfgAbs {
+		t.Fatalf("config_file = %q, want %q", doc.ConfigFile, wantCfgAbs)
 	}
-	if doc.Checkpoint.Path != filepath.Join(dir, "pgferry_checkpoint.json") {
-		t.Fatalf("checkpoint path = %q", doc.Checkpoint.Path)
+	wantDirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.ConfigDir != wantDirAbs {
+		t.Fatalf("config_dir = %q, want %q", doc.ConfigDir, wantDirAbs)
+	}
+	wantCheckpoint := filepath.Join(wantDirAbs, "pgferry_checkpoint.json")
+	if doc.Checkpoint.Path != wantCheckpoint {
+		t.Fatalf("checkpoint path = %q, want %q", doc.Checkpoint.Path, wantCheckpoint)
 	}
 	if len(doc.Hooks.BeforeData) != 1 || doc.Hooks.BeforeData[0].ConfigPath != "a.sql" || !doc.Hooks.BeforeData[0].Exists {
 		t.Fatalf("hooks.before_data = %+v", doc.Hooks.BeforeData)
@@ -189,13 +192,20 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 
 	var buf bytes.Buffer
+	prevJSON := configPathsJSON
+	prevCfg := configPathsConfigPath
 	if err := configPathsCmd.Flags().Set("json", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if err := configPathsCmd.Flags().Set("config", ""); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
 		rootCmd.SetArgs(nil)
+		configPathsJSON = prevJSON
+		configPathsConfigPath = prevCfg
 	})
 
 	rootCmd.SetOut(&buf)
@@ -208,5 +218,53 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if !strings.Contains(err.Error(), "unknown config keys") {
 		t.Fatalf("error = %v, want unknown config keys", err)
+	}
+}
+
+func TestConfigPaths_ConfigAndPositionalExclusive(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "m.toml")
+	content := `
+schema = "s"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "other.toml")
+
+	var buf bytes.Buffer
+	prevJSON := configPathsJSON
+	prevCfg := configPathsConfigPath
+	if err := configPathsCmd.Flags().Set("json", "false"); err != nil {
+		t.Fatal(err)
+	}
+	if err := configPathsCmd.Flags().Set("config", ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+		configPathsJSON = prevJSON
+		configPathsConfigPath = prevCfg
+	})
+
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+	rootCmd.SetArgs([]string{"config", "paths", "--config", cfgFile, other})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --config and positional path are set")
+	}
+	if !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("error = %v, want mutual exclusivity message", err)
 	}
 }
