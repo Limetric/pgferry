@@ -53,7 +53,6 @@ type wizardStyles struct {
 var wizardAdvancedOptionsNote = []string{
 	"Advanced options not covered by the wizard:",
 	"- PostgreSQL extensions / PostGIS support",
-	"- Validation, resume, chunk_size, and index_workers",
 	"- Hooks, collation overrides, and other source-specific type mapping tweaks",
 	"You can still add these manually to the generated TOML before running the migration.",
 }
@@ -456,10 +455,103 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		}
 	}
 
+	configureAdvanced, err := w.promptBoolGuided(
+		"Configure advanced performance/validation options",
+		false,
+		"Optional: set validation, resume, chunk_size, or index_workers now. Leave this off to keep the fastest simple-path wizard flow.",
+	)
+	if err != nil {
+		return nil, err
+	}
+	if configureAdvanced {
+		if err := promptWizardAdvancedOptions(w, &cfg, configDir); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := finalizeConfig(&cfg, configDir); err != nil {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+func promptWizardAdvancedOptions(w *wizardPrompter, cfg *MigrationConfig, configDir string) error {
+	validationDefault := cfg.Validation
+	if validationDefault == "" {
+		validationDefault = validationModeNone
+	}
+
+	validation, err := w.promptChoice("Validation mode", []wizardOption{
+		{key: validationModeNone, help: "Skip built-in post-load validation. Fastest, but no automatic source-vs-target check."},
+		{key: validationModeRowCount, help: "Compare per-table row counts after load. Cheap and a good first production default."},
+		{key: validationModeSampledHash, help: "Row-count validation plus bounded content fingerprints for deterministic primary-key-addressable rows."},
+	}, validationDefault)
+	if err != nil {
+		return err
+	}
+	cfg.Validation = validation
+
+	resumeDefault := cfg.Resume
+	for {
+		resume, err := w.promptBoolGuided(
+			"Resume interrupted migrations",
+			resumeDefault,
+			"Reuses pgferry checkpoints after an interrupted run. Requires a durable, non-destructive path: resume cannot be combined with unlogged_tables=true, on_schema_exists=recreate, or schema_only=true.",
+		)
+		if err != nil {
+			return err
+		}
+		resumeDefault = resume
+
+		candidate := *cfg
+		candidate.Resume = resume
+		if err := validateWizardConfig(candidate, configDir); err != nil {
+			if strings.Contains(err.Error(), "resume is incompatible") {
+				fmt.Fprintf(w.out, "%s\n", w.styles.error(err.Error()))
+				continue
+			}
+			return err
+		}
+
+		cfg.Resume = resume
+		break
+	}
+
+	chunkSizeDefault := int(cfg.ChunkSize)
+	if chunkSizeDefault <= 0 {
+		chunkSizeDefault = int(defaultChunkSize)
+	}
+	chunkSize, err := w.promptIntGuided(
+		"Chunk size",
+		chunkSizeDefault,
+		1,
+		"Key-range width for chunkable single-column numeric primary keys. Larger chunks reduce coordinator overhead; smaller chunks improve balance on uneven key distributions.",
+	)
+	if err != nil {
+		return err
+	}
+	cfg.ChunkSize = int64(chunkSize)
+
+	indexWorkersDefault := cfg.IndexWorkers
+	if indexWorkersDefault <= 0 {
+		indexWorkersDefault = cfg.Workers
+	}
+	indexWorkers, err := w.promptIntGuided(
+		"Index workers",
+		indexWorkersDefault,
+		1,
+		"Concurrent PostgreSQL index builds after the data load. The default inherits from workers; lower it if target CPU or I/O gets saturated during index creation.",
+	)
+	if err != nil {
+		return err
+	}
+	cfg.IndexWorkers = indexWorkers
+
+	return validateWizardConfig(*cfg, configDir)
+}
+
+func validateWizardConfig(cfg MigrationConfig, configDir string) error {
+	return finalizeConfig(&cfg, configDir)
 }
 
 func maybeConfirmOverwrite(w *wizardPrompter, path string) error {
@@ -527,6 +619,22 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	}
 	if cfg.Workers != effectiveDefaultWorkers(cfg.Source.Type) {
 		writeLine("workers = %d", cfg.Workers)
+	}
+	if cfg.IndexWorkers > 0 && cfg.IndexWorkers != cfg.Workers {
+		writeLine("index_workers = %d", cfg.IndexWorkers)
+	}
+	if cfg.ChunkSize > 0 && cfg.ChunkSize != defaultChunkSize {
+		writeLine("chunk_size = %d", cfg.ChunkSize)
+	}
+	if cfg.Resume {
+		writeLine("resume = true")
+	}
+	validation := cfg.Validation
+	if validation == "" {
+		validation = validationModeNone
+	}
+	if validation != validationModeNone {
+		writeLine("validation = %s", strconv.Quote(validation))
 	}
 
 	writeSection("source")

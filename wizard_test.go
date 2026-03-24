@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"os"
@@ -31,6 +32,7 @@ func TestRunGenerateWizardWritesConfig(t *testing.T) {
 		"",
 		"",
 		"",
+		"n",
 		"",
 		outputPath,
 		"stop",
@@ -128,6 +130,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		"",    // spatial_mode = off
 		"",    // add_unsigned_checks = false
 		"",    // replicate_on_update_current_timestamp = false
+		"n",   // skip advanced options
 		"n",   // do not save generated config
 		"run", // next step
 	}, "\n") + "\n"
@@ -189,6 +192,7 @@ func TestRunGenerateWizardRePromptsInvalidSourceDSN(t *testing.T) {
 		"n",
 	}
 	lines = append(lines, wizardBlankInputs(23)...)
+	lines = append(lines, "n")
 	lines = append(lines, "n", "stop")
 	input := strings.Join(lines, "\n") + "\n"
 
@@ -257,6 +261,7 @@ func TestRunGenerateWizardTestsConnectionsByDefault(t *testing.T) {
 		"",
 	}
 	lines = append(lines, wizardBlankInputs(23)...)
+	lines = append(lines, "n")
 	lines = append(lines, "n", "run")
 	input := strings.Join(lines, "\n") + "\n"
 
@@ -322,6 +327,7 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 		"",
 		"",
 		"n",
+		"n",
 		"plan",
 	}, "\n") + "\n"
 
@@ -377,6 +383,153 @@ func TestRenderConfigTOMLIncludesOnlyConfiguredOverrides(t *testing.T) {
 	}
 }
 
+func TestRunGenerateWizardConfiguresAdvancedOptions(t *testing.T) {
+	dir := t.TempDir()
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(prevWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+
+	var gotCfg *MigrationConfig
+	prevRunner := generatedConfigRunner
+	generatedConfigRunner = func(cfg *MigrationConfig, _ MigrateOptions) error {
+		gotCfg = cfg
+		return nil
+	}
+	t.Cleanup(func() {
+		generatedConfigRunner = prevRunner
+	})
+
+	input := strings.Join([]string{
+		"",                                     // source type = mysql
+		"root:root@tcp(127.0.0.1:3306)/sakila", // source DSN
+		"n",                                    // skip source connection test
+		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable", // target DSN
+		"n",            // skip target connection test
+		"",             // schema = sakila
+		"",             // migration mode = full
+		"",             // on_schema_exists = error
+		"",             // source_snapshot_mode = none
+		"n",            // unlogged_tables = false so resume can be enabled
+		"",             // preserve_defaults = true
+		"",             // snake_case_identifiers = true
+		"",             // clean_orphans = true
+		"4",            // workers
+		"",             // json_as_jsonb = true
+		"",             // unknown_as_text = false
+		"",             // tinyint1_as_boolean = false
+		"",             // datetime_as_timestamptz = false
+		"",             // binary16_as_uuid = false
+		"",             // string_uuid_as_uuid = false
+		"",             // enum_mode = check
+		"",             // set_mode = text
+		"",             // bit_mode = bytea
+		"",             // time_mode = time
+		"",             // zero_date_mode = null
+		"",             // spatial_mode = off
+		"",             // add_unsigned_checks = false
+		"",             // replicate_on_update_current_timestamp = false
+		"y",            // configure advanced options
+		"sampled_hash", // validation
+		"y",            // resume
+		"50000",        // chunk_size
+		"3",            // index_workers
+		"n",            // do not save generated config
+		"run",          // next step
+	}, "\n") + "\n"
+
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetIn(strings.NewReader(input))
+	cmd.SetOut(&out)
+
+	if err := runGenerateWizard(cmd, nil); err != nil {
+		t.Fatalf("runGenerateWizard() error: %v", err)
+	}
+	if gotCfg == nil {
+		t.Fatal("expected generated config runner to be called")
+	}
+	if gotCfg.Validation != validationModeSampledHash {
+		t.Fatalf("Validation = %q, want %q", gotCfg.Validation, validationModeSampledHash)
+	}
+	if !gotCfg.Resume {
+		t.Fatal("Resume = false, want true")
+	}
+	if gotCfg.ChunkSize != 50000 {
+		t.Fatalf("ChunkSize = %d, want 50000", gotCfg.ChunkSize)
+	}
+	if gotCfg.IndexWorkers != 3 {
+		t.Fatalf("IndexWorkers = %d, want 3", gotCfg.IndexWorkers)
+	}
+	if !strings.Contains(out.String(), "Configure advanced performance/validation options") {
+		t.Fatalf("wizard output missing advanced prompt, got:\n%s", out.String())
+	}
+}
+
+func TestCollectGeneratedConfigAdvancedResumeInvalidCombinationRePrompts(t *testing.T) {
+	var out bytes.Buffer
+	input := strings.Join([]string{
+		"",                                     // source type = mysql
+		"root:root@tcp(127.0.0.1:3306)/sakila", // source DSN
+		"n",                                    // skip source connection test
+		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable", // target DSN
+		"n", // skip target connection test
+		"",  // schema
+		"",  // migration mode = full
+		"",  // on_schema_exists = error
+		"",  // source_snapshot_mode = none
+		"",  // unlogged_tables = true
+		"",  // preserve_defaults = true
+		"",  // snake_case_identifiers = true
+		"",  // clean_orphans = true
+		"",  // workers = default
+		"",  // json_as_jsonb = true
+		"",  // unknown_as_text = false
+		"",  // tinyint1_as_boolean = false
+		"",  // datetime_as_timestamptz = false
+		"",  // binary16_as_uuid = false
+		"",  // string_uuid_as_uuid = false
+		"",  // enum_mode = check
+		"",  // set_mode = text
+		"",  // bit_mode = bytea
+		"",  // time_mode = time
+		"",  // zero_date_mode = null
+		"",  // spatial_mode = off
+		"",  // add_unsigned_checks = false
+		"",  // replicate_on_update_current_timestamp = false
+		"y", // configure advanced options
+		"",  // validation = none
+		"y", // resume = true (invalid with unlogged_tables=true)
+		"n", // resume = false after validation error
+		"",  // chunk_size = default
+		"",  // index_workers = default
+	}, "\n") + "\n"
+
+	w := wizardPrompter{
+		in:  bufio.NewReader(strings.NewReader(input)),
+		out: &out,
+	}
+
+	cfg, err := collectGeneratedConfig(&w, t.TempDir())
+	if err != nil {
+		t.Fatalf("collectGeneratedConfig() error: %v", err)
+	}
+	if cfg.Resume {
+		t.Fatal("Resume = true, want false after re-prompt")
+	}
+	if !strings.Contains(out.String(), "resume is incompatible with unlogged_tables=true") {
+		t.Fatalf("wizard output missing resume incompatibility error, got:\n%s", out.String())
+	}
+}
+
 func TestRenderConfigTOML_MariaDBUsesMySQLFamilyRendering(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "mariadb"
@@ -411,6 +564,32 @@ func TestRenderConfigTOMLIncludesUnloggedOptOut(t *testing.T) {
 
 	if !strings.Contains(rendered, "unlogged_tables = false") {
 		t.Fatalf("expected unlogged opt-out in rendered config, got:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigTOMLIncludesAdvancedOverrides(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "sakila"
+	cfg.Validation = validationModeRowCount
+	cfg.Resume = true
+	cfg.ChunkSize = 50000
+	cfg.Workers = 6
+	cfg.IndexWorkers = 2
+
+	rendered := renderConfigTOML(&cfg)
+
+	for _, want := range []string{
+		`validation = "row_count"`,
+		`resume = true`,
+		`chunk_size = 50000`,
+		`index_workers = 2`,
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected %q in rendered config, got:\n%s", want, rendered)
+		}
 	}
 }
 
