@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+// Smoke-test Cobra's InitDefaultCompletionCmd: pgferry does not register a custom
+// "completion" command; Cobra injects completion bash|zsh|fish|powershell on Execute.
 func TestCompletionBashOutput(t *testing.T) {
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
@@ -24,7 +26,13 @@ func TestCompletionBashOutput(t *testing.T) {
 	if len(out) == 0 {
 		t.Fatal("completion bash output is empty")
 	}
-	for _, want := range []string{"migrate", "plan", "wizard", "version", "completion", "--config"} {
+	// GenBashCompletionV2 does not list subcommands in the script; it shells out to
+	// `pgferry __complete ...`. These strings are stable markers of a valid V2 script.
+	for _, want := range []string{
+		"bash completion V2",
+		"__complete",
+		"pgferry",
+	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("completion bash output missing %q", want)
 		}
