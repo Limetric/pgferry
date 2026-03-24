@@ -18,8 +18,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// errInvalidPlanFormat is returned when plan output format is not text or json.
-var errInvalidPlanFormat = errors.New("--format must be text or json")
+// errInvalidPlanFormat is returned when plan output format is not text, json, or markdown.
+var errInvalidPlanFormat = errors.New("--format must be text, json, or markdown")
 
 var planOutputDir string
 var planFormat string
@@ -49,7 +49,7 @@ func init() {
 	planCmd.Flags().StringVar(&planConfigPath, "config", "", "path to migration TOML config file")
 	planCmd.Flags().StringVar(&planInputPath, "input", "", "read a previously saved JSON plan report instead of connecting to the source")
 	planCmd.Flags().StringVar(&planOutputDir, "output-dir", "", "directory to write hook skeleton files")
-	planCmd.Flags().StringVar(&planFormat, "format", "text", "output format: text or json")
+	planCmd.Flags().StringVar(&planFormat, "format", "text", "output format: text, json, or markdown")
 	// fail-on=none keeps exit 0 when introspection succeeds; errors/warnings gate CI on unsupported columns or high copy-risk severity.
 	planCmd.Flags().StringVar(&planFailOn, "fail-on", "none", "exit non-zero on findings: none, errors, or warnings")
 }
@@ -317,9 +317,8 @@ type PlanTemporalWarning struct {
 }
 
 func runPlan(cmd *cobra.Command, args []string) error {
-	switch planFormat {
-	case "text", "json":
-	default:
+	format, err := normalizePlanFormat(planFormat)
+	if err != nil {
 		return errInvalidPlanFormat
 	}
 
@@ -330,7 +329,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 
 	opts := PlanOptions{
 		FailOn:    failOn,
-		Format:    planFormat,
+		Format:    format,
 		OutputDir: planOutputDir,
 	}
 
@@ -364,14 +363,9 @@ func runPlan(cmd *cobra.Command, args []string) error {
 }
 
 func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) error {
-	format := opts.Format
-	if format == "" {
-		format = "text"
-	}
-	switch format {
-	case "text", "json":
-	default:
-		return errInvalidPlanFormat
+	format, err := normalizePlanFormat(opts.Format)
+	if err != nil {
+		return err
 	}
 	failOn, err := parsePlanFailOn(opts.FailOn)
 	if err != nil {
@@ -461,12 +455,16 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 }
 
 func writePlanReportOutput(report *PlanReport, out io.Writer, format string) error {
-	if format == "" {
-		format = "text"
+	normalized, err := normalizePlanFormat(format)
+	if err != nil {
+		return err
 	}
-	switch format {
+	switch normalized {
 	case "json":
 		return writePlanJSON(out, report)
+	case "markdown":
+		writePlanMarkdown(out, report)
+		return nil
 	case "text":
 		writePlanText(out, report)
 		return nil
@@ -481,10 +479,11 @@ func applyPlanFailOn(report *PlanReport, out io.Writer, format string, failOn st
 	}
 	highRisks := countHighSeverityCopyRisks(report)
 	nUnsupported := len(report.UnsupportedColumns)
-	if format == "" {
-		format = "text"
+	normalized, err := normalizePlanFormat(format)
+	if err != nil {
+		return err
 	}
-	if format == "text" {
+	if normalized == "text" || normalized == "markdown" {
 		fmt.Fprintln(out, planFindingsFailSummary(nUnsupported, highRisks))
 	}
 	return &PlanFindingsError{
@@ -497,18 +496,13 @@ func applyPlanFailOn(report *PlanReport, out io.Writer, format string, failOn st
 // It validates format and fail-on again so callers other than runPlan (e.g. tests) get
 // the same checks as the CLI path; runPlan already validates before runPlanFromInput.
 func renderPlanReport(report *PlanReport, out io.Writer, opts PlanOptions) error {
-	format := opts.Format
-	if format == "" {
-		format = "text"
+	format, err := normalizePlanFormat(opts.Format)
+	if err != nil {
+		return err
 	}
 	failOn, err := parsePlanFailOn(opts.FailOn)
 	if err != nil {
 		return err
-	}
-	switch format {
-	case "text", "json":
-	default:
-		return errInvalidPlanFormat
 	}
 	if err := writePlanReportOutput(report, out, format); err != nil {
 		return err
@@ -618,6 +612,19 @@ func formatInt64Thousands(n int64) string {
 		chunks[i], chunks[j] = chunks[j], chunks[i]
 	}
 	return strings.Join(chunks, ",")
+}
+
+func normalizePlanFormat(format string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "", "text":
+		return "text", nil
+	case "json":
+		return "json", nil
+	case "markdown", "md":
+		return "markdown", nil
+	default:
+		return "", errInvalidPlanFormat
+	}
 }
 
 func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarnings []SchemaSemanticWarning, copyRisks []PlanCopyRiskFinding, tableChunkPlan []PlanTableChunkInfo, src SourceDB, cfg *MigrationConfig, typeMap TypeMappingConfig, summary PlanSummary) *PlanReport {
@@ -1061,6 +1068,348 @@ func writePlanText(w io.Writer, report *PlanReport) {
 	if !hasContent {
 		fmt.Fprintln(w, "No manual follow-up items detected.")
 	}
+}
+
+func writePlanMarkdown(w io.Writer, report *PlanReport) {
+	fmt.Fprintln(w, "# Migration Plan Report")
+	fmt.Fprintln(w)
+
+	if report == nil {
+		fmt.Fprintln(w, "No manual follow-up items detected.")
+		return
+	}
+
+	hasContent := false
+
+	if planSummaryHasData(report.Summary) {
+		hasContent = true
+		s := report.Summary
+		fmt.Fprintln(w, "## Summary")
+		fmt.Fprintln(w)
+		rows := [][]string{
+			{"Source Type", s.SourceType},
+			{"Source Database", s.SourceDatabase},
+			{"Target Schema", s.TargetSchema},
+			{"Tables", strconv.Itoa(s.TableCount)},
+			{"Workers", strconv.Itoa(s.Workers)},
+			{"Index Workers", strconv.Itoa(s.IndexWorkers)},
+			{"Chunk Size", strconv.FormatInt(s.ChunkSize, 10)},
+			{"Resume", strconv.FormatBool(s.Resume)},
+			{"Validation", s.Validation},
+			{"Source Snapshot Mode", s.SnapshotMode},
+			{"Copy Risk Analysis", strconv.FormatBool(s.CopyRiskAnalysis)},
+			{"Unlogged Tables", strconv.FormatBool(s.UnloggedTables)},
+			{"Preserve Defaults", strconv.FormatBool(s.PreserveDefaults)},
+			{"Clean Orphans", strconv.FormatBool(s.CleanOrphans)},
+			{"Snake Case Identifiers", strconv.FormatBool(s.SnakeCaseIDs)},
+		}
+		if s.CopyRiskAnalysis {
+			rows = append(rows, []string{"Estimated Rows", formatInt64Thousands(s.TotalEstimatedRows)})
+		}
+		writeMarkdownTable(w, []string{"Field", "Value"}, rows)
+	}
+
+	if report.TableFilterReport != nil {
+		hasContent = true
+		tf := report.TableFilterReport
+		fmt.Fprintln(w, "## Table Filters")
+		fmt.Fprintln(w)
+		fmt.Fprintf(w, "Selected %d of %d source table(s).\n\n", len(tf.SelectedTables), tf.TotalTables)
+		writeMarkdownStringList(w, "Selected Tables", tf.SelectedTables)
+		writeMarkdownStringList(w, "Skipped Tables", tf.SkippedTables)
+		writeMarkdownStringList(w, "Overlapping Include/Exclude Entries", tf.OverlappingTables)
+		if len(tf.SkippedForeignKeys) > 0 {
+			fmt.Fprintf(w, "### Skipped Foreign Keys (%d)\n\n", len(tf.SkippedForeignKeys))
+			rows := make([][]string, 0, len(tf.SkippedForeignKeys))
+			for _, fk := range tf.SkippedForeignKeys {
+				rows = append(rows, []string{fk.Table, fk.Name, fk.RefTable, fk.Reason})
+			}
+			writeMarkdownTable(w, []string{"Table", "Foreign Key", "Referenced Table", "Reason"}, rows)
+		}
+	}
+
+	if len(report.RequiredExtensions) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Required Extensions (%d)\n\n", len(report.RequiredExtensions))
+		for _, req := range report.RequiredExtensions {
+			action := "must already exist on the target"
+			if req.Mode == "create_if_missing" {
+				action = "pgferry will create it if missing"
+			}
+			fmt.Fprintf(w, "- %s (%s): %s\n", markdownCode(req.Name), markdownCode(req.Feature), markdownEscape(action))
+		}
+		fmt.Fprintln(w)
+	}
+
+	if len(report.CopyRiskFindings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Copy Risk Findings (%d)\n\n", len(report.CopyRiskFindings))
+		rows := make([][]string, 0, len(report.CopyRiskFindings))
+		for _, risk := range report.CopyRiskFindings {
+			rows = append(rows, []string{
+				risk.Table,
+				strings.ToUpper(risk.Severity),
+				copyRiskCategoryTitle(risk.Category),
+				formatMarkdownChunking(risk),
+				formatInt64Thousands(risk.EstimatedRows),
+				risk.Recommendation,
+			})
+		}
+		writeMarkdownTable(w, []string{"Table", "Severity", "Category", "Chunking", "Estimated Rows", "Recommendation"}, rows)
+	}
+
+	if len(report.TableChunkPlan) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Table Chunk Plan (%d)\n\n", len(report.TableChunkPlan))
+		rows := make([][]string, 0, len(report.TableChunkPlan))
+		for _, row := range report.TableChunkPlan {
+			rows = append(rows, []string{
+				row.Table,
+				humanize.Comma(row.EstimatedRows),
+				formatMarkdownTableChunking(row),
+				formatMarkdownChunkKey(row),
+				formatMarkdownChunkRange(row),
+			})
+		}
+		writeMarkdownTable(w, []string{"Table", "Estimated Rows", "Chunking", "Key", "Range"}, rows)
+	}
+
+	objs := &report.SourceObjects
+	if len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 {
+		hasContent = true
+		fmt.Fprintln(w, "## Source Objects")
+		fmt.Fprintln(w)
+		if len(objs.Views) > 0 {
+			fmt.Fprintf(w, "### Views (%d)\n\n", len(objs.Views))
+			if report.TableFilterReport != nil {
+				fmt.Fprintln(w, "These are all views in the source database; some may reference tables outside your include/exclude scope.")
+				fmt.Fprintln(w)
+			}
+			for _, v := range objs.Views {
+				fmt.Fprintf(w, "- %s\n", markdownEscape(v))
+			}
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
+		}
+		if len(objs.Routines) > 0 {
+			fmt.Fprintf(w, "### Routines (%d)\n\n", len(objs.Routines))
+			if report.TableFilterReport != nil {
+				fmt.Fprintln(w, "These are all routines in the source database; some may reference tables outside your include/exclude scope.")
+				fmt.Fprintln(w)
+			}
+			for _, r := range objs.Routines {
+				fmt.Fprintf(w, "- %s\n", markdownEscape(r))
+			}
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
+		}
+		if len(objs.Triggers) > 0 {
+			fmt.Fprintf(w, "### Triggers (%d)\n\n", len(objs.Triggers))
+			for _, tg := range objs.Triggers {
+				line := tg.Name
+				if tg.Table != "" {
+					line += " (on " + tg.Table + ")"
+				}
+				fmt.Fprintf(w, "- %s\n", markdownEscape(line))
+			}
+			fmt.Fprintln(w)
+			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
+		}
+	}
+
+	if len(report.UnsupportedColumns) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Unsupported Columns (%d)\n\n", len(report.UnsupportedColumns))
+		rows := make([][]string, 0, len(report.UnsupportedColumns))
+		for _, uc := range report.UnsupportedColumns {
+			rows = append(rows, []string{uc.Table, uc.Column, uc.SourceType, uc.Reason})
+		}
+		writeMarkdownTable(w, []string{"Table", "Column", "Source Type", "Reason"}, rows)
+	}
+
+	if len(report.SchemaSemanticWarnings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Schema Semantic Warnings (%d)\n\n", len(report.SchemaSemanticWarnings))
+		byCategory := groupSchemaSemanticWarningsByCategory(report.SchemaSemanticWarnings)
+		for _, category := range orderedSchemaSemanticWarningCategories(report.SchemaSemanticWarnings) {
+			fmt.Fprintf(w, "### %s (%d)\n\n", markdownEscape(schemaSemanticWarningCategoryTitle(category)), len(byCategory[category]))
+			for _, warning := range byCategory[category] {
+				line := fmt.Sprintf("%s [%s]: %s", warning.ObjectName, warning.Disposition, warning.Reason)
+				if warning.RecommendedFollowUp != "" {
+					line += " Follow-up: " + warning.RecommendedFollowUp
+				}
+				fmt.Fprintf(w, "- %s\n", markdownEscape(line))
+			}
+			fmt.Fprintln(w)
+		}
+	}
+
+	if len(report.GeneratedColumns) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Generated Columns (%d)\n\n", len(report.GeneratedColumns))
+		rows := make([][]string, 0, len(report.GeneratedColumns))
+		for _, gc := range report.GeneratedColumns {
+			rows = append(rows, []string{gc.Table, gc.Column, gc.Expression})
+		}
+		writeMarkdownTable(w, []string{"Table", "Column", "Expression"}, rows)
+		fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_data"))
+	}
+
+	if len(report.SkippedIndexes) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Skipped Indexes (%d)\n\n", len(report.SkippedIndexes))
+		rows := make([][]string, 0, len(report.SkippedIndexes))
+		for _, si := range report.SkippedIndexes {
+			rows = append(rows, []string{si.Table, si.Index, si.Reason})
+		}
+		writeMarkdownTable(w, []string{"Table", "Index", "Reason"}, rows)
+		fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
+	}
+
+	if len(report.OrphanCleanupCandidates) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Orphan Cleanup Candidates (%d)\n\n", len(report.OrphanCleanupCandidates))
+		rows := make([][]string, 0, len(report.OrphanCleanupCandidates))
+		for _, candidate := range report.OrphanCleanupCandidates {
+			rows = append(rows, []string{
+				candidate.Table,
+				candidate.ForeignKey,
+				strings.Join(candidate.Columns, ", "),
+				candidate.RefTable,
+				strings.Join(candidate.RefColumns, ", "),
+				orphanCleanupActionLabel(candidate.Action),
+			})
+		}
+		writeMarkdownTable(w, []string{"Table", "Foreign Key", "Columns", "Referenced Table", "Referenced Columns", "Action"}, rows)
+	}
+
+	if len(report.TemporalWarnings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Temporal Warnings (%d)\n\n", len(report.TemporalWarnings))
+		rows := make([][]string, 0, len(report.TemporalWarnings))
+		for _, warning := range report.TemporalWarnings {
+			rows = append(rows, []string{
+				warning.Summary,
+				strings.Join(warning.Examples, ", "),
+				warning.Remediation,
+			})
+		}
+		writeMarkdownTable(w, []string{"Summary", "Examples", "Review"}, rows)
+	}
+
+	if len(report.CollationWarnings) > 0 {
+		hasContent = true
+		fmt.Fprintf(w, "## Collation Warnings (%d)\n\n", len(report.CollationWarnings))
+		for _, warning := range report.CollationWarnings {
+			fmt.Fprintf(w, "- %s\n", markdownEscape(warning))
+		}
+		fmt.Fprintln(w)
+	}
+
+	if !hasContent {
+		fmt.Fprintln(w, "No manual follow-up items detected.")
+	}
+}
+
+func writeMarkdownStringList(w io.Writer, title string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "### %s (%d)\n\n", markdownEscape(title), len(values))
+	for _, value := range values {
+		fmt.Fprintf(w, "- %s\n", markdownEscape(value))
+	}
+	fmt.Fprintln(w)
+}
+
+func writeMarkdownTable(w io.Writer, headers []string, rows [][]string) {
+	fmt.Fprint(w, "|")
+	for _, header := range headers {
+		fmt.Fprintf(w, " %s |", markdownEscape(header))
+	}
+	fmt.Fprintln(w)
+	fmt.Fprint(w, "|")
+	for range headers {
+		fmt.Fprint(w, " --- |")
+	}
+	fmt.Fprintln(w)
+	for _, row := range rows {
+		fmt.Fprint(w, "|")
+		for _, cell := range row {
+			fmt.Fprintf(w, " %s |", markdownEscape(cell))
+		}
+		fmt.Fprintln(w)
+	}
+	fmt.Fprintln(w)
+}
+
+func markdownEscape(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", " ")
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.TrimSpace(s)
+	replacer := strings.NewReplacer(
+		`\\`, `\\\\`,
+		`|`, `\|`,
+		"*", `\*`,
+		"[", `\[`,
+		"]", `\]`,
+		"<", `\<`,
+		">", `\>`,
+	)
+	return replacer.Replace(s)
+}
+
+func markdownCode(s string) string {
+	fence := "`"
+	for strings.Contains(s, fence) {
+		fence += "`"
+	}
+	return fence + s + fence
+}
+
+func formatMarkdownChunking(risk PlanCopyRiskFinding) string {
+	if !risk.Chunkable {
+		return "full copy"
+	}
+	parts := []string{risk.ChunkKey}
+	if risk.ChunkKeyType != "" {
+		parts[0] += " (" + risk.ChunkKeyType + ")"
+	}
+	if risk.MinPK != nil && risk.MaxPK != nil {
+		parts = append(parts, fmt.Sprintf("range=%d..%d", *risk.MinPK, *risk.MaxPK))
+	}
+	if risk.EstimatedChunkCount > 0 {
+		parts = append(parts, fmt.Sprintf("estimated_chunks=%d", risk.EstimatedChunkCount))
+	}
+	if risk.RangeDensity > 0 {
+		parts = append(parts, fmt.Sprintf("density=%.2f%%", risk.RangeDensity*100))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func formatMarkdownTableChunking(row PlanTableChunkInfo) string {
+	if row.Chunkable {
+		return fmt.Sprintf("chunked (%d chunks)", row.EstimatedChunks)
+	}
+	return "full copy"
+}
+
+func formatMarkdownChunkKey(row PlanTableChunkInfo) string {
+	if row.Chunkable {
+		if row.ChunkKeyType != "" {
+			return row.ChunkKey + " (" + row.ChunkKeyType + ")"
+		}
+		return row.ChunkKey
+	}
+	return row.FullTableCopyReason
+}
+
+func formatMarkdownChunkRange(row PlanTableChunkInfo) string {
+	if row.MinPK != nil && row.MaxPK != nil {
+		return fmt.Sprintf("%d..%d", *row.MinPK, *row.MaxPK)
+	}
+	return "n/a"
 }
 
 // writeHookSkeletons creates hook SQL skeleton files in the output directory.
