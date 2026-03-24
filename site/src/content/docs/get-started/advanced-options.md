@@ -134,6 +134,18 @@ pgferry config paths migration.toml --json
 
 No database connection required. It loads and validates the config, then prints the resolved absolute paths for the config file, config directory, checkpoint file, and every hook SQL path.
 
+## Secret injection via environment
+
+For CI/CD or shared configs, you can keep DSNs out of the TOML and inject them at runtime:
+
+```bash
+export PGFERRY_SOURCE_DSN='root:root@tcp(127.0.0.1:3306)/source_db'
+export PGFERRY_TARGET_DSN='postgres://user:pass@host:5432/dbname?sslmode=disable'
+pgferry plan migration.toml
+```
+
+Non-empty `PGFERRY_SOURCE_DSN` and `PGFERRY_TARGET_DSN` override `source.dsn` and `target.dsn` after the TOML is loaded. Empty values are ignored.
+
 ## Guides
 
 Every source engine has its own quirks. These guides cover what pgferry handles automatically and what you should watch out for.

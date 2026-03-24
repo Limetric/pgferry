@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -202,6 +203,129 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.Source.Charset != "utf8mb4" {
 		t.Errorf("default Source.Charset = %q, want %q", cfg.Source.Charset, "utf8mb4")
+	}
+}
+
+func TestLoadConfig_DSNEnvOverrides(t *testing.T) {
+	tests := []struct {
+		name        string
+		sourceDSN   string
+		targetDSN   string
+		env         map[string]string
+		wantSource  string
+		wantTarget  string
+		wantErrText string
+	}{
+		{
+			name:       "unset env keeps toml values",
+			sourceDSN:  "root:root@tcp(127.0.0.1:3306)/from_toml",
+			targetDSN:  "postgres://user:pass@localhost:5432/from_toml",
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_toml",
+			wantTarget: "postgres://user:pass@localhost:5432/from_toml",
+		},
+		{
+			name:       "source env overrides toml",
+			sourceDSN:  "root:root@tcp(127.0.0.1:3306)/from_toml",
+			targetDSN:  "postgres://user:pass@localhost:5432/from_toml",
+			env:        map[string]string{"PGFERRY_SOURCE_DSN": "root:root@tcp(127.0.0.1:3306)/from_env"},
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_env",
+			wantTarget: "postgres://user:pass@localhost:5432/from_toml",
+		},
+		{
+			name:       "target env overrides toml",
+			sourceDSN:  "root:root@tcp(127.0.0.1:3306)/from_toml",
+			targetDSN:  "postgres://user:pass@localhost:5432/from_toml",
+			env:        map[string]string{"PGFERRY_TARGET_DSN": "postgres://user:pass@localhost:5432/from_env"},
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_toml",
+			wantTarget: "postgres://user:pass@localhost:5432/from_env",
+		},
+		{
+			name:       "both env vars override toml",
+			sourceDSN:  "root:root@tcp(127.0.0.1:3306)/from_toml",
+			targetDSN:  "postgres://user:pass@localhost:5432/from_toml",
+			env:        map[string]string{"PGFERRY_SOURCE_DSN": "root:root@tcp(127.0.0.1:3306)/from_env", "PGFERRY_TARGET_DSN": "postgres://user:pass@localhost:5432/from_env"},
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_env",
+			wantTarget: "postgres://user:pass@localhost:5432/from_env",
+		},
+		{
+			name:       "empty env does not override",
+			sourceDSN:  "root:root@tcp(127.0.0.1:3306)/from_toml",
+			targetDSN:  "postgres://user:pass@localhost:5432/from_toml",
+			env:        map[string]string{"PGFERRY_SOURCE_DSN": "   ", "PGFERRY_TARGET_DSN": ""},
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_toml",
+			wantTarget: "postgres://user:pass@localhost:5432/from_toml",
+		},
+		{
+			name:       "source env can supply omitted toml dsn",
+			targetDSN:  "postgres://user:pass@localhost:5432/from_toml",
+			env:        map[string]string{"PGFERRY_SOURCE_DSN": "root:root@tcp(127.0.0.1:3306)/from_env"},
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_env",
+			wantTarget: "postgres://user:pass@localhost:5432/from_toml",
+		},
+		{
+			name:       "target env can supply omitted toml dsn",
+			sourceDSN:  "root:root@tcp(127.0.0.1:3306)/from_toml",
+			env:        map[string]string{"PGFERRY_TARGET_DSN": "postgres://user:pass@localhost:5432/from_env"},
+			wantSource: "root:root@tcp(127.0.0.1:3306)/from_toml",
+			wantTarget: "postgres://user:pass@localhost:5432/from_env",
+		},
+		{
+			name:        "missing source dsn still errors when env unset",
+			targetDSN:   "postgres://user:pass@localhost:5432/from_toml",
+			wantErrText: "source.dsn is required",
+		},
+		{
+			name:        "missing target dsn still errors when env unset",
+			sourceDSN:   "root:root@tcp(127.0.0.1:3306)/from_toml",
+			wantErrText: "target.dsn is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgFile := filepath.Join(dir, "migration.toml")
+
+			var b strings.Builder
+			b.WriteString("schema = \"app\"\n\n")
+			b.WriteString("[source]\n")
+			b.WriteString("type = \"mysql\"\n")
+			if tt.sourceDSN != "" {
+				b.WriteString("dsn = " + strconv.Quote(tt.sourceDSN) + "\n")
+			}
+			b.WriteString("\n[target]\n")
+			if tt.targetDSN != "" {
+				b.WriteString("dsn = " + strconv.Quote(tt.targetDSN) + "\n")
+			}
+
+			if err := os.WriteFile(cfgFile, []byte(b.String()), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			cfg, err := loadConfig(cfgFile)
+			if tt.wantErrText != "" {
+				if err == nil {
+					t.Fatalf("loadConfig() error = nil, want substring %q", tt.wantErrText)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrText) {
+					t.Fatalf("loadConfig() error = %v, want substring %q", err, tt.wantErrText)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("loadConfig() error: %v", err)
+			}
+			if cfg.Source.DSN != tt.wantSource {
+				t.Fatalf("Source.DSN = %q, want %q", cfg.Source.DSN, tt.wantSource)
+			}
+			if cfg.Target.DSN != tt.wantTarget {
+				t.Fatalf("Target.DSN = %q, want %q", cfg.Target.DSN, tt.wantTarget)
+			}
+		})
 	}
 }
 
