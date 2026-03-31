@@ -18,6 +18,7 @@ type CheckpointState struct {
 	StartedAt     time.Time                   `json:"started_at"`
 	Compatibility *checkpointCompatibility    `json:"compatibility,omitempty"`
 	Tables        map[string]*TableCheckpoint `json:"tables"`
+	CDC           *CDCCheckpointFile          `json:"cdc,omitempty"`
 }
 
 // TableCheckpoint tracks per-table progress.
