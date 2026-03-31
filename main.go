@@ -389,6 +389,31 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		}
 	}
 
+	// CDC: capture binlog position and create checkpoint table.
+	var cdcPos CDCPosition
+	if cfg.Mode == "cdc" {
+		log.Printf("CDC mode: capturing binlog position...")
+		srcDBForBinlog, openErr := src.OpenDB(cfg.Source.DSN)
+		if openErr != nil {
+			return fmt.Errorf("open source for binlog capture: %w", openErr)
+		}
+		cdcPos, err = captureBinlogPosition(ctx, srcDBForBinlog)
+		srcDBForBinlog.Close()
+		if err != nil {
+			return err
+		}
+		log.Printf("CDC: binlog position captured: %s:%d (GTID: %s)", cdcPos.File, cdcPos.Pos, cdcPos.GTID)
+
+		log.Printf("CDC: creating checkpoint table...")
+		if err := createCDCCheckpointTable(ctx, pgPool, cfg.Schema); err != nil {
+			return err
+		}
+		if err := seedCDCCheckpoint(ctx, pgPool, cfg.Schema, cdcPos); err != nil {
+			return err
+		}
+		log.Printf("CDC: checkpoint table seeded")
+	}
+
 	if !cfg.SchemaOnly {
 		stage = "data"
 		err := runDataMigrationPhase(
@@ -459,6 +484,26 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	}
 
 	log.Printf("migration completed in %s", time.Since(start).Round(time.Millisecond))
+
+	// CDC: persist binlog position to checkpoint file for reference.
+	if cfg.Mode == "cdc" {
+		cpPath := checkpointPath(cfg.configDir)
+		cpState := &CheckpointState{
+			Version:   2,
+			StartedAt: start,
+			CDC: &CDCCheckpointFile{
+				CDCPosition: cdcPos,
+				ServerID:    cfg.CDCServerID,
+				CapturedAt:  time.Now(),
+			},
+		}
+		if saveErr := saveCheckpoint(cpPath, cpState); saveErr != nil {
+			log.Printf("WARN: failed to save CDC checkpoint file: %v", saveErr)
+		} else {
+			log.Printf("CDC: checkpoint saved to %s", cpPath)
+		}
+	}
+
 	return nil
 }
 
