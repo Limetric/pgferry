@@ -83,6 +83,7 @@ func init() {
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(planCmd)
 	rootCmd.AddCommand(replicateCmd)
+	rootCmd.AddCommand(cutoverCmd)
 }
 
 func main() {
