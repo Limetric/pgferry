@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // buildUpsertSQL builds an INSERT ... ON CONFLICT DO UPDATE for the given table.
@@ -79,4 +85,119 @@ func extractPKValues(row []any, pkPositions []int) []any {
 		vals[i] = row[pos]
 	}
 	return vals
+}
+
+// CDCApplier applies batches of CDC events to PostgreSQL with co-transactional checkpoint updates.
+type CDCApplier struct {
+	pool     *pgxpool.Pool
+	pgSchema string
+	tables   map[string]Table
+	src      SourceDB
+	typeMap  TypeMappingConfig
+
+	upsertCache map[string]string
+	deleteCache map[string]string
+	pkPosCache  map[string][]int
+
+	applied atomic.Int64
+	skipped atomic.Int64
+}
+
+func NewCDCApplier(pool *pgxpool.Pool, pgSchema string, tables map[string]Table, src SourceDB, typeMap TypeMappingConfig) *CDCApplier {
+	upsertCache := make(map[string]string, len(tables))
+	deleteCache := make(map[string]string, len(tables))
+	pkPosCache := make(map[string][]int, len(tables))
+	for name, table := range tables {
+		if table.PrimaryKey == nil || len(table.PrimaryKey.Columns) == 0 {
+			continue
+		}
+		upsertCache[name] = buildUpsertSQL(pgSchema, table)
+		deleteCache[name] = buildDeleteSQL(pgSchema, table)
+		pkPosCache[name] = pkColumnPositions(table)
+	}
+	return &CDCApplier{
+		pool:        pool,
+		pgSchema:    pgSchema,
+		tables:      tables,
+		src:         src,
+		typeMap:     typeMap,
+		upsertCache: upsertCache,
+		deleteCache: deleteCache,
+		pkPosCache:  pkPosCache,
+	}
+}
+
+func (a *CDCApplier) ApplyBatch(ctx context.Context, events []*CDCEvent, pos CDCPosition) error {
+	const maxRetries = 3
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			sleep := time.Duration(1<<uint(attempt-1)) * 100 * time.Millisecond
+			time.Sleep(sleep)
+		}
+		lastErr = a.applyBatchOnce(ctx, events, pos)
+		if lastErr == nil {
+			return nil
+		}
+		log.Printf("[replicate] WARN: batch apply attempt %d failed: %v", attempt+1, lastErr)
+	}
+	return fmt.Errorf("batch apply failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func (a *CDCApplier) applyBatchOnce(ctx context.Context, events []*CDCEvent, pos CDCPosition) error {
+	tx, err := a.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	batchApplied := int64(0)
+	batchSkipped := int64(0)
+
+	for _, ev := range events {
+		upsertSQL, hasUpsert := a.upsertCache[ev.Table]
+		deleteSQL, hasDelete := a.deleteCache[ev.Table]
+		pkPositions := a.pkPosCache[ev.Table]
+
+		if !hasUpsert || !hasDelete {
+			continue
+		}
+
+		for _, row := range ev.Rows {
+			var execErr error
+			switch ev.Operation {
+			case CDCInsert, CDCUpdate:
+				_, execErr = tx.Exec(ctx, upsertSQL, row...)
+			case CDCDelete:
+				pkVals := extractPKValues(row, pkPositions)
+				_, execErr = tx.Exec(ctx, deleteSQL, pkVals...)
+			}
+
+			if execErr != nil {
+				log.Printf("[replicate] WARN: skip event table=%s op=%s err=%v", ev.Table, ev.Operation, execErr)
+				batchSkipped++
+				continue
+			}
+			batchApplied++
+		}
+	}
+
+	totalApplied := a.applied.Load() + batchApplied
+	totalSkipped := a.skipped.Load() + batchSkipped
+	if err := updateCDCCheckpointTx(ctx, tx, a.pgSchema, pos, totalApplied, totalSkipped); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit batch: %w", err)
+	}
+
+	a.applied.Add(batchApplied)
+	a.skipped.Add(batchSkipped)
+	return nil
+}
+
+func (a *CDCApplier) Stats() (applied, skipped int64) {
+	return a.applied.Load(), a.skipped.Load()
 }
