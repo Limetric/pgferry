@@ -216,6 +216,23 @@ func TestBuildUpsertSQL_CompositePK(t *testing.T) {
 	}
 }
 
+func TestBuildUpsertSQL_AllPKTable(t *testing.T) {
+	table := Table{
+		PGName: "user_roles",
+		Columns: []Column{
+			{PGName: "user_id"},
+			{PGName: "role_id"},
+		},
+		PrimaryKey: &Index{Columns: []string{"user_id", "role_id"}},
+	}
+
+	got := buildUpsertSQL("s", table)
+	want := `INSERT INTO "s"."user_roles" ("user_id", "role_id") VALUES ($1, $2) ON CONFLICT ("user_id", "role_id") DO NOTHING`
+	if got != want {
+		t.Errorf("buildUpsertSQL all-PK table:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
 func TestBuildDeleteSQL(t *testing.T) {
 	table := Table{
 		PGName:     "users",

@@ -135,6 +135,7 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 	const statusInterval = 10 * time.Second
 
 	lastFlush := time.Now()
+	lastApply := time.Now()
 	lastStatus := time.Now()
 
 	for {
@@ -166,6 +167,7 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 					return err
 				}
 				lastFlush = time.Now()
+				lastApply = time.Now()
 			}
 		}
 
@@ -175,6 +177,7 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 					return err
 				}
 				lastFlush = time.Now()
+				lastApply = time.Now()
 			}
 		}
 
@@ -188,7 +191,7 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 				pos.File, pos.Pos,
 				humanize.Comma(applied),
 				skipped,
-				time.Since(lastStatus).Round(time.Second),
+				time.Since(lastApply).Round(time.Second),
 			)
 			lastStatus = time.Now()
 		}

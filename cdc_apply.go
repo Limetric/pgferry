@@ -38,14 +38,20 @@ func buildUpsertSQL(pgSchema string, table Table) string {
 		setClauses = append(setClauses, fmt.Sprintf("%s = EXCLUDED.%s", pgIdent(col.PGName), pgIdent(col.PGName)))
 	}
 
+	// All-PK tables (e.g. join tables) have no columns to update — use DO NOTHING.
+	conflictAction := "DO NOTHING"
+	if len(setClauses) > 0 {
+		conflictAction = "DO UPDATE SET " + strings.Join(setClauses, ", ")
+	}
+
 	return fmt.Sprintf(
-		"INSERT INTO %s.%s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s",
+		"INSERT INTO %s.%s (%s) VALUES (%s) ON CONFLICT (%s) %s",
 		pgIdent(pgSchema),
 		pgIdent(table.PGName),
 		strings.Join(cols, ", "),
 		strings.Join(params, ", "),
 		strings.Join(pkCols, ", "),
-		strings.Join(setClauses, ", "),
+		conflictAction,
 	)
 }
 
