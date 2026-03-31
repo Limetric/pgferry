@@ -178,3 +178,82 @@ func TestCDCConfig_CDCCustomBatchSizePreserved(t *testing.T) {
 		t.Errorf("CDCFlushInterval = %v, want 500ms", cfg.CDCFlushInterval)
 	}
 }
+
+func TestBuildUpsertSQL(t *testing.T) {
+	table := Table{
+		PGName: "users",
+		Columns: []Column{
+			{PGName: "id"},
+			{PGName: "name"},
+			{PGName: "email"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+
+	got := buildUpsertSQL("myschema", table)
+	want := `INSERT INTO "myschema"."users" ("id", "name", "email") VALUES ($1, $2, $3) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "email" = EXCLUDED."email"`
+	if got != want {
+		t.Errorf("buildUpsertSQL:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+func TestBuildUpsertSQL_CompositePK(t *testing.T) {
+	table := Table{
+		PGName: "order_items",
+		Columns: []Column{
+			{PGName: "order_id"},
+			{PGName: "item_id"},
+			{PGName: "quantity"},
+			{PGName: "price"},
+		},
+		PrimaryKey: &Index{Columns: []string{"order_id", "item_id"}},
+	}
+
+	got := buildUpsertSQL("s", table)
+	want := `INSERT INTO "s"."order_items" ("order_id", "item_id", "quantity", "price") VALUES ($1, $2, $3, $4) ON CONFLICT ("order_id", "item_id") DO UPDATE SET "quantity" = EXCLUDED."quantity", "price" = EXCLUDED."price"`
+	if got != want {
+		t.Errorf("buildUpsertSQL composite PK:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+func TestBuildDeleteSQL(t *testing.T) {
+	table := Table{
+		PGName:     "users",
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+
+	got := buildDeleteSQL("myschema", table)
+	want := `DELETE FROM "myschema"."users" WHERE "id" = $1`
+	if got != want {
+		t.Errorf("buildDeleteSQL:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+func TestBuildDeleteSQL_CompositePK(t *testing.T) {
+	table := Table{
+		PGName:     "order_items",
+		PrimaryKey: &Index{Columns: []string{"order_id", "item_id"}},
+	}
+
+	got := buildDeleteSQL("s", table)
+	want := `DELETE FROM "s"."order_items" WHERE "order_id" = $1 AND "item_id" = $2`
+	if got != want {
+		t.Errorf("buildDeleteSQL composite PK:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+func TestPKColumnPositions(t *testing.T) {
+	table := Table{
+		Columns: []Column{
+			{PGName: "id"},
+			{PGName: "name"},
+			{PGName: "email"},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}},
+	}
+
+	positions := pkColumnPositions(table)
+	if len(positions) != 1 || positions[0] != 0 {
+		t.Errorf("expected [0], got %v", positions)
+	}
+}
