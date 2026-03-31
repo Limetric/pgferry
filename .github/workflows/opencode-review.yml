@@ -31,18 +31,21 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: opencode/minimax-m2.5-free
+          model: opencode-go/glm-5
           prompt: |
-            Review this pull request and provide feedback on:
-            - Code quality and best practices
-            - Potential bugs or issues
-            - Performance considerations
-            - Security concerns
-            - Test coverage
+            Review this pull request.
 
-            Use AGENTS.md file for guidance on style and conventions.
+            Before leaving feedback:
+            - Read the PR description and existing PR comments or review feedback.
+            - Use recent commit history and the current diff to understand what changed since earlier review rounds.
+            - Treat previously addressed comments as resolved unless the underlying issue is still present in the current code.
 
-            IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
+            Focus on:
+            - Newly introduced bugs or regressions
+            - Unresolved review feedback that still applies
+            - Code quality issues in the current diff
+
+            Do not repeat comments that were already addressed in later commits unless the problem remains.
 
       - name: Remove trigger:review label
         if: github.event.action == 'labeled'

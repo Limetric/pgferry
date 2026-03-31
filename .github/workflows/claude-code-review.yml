@@ -37,17 +37,28 @@ jobs:
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review this pull request and provide feedback on:
+            Review this pull request with awareness of prior review rounds.
+
+            Before leaving feedback:
+            - Read the PR description and existing PR comments or review feedback.
+            - Use the recent commit history and current diff to understand what changed since earlier review rounds.
+            - Treat previously addressed comments as resolved unless the underlying issue is still present in the current code.
+
+            Focus your review on:
+            - Newly introduced bugs or regressions
+            - Unresolved review feedback that still applies
             - Code quality and best practices
-            - Potential bugs or issues
             - Performance considerations
             - Security concerns
-            - Test coverage
+            - Test coverage gaps
+
+            Do not repeat comments that were already addressed in later commits unless the problem remains.
 
             Use AGENTS.md file for guidance on style and conventions.
 
             IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
 
+            Use `gh pr view`, `gh pr diff`, and other allowed `gh pr` commands as needed to inspect prior feedback before commenting.
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
           
           claude_args: |
