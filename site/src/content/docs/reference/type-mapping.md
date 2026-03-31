@@ -5,6 +5,10 @@ description: Source-to-PostgreSQL type mappings, alternate modes, and source-spe
 
 pgferry defaults to conservative, mostly lossless mappings. The main default exception is JSON, which becomes PostgreSQL `jsonb` because that is usually the more useful target type.
 
+:::note
+When using CDC mode (`mode = "cdc"`), the same type mapping configuration applies to both the initial bulk load and ongoing binlog replication. Values from the binlog are transformed through the same `TransformValue` path, ensuring consistency between the snapshot and CDC-replicated data.
+:::
+
 ## MySQL and MariaDB to PostgreSQL
 
 | MySQL / MariaDB type | Default PG type | Alternate mapping | Flag |

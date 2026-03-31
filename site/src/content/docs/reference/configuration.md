@@ -197,6 +197,22 @@ after_all = []
 
 Hook file paths are resolved relative to the config file directory. See [Hooks](/reference/hooks/) for phase details and templating behavior.
 
+### CDC Mode
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `mode` | `string` | `"default"` | Migration mode. Set to `"cdc"` to enable binlog-based change capture for low-downtime MySQL cutover. |
+| `cdc_batch_size` | `int` | `500` | Maximum number of binlog events per apply batch. Only used when `mode = "cdc"`. |
+| `cdc_flush_interval` | `duration` | `"200ms"` | Maximum time to buffer events before flushing a batch. Only used when `mode = "cdc"`. |
+| `cdc_server_id` | `int` | auto | MySQL replication server ID. Auto-generated from DSN if not set. Only used when `mode = "cdc"`. |
+
+**Constraints when `mode = "cdc"`:**
+- `source.type` must be `"mysql"`
+- `source_snapshot_mode` is forced to `"single_tx"`
+- `schema_only` and `data_only` must be `false`
+- MySQL user must have `REPLICATION SLAVE` and `REPLICATION CLIENT` privileges
+- MySQL must have `binlog_format = ROW`
+
 ## DSN formats
 
 ### SQLite
