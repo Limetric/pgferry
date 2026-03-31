@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -47,9 +48,15 @@ type MigrationConfig struct {
 	Validation                        string            `toml:"validation"` // none|row_count|sampled_hash
 	Hooks                             HooksConfig       `toml:"hooks"`
 	TypeMapping                       TypeMappingConfig `toml:"type_mapping"`
+	Mode                              string            `toml:"mode"`
+	CDCBatchSize                      int               `toml:"cdc_batch_size"`
+	CDCFlushInterval                  time.Duration     `toml:"cdc_flush_interval"`
+	CDCServerID                       uint32            `toml:"cdc_server_id"`
 
 	// configDir is the directory containing the TOML file, used to resolve relative SQL paths.
 	configDir string
+	// cdcSnapshotModeExplicit tracks whether source_snapshot_mode was set explicitly in the config file.
+	cdcSnapshotModeExplicit bool
 }
 
 // SourceConfig identifies the source database engine and connection string.
@@ -124,6 +131,12 @@ func loadConfig(path string) (*MigrationConfig, error) {
 		}
 		return nil, fmt.Errorf("unknown config keys: %s", strings.Join(keys, ", "))
 	}
+	for _, key := range md.Keys() {
+		if key.String() == "source_snapshot_mode" {
+			cfg.cdcSnapshotModeExplicit = true
+			break
+		}
+	}
 	applyConfigEnvOverrides(&cfg)
 
 	absPath, err := filepath.Abs(path)
@@ -160,6 +173,9 @@ func defaultMigrationConfig() MigrationConfig {
 		SnakeCaseIdentifiers: true,
 		CopyRiskAnalysis:     true,
 		TypeMapping:          defaultTypeMappingConfig(),
+		Mode:                 "default",
+		CDCBatchSize:         500,
+		CDCFlushInterval:     200 * time.Millisecond,
 	}
 }
 
@@ -190,6 +206,33 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return fmt.Errorf("source.type is required (must be mysql, mariadb, sqlite, or mssql)")
 	}
 	applySourceTypeMappingDefaults(&cfg.TypeMapping, cfg.Source.Type)
+
+	switch cfg.Mode {
+	case "default", "cdc":
+	default:
+		return fmt.Errorf("mode must be one of: default, cdc")
+	}
+	if cfg.Mode == "cdc" {
+		if cfg.Source.Type != "mysql" {
+			return fmt.Errorf("mode \"cdc\" is only supported for mysql sources")
+		}
+		if cfg.SchemaOnly {
+			return fmt.Errorf("mode \"cdc\" is incompatible with schema_only")
+		}
+		if cfg.DataOnly {
+			return fmt.Errorf("mode \"cdc\" is incompatible with data_only")
+		}
+		if cfg.cdcSnapshotModeExplicit && cfg.SourceSnapshotMode != "single_tx" {
+			return fmt.Errorf("mode \"cdc\" requires source_snapshot_mode = \"single_tx\"")
+		}
+		cfg.SourceSnapshotMode = "single_tx"
+		if cfg.CDCBatchSize <= 0 {
+			cfg.CDCBatchSize = 500
+		}
+		if cfg.CDCFlushInterval <= 0 {
+			cfg.CDCFlushInterval = 200 * time.Millisecond
+		}
+	}
 
 	cfg.Schema = strings.TrimSpace(cfg.Schema)
 	if cfg.Schema == "" {
