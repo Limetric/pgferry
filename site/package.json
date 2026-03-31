@@ -16,6 +16,6 @@
     "@fontsource/ibm-plex-sans": "5.2.8",
     "@plausible-analytics/tracker": "0.4.4",
     "@vercel/speed-insights": "2.0.0",
-    "astro": "6.0.8"
+    "astro": "6.1.1"
   }
 }
