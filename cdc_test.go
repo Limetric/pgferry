@@ -257,3 +257,54 @@ func TestPKColumnPositions(t *testing.T) {
 		t.Errorf("expected [0], got %v", positions)
 	}
 }
+
+func TestCDCBatcher_FlushOnSize(t *testing.T) {
+	b := newCDCBatcher(3)
+	ev := func(pos uint32) *CDCEvent {
+		return &CDCEvent{Position: CDCPosition{File: "bin.000001", Pos: pos}}
+	}
+
+	if batch := b.Add(ev(100)); batch != nil {
+		t.Fatal("expected nil on first add")
+	}
+	if batch := b.Add(ev(200)); batch != nil {
+		t.Fatal("expected nil on second add")
+	}
+	batch := b.Add(ev(300))
+	if batch == nil {
+		t.Fatal("expected batch on third add (size threshold)")
+	}
+	if len(batch) != 3 {
+		t.Errorf("expected batch of 3, got %d", len(batch))
+	}
+	if b.Len() != 0 {
+		t.Errorf("expected empty batcher after flush, got %d", b.Len())
+	}
+}
+
+func TestCDCBatcher_ManualFlush(t *testing.T) {
+	b := newCDCBatcher(10)
+	ev := &CDCEvent{Position: CDCPosition{File: "bin.000001", Pos: 100}}
+	b.Add(ev)
+
+	batch := b.Flush()
+	if batch == nil || len(batch) != 1 {
+		t.Fatal("expected batch of 1 on manual flush")
+	}
+
+	batch = b.Flush()
+	if batch != nil {
+		t.Fatal("expected nil on flush of empty batcher")
+	}
+}
+
+func TestCDCBatcher_Position(t *testing.T) {
+	b := newCDCBatcher(100)
+	b.Add(&CDCEvent{Position: CDCPosition{File: "bin.000001", Pos: 100}})
+	b.Add(&CDCEvent{Position: CDCPosition{File: "bin.000001", Pos: 200}})
+
+	pos := b.Position()
+	if pos.Pos != 200 {
+		t.Errorf("expected position 200, got %d", pos.Pos)
+	}
+}
