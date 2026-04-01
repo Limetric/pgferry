@@ -136,7 +136,11 @@ func runCutoverWait(ctx context.Context, pgPool *pgxpool.Pool, srcDB *sql.DB, pg
 			time.Since(checkpoint.LastApplied).Round(time.Second),
 		)
 
-		time.Sleep(1 * time.Second)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(1 * time.Second):
+		}
 	}
 }
 
@@ -155,6 +159,9 @@ func formatLag(lag int64) string {
 	if lag == lagDifferentFile {
 		return "behind (different binlog file)"
 	}
+	if lag < 0 {
+		return "unknown (checkpoint ahead of source)"
+	}
 	return "~" + humanize.IBytes(uint64(lag))
 }
 
@@ -162,8 +169,10 @@ func printCutoverReady(checkpoint *CDCCheckpointRow) {
 	log.Printf("[cutover] lag=0, all events applied")
 	if checkpoint.EventsSkipped > 0 {
 		log.Printf("[cutover] WARNING: %d event(s) were skipped during replication — target may not be fully in sync", checkpoint.EventsSkipped)
+		log.Printf("[cutover] Cutover ready. Source has been fully read but skipped events may cause divergence.")
+	} else {
+		log.Printf("[cutover] Cutover ready. Source and target are in sync.")
 	}
-	log.Printf("[cutover] Cutover ready. Source and target are in sync.")
 	log.Printf("[cutover]   Binlog position: %s:%d", checkpoint.BinlogFile, checkpoint.BinlogPos)
 	log.Printf("[cutover]   Events applied: %s", humanize.Comma(checkpoint.EventsApplied))
 	log.Printf("[cutover]   Events skipped: %d", checkpoint.EventsSkipped)
