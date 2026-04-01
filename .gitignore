@@ -48,5 +48,8 @@ Thumbs.db
 /.claude/worktrees/
 
 # Superpowers
-/docs/superpowers/specs
-/docs/superpowers/plans
+/docs/superpowers/specs/
+/docs/superpowers/plans/
+
+# Superset
+/.superset/attachments/
