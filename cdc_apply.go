@@ -167,10 +167,18 @@ func (a *CDCApplier) applyBatchOnce(ctx context.Context, events []*CDCEvent, pos
 		pkPositions := a.pkPosCache[ev.Table]
 
 		if !hasUpsert || !hasDelete {
+			log.Printf("[replicate] DEBUG: skipping events for table %s (no PK or not tracked)", ev.Table)
 			continue
 		}
 
 		for _, row := range ev.Rows {
+			// Use a savepoint so a single row error doesn't abort the
+			// entire transaction — PostgreSQL enters an aborted state on
+			// any error, preventing subsequent statements.
+			if _, spErr := tx.Exec(ctx, "SAVEPOINT cdc_row"); spErr != nil {
+				return fmt.Errorf("savepoint: %w", spErr)
+			}
+
 			var execErr error
 			switch ev.Operation {
 			case CDCInsert, CDCUpdate:
@@ -182,8 +190,15 @@ func (a *CDCApplier) applyBatchOnce(ctx context.Context, events []*CDCEvent, pos
 
 			if execErr != nil {
 				log.Printf("[replicate] WARN: skip event table=%s op=%s err=%v", ev.Table, ev.Operation, execErr)
+				if _, rbErr := tx.Exec(ctx, "ROLLBACK TO SAVEPOINT cdc_row"); rbErr != nil {
+					return fmt.Errorf("rollback savepoint: %w", rbErr)
+				}
 				batchSkipped++
 				continue
+			}
+
+			if _, rlErr := tx.Exec(ctx, "RELEASE SAVEPOINT cdc_row"); rlErr != nil {
+				return fmt.Errorf("release savepoint: %w", rlErr)
 			}
 			batchApplied++
 		}
