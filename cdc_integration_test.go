@@ -180,7 +180,7 @@ func TestIntegration_MySQLCDC(t *testing.T) {
 	}
 	defer reader.Close()
 
-	applier := NewCDCApplier(pgPool, pgSchema, tables, src, typeMap)
+	applier := NewCDCApplier(pgPool, pgSchema, tables)
 	batcher := newCDCBatcher(100)
 
 	// Read until we catch up (context timeout is our safety net).

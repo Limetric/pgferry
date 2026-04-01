@@ -94,12 +94,10 @@ func extractPKValues(row []any, pkPositions []int) []any {
 }
 
 // CDCApplier applies batches of CDC events to PostgreSQL with co-transactional checkpoint updates.
+// ApplyBatch is not goroutine-safe — it must be called from a single goroutine.
 type CDCApplier struct {
 	pool     *pgxpool.Pool
 	pgSchema string
-	tables   map[string]Table
-	src      SourceDB
-	typeMap  TypeMappingConfig
 
 	upsertCache map[string]string
 	deleteCache map[string]string
@@ -109,7 +107,7 @@ type CDCApplier struct {
 	skipped atomic.Int64
 }
 
-func NewCDCApplier(pool *pgxpool.Pool, pgSchema string, tables map[string]Table, src SourceDB, typeMap TypeMappingConfig) *CDCApplier {
+func NewCDCApplier(pool *pgxpool.Pool, pgSchema string, tables map[string]Table) *CDCApplier {
 	upsertCache := make(map[string]string, len(tables))
 	deleteCache := make(map[string]string, len(tables))
 	pkPosCache := make(map[string][]int, len(tables))
@@ -124,9 +122,6 @@ func NewCDCApplier(pool *pgxpool.Pool, pgSchema string, tables map[string]Table,
 	return &CDCApplier{
 		pool:        pool,
 		pgSchema:    pgSchema,
-		tables:      tables,
-		src:         src,
-		typeMap:     typeMap,
 		upsertCache: upsertCache,
 		deleteCache: deleteCache,
 		pkPosCache:  pkPosCache,

@@ -121,7 +121,7 @@ func runReplicate(cmd *cobra.Command, args []string) error {
 	}
 	defer reader.Close()
 
-	applier := NewCDCApplier(pgPool, cfg.Schema, tables, src, cfg.TypeMapping)
+	applier := NewCDCApplier(pgPool, cfg.Schema, tables)
 	batcher := newCDCBatcher(cfg.CDCBatchSize)
 
 	applier.applied.Store(checkpoint.EventsApplied)
@@ -135,7 +135,7 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 	const statusInterval = 10 * time.Second
 
 	lastFlush := time.Now()
-	lastApply := time.Now()
+	var lastApply time.Time
 	lastStatus := time.Now()
 
 	for {
@@ -187,11 +187,15 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 			if pos.File == "" {
 				pos = reader.Position()
 			}
-			log.Printf("[replicate] binlog=%s:%d | applied=%s | skipped=%d | last_applied=%s ago",
+			lastApplyStr := "none"
+			if !lastApply.IsZero() {
+				lastApplyStr = time.Since(lastApply).Round(time.Second).String() + " ago"
+			}
+			log.Printf("[replicate] binlog=%s:%d | applied=%s | skipped=%d | last_applied=%s",
 				pos.File, pos.Pos,
 				humanize.Comma(applied),
 				skipped,
-				time.Since(lastApply).Round(time.Second),
+				lastApplyStr,
 			)
 			lastStatus = time.Now()
 		}
