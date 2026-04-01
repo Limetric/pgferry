@@ -36,8 +36,17 @@ reference/
 !site/src/content/docs/reference/
 !site/src/content/docs/reference/**
 
-# Agent
-.claude/settings.local.json
+# OS
+.DS_Store
+Thumbs.db
 
-# Local agent planning artifacts
-docs/superpowers/
+# Claude
+/.claude/settings.local.json
+
+# Worktrees
+/.worktrees/
+/.claude/worktrees/
+
+# Superpowers
+/docs/superpowers/specs
+/docs/superpowers/plans
