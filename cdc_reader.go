@@ -203,6 +203,12 @@ func (r *BinlogReader) transformRows(e *replication.RowsEvent, tm *tableMap, op 
 	return result, nil
 }
 
+// Position returns the current binlog position.
+func (r *BinlogReader) Position() CDCPosition {
+	return r.pos
+}
+
+// Close shuts down the binlog syncer.
 func (r *BinlogReader) Close() {
 	r.syncer.Close()
 }

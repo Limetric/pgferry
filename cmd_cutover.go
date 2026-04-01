@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -46,7 +49,16 @@ func runCutover(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("cutover requires mode = \"cdc\" in config")
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		log.Printf("[cutover] received %s, shutting down...", sig)
+		cancel()
+	}()
 
 	pgPool, err := pgxpool.New(ctx, cfg.Target.DSN)
 	if err != nil {
@@ -82,12 +94,12 @@ func runCutoverCheck(ctx context.Context, pgPool *pgxpool.Pool, srcDB *sql.DB, p
 	}
 
 	lag := computeByteLag(mysqlPos, checkpoint)
-	if lag > 0 {
-		log.Printf("[cutover] lag=~%s, last_applied=%s ago",
-			humanize.IBytes(uint64(lag)),
+	if lag != 0 {
+		log.Printf("[cutover] lag=%s, last_applied=%s ago",
+			formatLag(lag),
 			time.Since(checkpoint.LastApplied).Round(time.Second),
 		)
-		return fmt.Errorf("replication lag is not zero (lag=~%s)", humanize.IBytes(uint64(lag)))
+		return fmt.Errorf("replication lag is not zero (lag=%s)", formatLag(lag))
 	}
 
 	printCutoverReady(checkpoint)
@@ -119,8 +131,8 @@ func runCutoverWait(ctx context.Context, pgPool *pgxpool.Pool, srcDB *sql.DB, pg
 			return nil
 		}
 
-		log.Printf("[cutover] lag=~%s, last_applied=%s ago",
-			humanize.IBytes(uint64(lag)),
+		log.Printf("[cutover] lag=%s, last_applied=%s ago",
+			formatLag(lag),
 			time.Since(checkpoint.LastApplied).Round(time.Second),
 		)
 
@@ -128,15 +140,29 @@ func runCutoverWait(ctx context.Context, pgPool *pgxpool.Pool, srcDB *sql.DB, pg
 	}
 }
 
+// lagDifferentFile is a sentinel indicating the checkpoint and MySQL head are
+// on different binlog files, so byte-level lag cannot be computed.
+const lagDifferentFile int64 = -1
+
 func computeByteLag(mysqlPos CDCPosition, checkpoint *CDCCheckpointRow) int64 {
 	if mysqlPos.File != checkpoint.BinlogFile {
-		return 1 // different files = definitely behind
+		return lagDifferentFile
 	}
 	return int64(mysqlPos.Pos) - checkpoint.BinlogPos
 }
 
+func formatLag(lag int64) string {
+	if lag == lagDifferentFile {
+		return "behind (different binlog file)"
+	}
+	return "~" + humanize.IBytes(uint64(lag))
+}
+
 func printCutoverReady(checkpoint *CDCCheckpointRow) {
 	log.Printf("[cutover] lag=0, all events applied")
+	if checkpoint.EventsSkipped > 0 {
+		log.Printf("[cutover] WARNING: %d event(s) were skipped during replication — target may not be fully in sync", checkpoint.EventsSkipped)
+	}
 	log.Printf("[cutover] Cutover ready. Source and target are in sync.")
 	log.Printf("[cutover]   Binlog position: %s:%d", checkpoint.BinlogFile, checkpoint.BinlogPos)
 	log.Printf("[cutover]   Events applied: %s", humanize.Comma(checkpoint.EventsApplied))

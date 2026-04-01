@@ -390,6 +390,10 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 	}
 
 	// CDC: capture binlog position and create checkpoint table.
+	// The position is captured on a separate connection before the single_tx
+	// snapshot transaction opens. This means a few events between capture and
+	// snapshot start may be replayed during replication — this is safe because
+	// the apply pipeline uses idempotent upserts (ON CONFLICT DO UPDATE).
 	var cdcPos CDCPosition
 	if cfg.Mode == "cdc" {
 		log.Printf("CDC mode: capturing binlog position...")

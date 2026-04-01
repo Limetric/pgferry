@@ -185,7 +185,7 @@ func runReplicateLoop(ctx context.Context, reader *BinlogReader, batcher *CDCBat
 			applied, skipped := applier.Stats()
 			pos := batcher.Position()
 			if pos.File == "" {
-				pos = reader.pos
+				pos = reader.Position()
 			}
 			log.Printf("[replicate] binlog=%s:%d | applied=%s | skipped=%d | last_applied=%s ago",
 				pos.File, pos.Pos,
