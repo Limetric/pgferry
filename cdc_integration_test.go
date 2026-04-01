@@ -139,9 +139,14 @@ func TestIntegration_MySQLCDC(t *testing.T) {
 	if _, err := changeDB.Exec("UPDATE users SET email = 'alice_updated@example.com' WHERE name = 'Alice'"); err != nil {
 		t.Fatalf("update user: %v", err)
 	}
-	// DELETE a user (Eve, id=5 — also delete her comments and posts first).
+	// DELETE a user (Eve, id=5 — delete comments on her posts, her posts, then her).
+	// Eve's post (id=5) has comments from other users, so delete by post_id first.
+	if _, err := changeDB.Exec("DELETE FROM comments WHERE post_id IN (SELECT id FROM posts WHERE user_id = 5)"); err != nil {
+		t.Fatalf("delete comments on eve posts: %v", err)
+	}
+	// Also delete Eve's own comments on other posts.
 	if _, err := changeDB.Exec("DELETE FROM comments WHERE user_id = 5"); err != nil {
-		t.Fatalf("delete comments: %v", err)
+		t.Fatalf("delete eve comments: %v", err)
 	}
 	if _, err := changeDB.Exec("DELETE FROM posts WHERE user_id = 5"); err != nil {
 		t.Fatalf("delete posts: %v", err)
