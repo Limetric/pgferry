@@ -98,12 +98,12 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Enable binary logging for CDC tests
+      - name: Enable binary logging (MySQL 5.7)
+        if: matrix.mysql == '5.7'
         run: |
-          # Inject binlog config into the running MySQL container and restart.
+          # MySQL 5.7 doesn't enable binlog by default; inject config and restart.
           docker exec ${{ job.services.mysql.id }} sh -c 'echo -e "[mysqld]\nlog-bin=mysql-bin\nserver-id=1\nbinlog-format=ROW" > /etc/mysql/conf.d/binlog.cnf'
           docker restart ${{ job.services.mysql.id }}
-          # Wait for MySQL to be ready again.
           for i in $(seq 1 30); do
             if docker exec ${{ job.services.mysql.id }} mysqladmin ping -h 127.0.0.1 --silent 2>/dev/null; then
               echo "MySQL is ready"
