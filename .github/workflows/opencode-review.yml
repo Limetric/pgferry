@@ -2,12 +2,13 @@ name: OpenCode Review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize, labeled]
+    types: [opened, reopened, ready_for_review, synchronize]
 
 jobs:
   opencode-review:
-    if: github.event.action != 'labeled' || github.event.label.name == 'trigger:review'
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
@@ -15,9 +16,10 @@ jobs:
       id-token: write
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 20
           persist-credentials: false
 
       - name: Setup Go
@@ -31,24 +33,30 @@ jobs:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: opencode-go/glm-5
+          model: opencode-go/glm-5.1
           prompt: |
-            Review this pull request.
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request with awareness of prior review rounds.
 
             Before leaving feedback:
             - Read the PR description and existing PR comments or review feedback.
             - Use recent commit history and the current diff to understand what changed since earlier review rounds.
             - Treat previously addressed comments as resolved unless the underlying issue is still present in the current code.
 
-            Focus on:
+            Focus your review on:
             - Newly introduced bugs or regressions
             - Unresolved review feedback that still applies
-            - Code quality issues in the current diff
+            - Code quality and best practices
+            - Performance considerations
+            - Security concerns
+            - Test coverage gaps
 
             Do not repeat comments that were already addressed in later commits unless the problem remains.
 
-      - name: Remove trigger:review label
-        if: github.event.action == 'labeled'
-        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label 'trigger:review' || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
+
+            Use `gh pr view`, `gh pr diff`, and other read-only `gh pr` commands as needed to inspect prior feedback.
+
+            Do not post to GitHub yourself (no `gh pr comment`, no review or issue APIs): this workflow publishes your final message as the PR comment. Put the full review in your last reply only.

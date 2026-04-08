@@ -2,15 +2,13 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize, labeled]
+    types: [opened, reopened, ready_for_review, synchronize]
 
 jobs:
   claude-review:
-    if: >
-      (github.event.action != 'labeled' && github.event.pull_request.draft == false) ||
-      github.event.label.name == 'trigger:review'
+    if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
@@ -21,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          fetch-depth: 20
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -60,16 +58,10 @@ jobs:
 
             Use `gh pr view`, `gh pr diff`, and other allowed `gh pr` commands as needed to inspect prior feedback before commenting.
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
-          
+
           claude_args: |
-            --model claude-opus-4-6
+            --model claude-sonnet-4-6
             --mcp-config .mcp.json
 
           additional_permissions: |
             actions: read
-
-      - name: Remove trigger:review label
-        if: github.event.action == 'labeled'
-        run: gh pr edit ${{ github.event.pull_request.number }} --remove-label 'trigger:review' || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
