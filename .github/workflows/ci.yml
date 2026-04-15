@@ -320,6 +320,6 @@ jobs:
           go build -ldflags="-s -w -X main.buildVersion=${GITHUB_REF_NAME} -X main.buildCommit=${GITHUB_SHA}" -o "$out" .
           echo "ARTIFACT=$out" >> "$GITHUB_ENV"
       - name: Upload release binary
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: ${{ env.ARTIFACT }}
