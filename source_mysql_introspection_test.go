@@ -341,7 +341,7 @@ func TestMySQLIntrospectSchemaSemanticWarnings(t *testing.T) {
 	db, _ := openMySQLIntrospectionStubDB(t)
 	defer db.Close()
 
-	src := &mysqlSourceDB{snakeCaseIDs: true}
+	src := &mysqlSourceDB{identCase: "snake"}
 	warnings, err := src.IntrospectSchemaSemanticWarnings(db, "appdb")
 	if err != nil {
 		t.Fatalf("IntrospectSchemaSemanticWarnings: %v", err)

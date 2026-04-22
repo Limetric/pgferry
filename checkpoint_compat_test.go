@@ -197,20 +197,27 @@ func TestValidateCheckpointCompatibility_TargetSchemaChanged(t *testing.T) {
 	}
 }
 
-func TestValidateCheckpointCompatibility_SnakeCaseChanged(t *testing.T) {
+func TestValidateCheckpointCompatibility_IdentifierCaseChanged(t *testing.T) {
 	compat := testCheckpointCompatibility()
 	state := newCheckpointStateWithCompatibility(&compat)
 
 	changed := *compat.Summary
-	changed.SnakeCaseIdentifiers = !changed.SnakeCaseIdentifiers
+	if changed.IdentifierCase == "" {
+		changed.IdentifierCase = "snake"
+	}
+	if changed.IdentifierCase == "snake" {
+		changed.IdentifierCase = "lower"
+	} else {
+		changed.IdentifierCase = "snake"
+	}
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
 	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "snake_case_identifiers changed") {
-		t.Fatalf("expected snake_case change message, got: %v", err)
+	if !strings.Contains(err.Error(), "identifier_case changed") {
+		t.Fatalf("expected identifier_case change message, got: %v", err)
 	}
 }
 
@@ -261,7 +268,7 @@ func TestValidateCheckpointCompatibility_MaxReasonsLimited(t *testing.T) {
 	changed.TargetSchema = "other"
 	changed.SourceSnapshotMode = "single_tx"
 	changed.ChunkSize = 1
-	changed.SnakeCaseIdentifiers = true
+	changed.IdentifierCase = "lower"
 	changed.UnloggedTables = true
 	changed.TypeMapping.TinyInt1AsBoolean = true
 	changed.TypeMapping.Binary16AsUUID = true

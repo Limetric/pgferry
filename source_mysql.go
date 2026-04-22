@@ -17,7 +17,7 @@ var uuidRegexp = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 var mariaDBJSONValidCheckRegexp = regexp.MustCompile(`(?i)json_valid\s*\(\s*\(*\s*(?:` + "`" + `([^` + "`" + `]+)` + "`" + `|"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_$]*))\s*\)*\s*\)`)
 
 type mysqlSourceDB struct {
-	snakeCaseIDs          bool
+	identCase             string
 	charset               string
 	axisOrderOptionKnown  bool
 	supportsAxisOrderExpr bool
@@ -27,17 +27,18 @@ type mariadbSourceDB struct {
 	mysqlSourceDB
 }
 
-func (m *mysqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
-func (m *mysqlSourceDB) SetCharset(charset string)            { m.charset = charset }
-func (m *mysqlSourceDB) SetSourceSchema(_ string)             {}
+func (m *mysqlSourceDB) SetIdentifierCase(mode string) { m.identCase = mode }
+func (m *mysqlSourceDB) SetCharset(charset string)     { m.charset = charset }
+func (m *mysqlSourceDB) SetSourceSchema(_ string)      {}
 
-// identName converts a source identifier to its PostgreSQL name.
-// When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
+// identName converts a source identifier to its PostgreSQL name according to identCase.
 func (m *mysqlSourceDB) identName(s string) string {
-	if m.snakeCaseIDs {
+	switch m.identCase {
+	case "snake":
 		return toSnakeCase(s)
+	default: // "lower"
+		return strings.ToLower(s)
 	}
-	return strings.ToLower(s)
 }
 
 func (m *mysqlSourceDB) Name() string { return "MySQL" }

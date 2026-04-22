@@ -113,7 +113,7 @@ func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 		"",    // source_snapshot_mode = none
 		"",    // unlogged_tables = true
 		"",    // preserve_defaults = true
-		"",    // snake_case_identifiers = true
+		"",    // identifier_case = snake
 		"",    // clean_orphans = true
 		"",    // workers = default
 		"",    // json_as_jsonb = true
@@ -420,7 +420,7 @@ func TestRunGenerateWizardConfiguresAdvancedOptions(t *testing.T) {
 		"",             // source_snapshot_mode = none
 		"n",            // unlogged_tables = false so resume can be enabled
 		"",             // preserve_defaults = true
-		"",             // snake_case_identifiers = true
+		"",             // identifier_case = snake
 		"",             // clean_orphans = true
 		"4",            // workers
 		"",             // json_as_jsonb = true
@@ -488,7 +488,7 @@ func TestCollectGeneratedConfigAdvancedResumeInvalidCombinationRePrompts(t *test
 		"",  // source_snapshot_mode = none
 		"",  // unlogged_tables = true
 		"",  // preserve_defaults = true
-		"",  // snake_case_identifiers = true
+		"",  // identifier_case = snake
 		"",  // clean_orphans = true
 		"",  // workers = default
 		"",  // json_as_jsonb = true

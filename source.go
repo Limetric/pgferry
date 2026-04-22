@@ -50,9 +50,10 @@ type SourceDB interface {
 	// ValidateTypeMapping checks for source-specific type mapping options that are invalid.
 	ValidateTypeMapping(typeMap TypeMappingConfig) error
 
-	// SetSnakeCaseIdentifiers enables or disables snake_case conversion for source identifiers.
-	// When false (default), identifiers are lowercased to match PostgreSQL's default case folding.
-	SetSnakeCaseIdentifiers(enabled bool)
+	// SetIdentifierCase controls how source identifiers are mapped to PostgreSQL names.
+	// Values: "snake" (current default, applies toSnakeCase), "lower" (lowercase only),
+	// "preserve" (keep source casing unchanged — relies on pgferry always quoting DDL identifiers).
+	SetIdentifierCase(mode string)
 
 	// SetCharset sets the character set for the source connection.
 	// For MySQL, this is injected into the DSN. For SQLite, this is a no-op.
@@ -87,7 +88,7 @@ func newConfiguredSourceDB(cfg *MigrationConfig) (SourceDB, error) {
 	if err != nil {
 		return nil, err
 	}
-	src.SetSnakeCaseIdentifiers(cfg.SnakeCaseIdentifiers)
+	src.SetIdentifierCase(cfg.IdentifierCase)
 	src.SetCharset(cfg.Source.Charset)
 	src.SetSourceSchema(cfg.Source.SourceSchema)
 	return src, nil

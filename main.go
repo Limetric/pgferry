@@ -192,7 +192,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d snake_case_identifiers=%t replicate_on_update_current_timestamp=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
+		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d identifier_case=%s replicate_on_update_current_timestamp=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
 		mode,
 		cfg.Workers,
 		cfg.IndexWorkers,
@@ -205,7 +205,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		cfg.CleanOrphans,
 		cfg.CleanOrphansMode,
 		cfg.CleanOrphansMaxRows,
-		cfg.SnakeCaseIdentifiers,
+		cfg.IdentifierCase,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 		cfg.ChunkSize,
 		cfg.CopyRiskAnalysis,

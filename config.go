@@ -37,7 +37,7 @@ type MigrationConfig struct {
 	CleanOrphans                      bool              `toml:"clean_orphans"`
 	CleanOrphansMode                  string            `toml:"clean_orphans_mode"`     // apply|report
 	CleanOrphansMaxRows               int64             `toml:"clean_orphans_max_rows"` // 0 disables threshold
-	SnakeCaseIdentifiers              bool              `toml:"snake_case_identifiers"`
+	IdentifierCase                    string            `toml:"identifier_case"`        // snake|lower|preserve
 	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
 	Workers                           int               `toml:"workers"`
 	IndexWorkers                      int               `toml:"index_workers"`
@@ -150,16 +150,16 @@ func applyConfigEnvOverrides(cfg *MigrationConfig) {
 
 func defaultMigrationConfig() MigrationConfig {
 	return MigrationConfig{
-		OnSchemaExists:       "error",
-		TableFilterMode:      "exact",
-		SourceSnapshotMode:   "none",
-		UnloggedTables:       true,
-		PreserveDefaults:     true,
-		CleanOrphans:         true,
-		CleanOrphansMode:     "apply",
-		SnakeCaseIdentifiers: true,
-		CopyRiskAnalysis:     true,
-		TypeMapping:          defaultTypeMappingConfig(),
+		OnSchemaExists:     "error",
+		TableFilterMode:    "exact",
+		SourceSnapshotMode: "none",
+		UnloggedTables:     true,
+		PreserveDefaults:   true,
+		CleanOrphans:       true,
+		CleanOrphansMode:   "apply",
+		IdentifierCase:     "snake",
+		CopyRiskAnalysis:   true,
+		TypeMapping:        defaultTypeMappingConfig(),
 	}
 }
 
@@ -203,6 +203,17 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	case "exact", "glob":
 	default:
 		return fmt.Errorf("table_filter_mode must be one of: exact, glob")
+	}
+	cfg.IdentifierCase = strings.ToLower(strings.TrimSpace(cfg.IdentifierCase))
+	if cfg.IdentifierCase == "" {
+		cfg.IdentifierCase = "snake"
+	}
+	switch cfg.IdentifierCase {
+	case "snake", "lower":
+		// "preserve" is added in Task 2; until then, reject explicitly so the
+		// refactor does not ship the new surface prematurely.
+	default:
+		return fmt.Errorf("identifier_case must be one of: snake, lower")
 	}
 	includeTables, err := normalizeTableFilterEntries("include_tables", cfg.TableFilterMode, cfg.IncludeTables)
 	if err != nil {

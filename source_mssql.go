@@ -13,13 +13,13 @@ import (
 )
 
 type mssqlSourceDB struct {
-	snakeCaseIDs bool
+	identCase    string
 	sourceSchema string // MSSQL schema (default "dbo")
 }
 
-func (m *mssqlSourceDB) Name() string                         { return "MSSQL" }
-func (m *mssqlSourceDB) SetSnakeCaseIdentifiers(enabled bool) { m.snakeCaseIDs = enabled }
-func (m *mssqlSourceDB) SetCharset(_ string)                  {}
+func (m *mssqlSourceDB) Name() string                  { return "MSSQL" }
+func (m *mssqlSourceDB) SetIdentifierCase(mode string) { m.identCase = mode }
+func (m *mssqlSourceDB) SetCharset(_ string)           {}
 func (m *mssqlSourceDB) SetSourceSchema(schema string) {
 	schema = strings.TrimSpace(schema)
 	if schema == "" {
@@ -30,12 +30,14 @@ func (m *mssqlSourceDB) SetSourceSchema(schema string) {
 func (m *mssqlSourceDB) SupportsSnapshotMode() bool { return true }
 func (m *mssqlSourceDB) MaxWorkers() int            { return 0 }
 
-// identName converts a source identifier to its PostgreSQL name.
+// identName converts a source identifier to its PostgreSQL name according to identCase.
 func (m *mssqlSourceDB) identName(s string) string {
-	if m.snakeCaseIDs {
+	switch m.identCase {
+	case "snake":
 		return toSnakeCase(s)
+	default: // "lower"
+		return strings.ToLower(s)
 	}
-	return strings.ToLower(s)
 }
 
 func (m *mssqlSourceDB) QuoteIdentifier(name string) string {

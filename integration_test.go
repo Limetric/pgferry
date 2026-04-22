@@ -914,7 +914,7 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 	seedMySQLResumeFixture(t, mysqlDB)
 
 	src := &mysqlSourceDB{}
-	src.SetSnakeCaseIdentifiers(true)
+	src.SetIdentifierCase("snake")
 
 	sourceDB, err := src.OpenDB(mysqlDSN)
 	if err != nil {
@@ -948,21 +948,21 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	cfg := &MigrationConfig{
-		Source:               SourceConfig{Type: "mysql", DSN: mysqlDSN},
-		Target:               TargetConfig{DSN: pgDSN},
-		Schema:               pgSchema,
-		IncludeTables:        []string{"events"},
-		Workers:              1,
-		ChunkSize:            2,
-		Resume:               true,
-		UnloggedTables:       false,
-		PreserveDefaults:     true,
-		OnSchemaExists:       "error",
-		SourceSnapshotMode:   "none",
-		SnakeCaseIdentifiers: true,
-		Validation:           "none",
-		TypeMapping:          defaultTypeMappingConfig(),
-		configDir:            tmpDir,
+		Source:             SourceConfig{Type: "mysql", DSN: mysqlDSN},
+		Target:             TargetConfig{DSN: pgDSN},
+		Schema:             pgSchema,
+		IncludeTables:      []string{"events"},
+		Workers:            1,
+		ChunkSize:          2,
+		Resume:             true,
+		UnloggedTables:     false,
+		PreserveDefaults:   true,
+		OnSchemaExists:     "error",
+		SourceSnapshotMode: "none",
+		IdentifierCase:     "snake",
+		Validation:         "none",
+		TypeMapping:        defaultTypeMappingConfig(),
+		configDir:          tmpDir,
 	}
 	schema, _, err = filterSchemaTables(schema, cfg)
 	if err != nil {
@@ -2342,7 +2342,7 @@ func introspectMySQLSchemaForTest(t *testing.T, mysqlDSN string) (*mysqlSourceDB
 	t.Helper()
 
 	src := &mysqlSourceDB{}
-	src.SetSnakeCaseIdentifiers(true)
+	src.SetIdentifierCase("snake")
 
 	mysqlDB, err := src.OpenDB(mysqlDSN)
 	if err != nil {

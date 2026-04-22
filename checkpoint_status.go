@@ -113,7 +113,7 @@ func writeCheckpointStatusText(out io.Writer, path string, state *CheckpointStat
 	}
 	fmt.Fprintf(out, "  target_schema: %s\n", summary.TargetSchema)
 	fmt.Fprintf(out, "  source_snapshot_mode: %s\n", summary.SourceSnapshotMode)
-	fmt.Fprintf(out, "  snake_case_identifiers: %s\n", yesNo(summary.SnakeCaseIdentifiers))
+	fmt.Fprintf(out, "  identifier_case: %s\n", summary.IdentifierCase)
 	fmt.Fprintf(out, "  schema_only: %s\n", yesNo(summary.SchemaOnly))
 	fmt.Fprintf(out, "  data_only: %s\n", yesNo(summary.DataOnly))
 	fmt.Fprintf(out, "  unlogged_tables: %s\n", yesNo(summary.UnloggedTables))

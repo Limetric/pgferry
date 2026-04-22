@@ -17,19 +17,19 @@ type checkpointCompatibility struct {
 }
 
 type checkpointCompatibilitySummary struct {
-	SourceType           string                         `json:"source_type"`
-	SourceDBName         string                         `json:"source_db_name,omitempty"`
-	SourceSchema         string                         `json:"source_schema,omitempty"`
-	TargetSchema         string                         `json:"target_schema"`
-	SourceSnapshotMode   string                         `json:"source_snapshot_mode"`
-	SnakeCaseIdentifiers bool                           `json:"snake_case_identifiers"`
-	SchemaOnly           bool                           `json:"schema_only"`
-	DataOnly             bool                           `json:"data_only"`
-	UnloggedTables       bool                           `json:"unlogged_tables"`
-	ChunkSize            int64                          `json:"chunk_size"`
-	TypeMapping          TypeMappingConfig              `json:"type_mapping"`
-	Hooks                []checkpointCompatibilityHook  `json:"hooks,omitempty"`
-	Tables               []checkpointCompatibilityTable `json:"tables,omitempty"`
+	SourceType         string                         `json:"source_type"`
+	SourceDBName       string                         `json:"source_db_name,omitempty"`
+	SourceSchema       string                         `json:"source_schema,omitempty"`
+	TargetSchema       string                         `json:"target_schema"`
+	SourceSnapshotMode string                         `json:"source_snapshot_mode"`
+	IdentifierCase     string                         `json:"identifier_case"`
+	SchemaOnly         bool                           `json:"schema_only"`
+	DataOnly           bool                           `json:"data_only"`
+	UnloggedTables     bool                           `json:"unlogged_tables"`
+	ChunkSize          int64                          `json:"chunk_size"`
+	TypeMapping        TypeMappingConfig              `json:"type_mapping"`
+	Hooks              []checkpointCompatibilityHook  `json:"hooks,omitempty"`
+	Tables             []checkpointCompatibilityTable `json:"tables,omitempty"`
 }
 
 type checkpointCompatibilityHook struct {
@@ -47,14 +47,14 @@ type checkpointCompatibilityTable struct {
 
 func buildCheckpointCompatibility(cfg *MigrationConfig, schema *Schema, src SourceDB, sourceDBName string, typeMap TypeMappingConfig) (checkpointCompatibility, error) {
 	summary := checkpointCompatibilitySummary{
-		SourceType:           cfg.Source.Type,
-		SourceDBName:         sourceDBName,
-		SourceSchema:         cfg.Source.SourceSchema,
-		TargetSchema:         cfg.Schema,
-		SourceSnapshotMode:   cfg.SourceSnapshotMode,
-		SnakeCaseIdentifiers: cfg.SnakeCaseIdentifiers,
-		SchemaOnly:           cfg.SchemaOnly,
-		DataOnly:             cfg.DataOnly,
+		SourceType:         cfg.Source.Type,
+		SourceDBName:       sourceDBName,
+		SourceSchema:       cfg.Source.SourceSchema,
+		TargetSchema:       cfg.Schema,
+		SourceSnapshotMode: cfg.SourceSnapshotMode,
+		IdentifierCase:     cfg.IdentifierCase,
+		SchemaOnly:         cfg.SchemaOnly,
+		DataOnly:           cfg.DataOnly,
 		// Track settings that affect the data-copy stage or target table state
 		// around resume. Pure schema-creation-only flags such as
 		// preserve_defaults are intentionally excluded because resume starts
@@ -250,8 +250,8 @@ func validateCheckpointCompatibility(path string, state *CheckpointState, expect
 	if saved.ChunkSize != current.ChunkSize {
 		reasons = append(reasons, fmt.Sprintf("chunk_size changed: was %d, now %d", saved.ChunkSize, current.ChunkSize))
 	}
-	if saved.SnakeCaseIdentifiers != current.SnakeCaseIdentifiers {
-		reasons = append(reasons, fmt.Sprintf("snake_case_identifiers changed: was %t, now %t", saved.SnakeCaseIdentifiers, current.SnakeCaseIdentifiers))
+	if saved.IdentifierCase != current.IdentifierCase {
+		reasons = append(reasons, fmt.Sprintf("identifier_case changed: was %q, now %q", saved.IdentifierCase, current.IdentifierCase))
 	}
 	if saved.SchemaOnly != current.SchemaOnly {
 		reasons = append(reasons, fmt.Sprintf("schema_only changed: was %t, now %t", saved.SchemaOnly, current.SchemaOnly))

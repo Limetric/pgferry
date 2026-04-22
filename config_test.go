@@ -140,8 +140,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.CleanOrphansMaxRows != 0 {
 		t.Errorf("default CleanOrphansMaxRows = %d, want 0", cfg.CleanOrphansMaxRows)
 	}
-	if !cfg.SnakeCaseIdentifiers {
-		t.Errorf("default SnakeCaseIdentifiers = %t, want true", cfg.SnakeCaseIdentifiers)
+	if cfg.IdentifierCase != "snake" {
+		t.Errorf("default IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
 	}
 	wantWorkers := runtime.NumCPU()
 	if wantWorkers < 1 {
