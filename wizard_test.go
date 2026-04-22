@@ -718,3 +718,45 @@ func TestRenderConfigTOMLIncludesNewTypeMappingOptions(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderConfigTOML_EmitsIdentifierCasePreserve(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "sakila"
+	cfg.IdentifierCase = "preserve"
+
+	rendered := renderConfigTOML(&cfg)
+	if !strings.Contains(rendered, `identifier_case = "preserve"`) {
+		t.Fatalf("expected identifier_case = \"preserve\" in rendered config, got:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigTOML_EmitsIdentifierCaseLower(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "sakila"
+	cfg.IdentifierCase = "lower"
+
+	rendered := renderConfigTOML(&cfg)
+	if !strings.Contains(rendered, `identifier_case = "lower"`) {
+		t.Fatalf("expected identifier_case = \"lower\" in rendered config, got:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigTOML_OmitsIdentifierCaseWhenDefault(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "sakila"
+	// IdentifierCase left at the default "snake".
+
+	rendered := renderConfigTOML(&cfg)
+	if strings.Contains(rendered, "identifier_case") {
+		t.Fatalf("expected rendered config to omit identifier_case at default, got:\n%s", rendered)
+	}
+}

@@ -486,23 +486,18 @@ func TestFinalizeConfig_IdentifierCaseInvalid(t *testing.T) {
 	}
 }
 
-// TestFinalizeConfig_IdentifierCasePreserveRejected documents Task-1 scope:
-// "preserve" is not yet a valid value and must be rejected. Task 2 will add
-// the "preserve" arm to the validation switch, at which point this test
-// should be updated to assert that "preserve" is accepted.
-func TestFinalizeConfig_IdentifierCasePreserveRejected(t *testing.T) {
+func TestFinalizeConfig_IdentifierCasePreserveAccepted(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Schema = "public"
 	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
 	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
 	cfg.IdentifierCase = "preserve"
 
-	err := finalizeConfig(&cfg, t.TempDir())
-	if err == nil {
-		t.Fatal("expected error for identifier_case=preserve in Task 1")
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
 	}
-	if !strings.Contains(err.Error(), "identifier_case must be one of: snake, lower") {
-		t.Fatalf("expected identifier_case error, got: %v", err)
+	if cfg.IdentifierCase != "preserve" {
+		t.Fatalf("IdentifierCase = %q, want %q", cfg.IdentifierCase, "preserve")
 	}
 }
 

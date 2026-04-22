@@ -255,6 +255,7 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 	cfg.IdentifierCase, err = w.promptChoice("Identifier casing", []wizardOption{
 		{key: "snake", help: "OrderItems -> order_items, USER_ID -> user_id. Cleanest PostgreSQL style; recommended default."},
 		{key: "lower", help: "OrderItems -> orderitems. Lowercase only — no boundary insertion."},
+		{key: "preserve", help: "OrderItems -> OrderItems. Keeps source casing; PostgreSQL DDL is always quoted so mixed case is safe."},
 	}, cfg.IdentifierCase)
 	if err != nil {
 		return nil, err

@@ -209,11 +209,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		cfg.IdentifierCase = "snake"
 	}
 	switch cfg.IdentifierCase {
-	case "snake", "lower":
-		// "preserve" is added in Task 2; until then, reject explicitly so the
-		// refactor does not ship the new surface prematurely.
+	case "snake", "lower", "preserve":
 	default:
-		return fmt.Errorf("identifier_case must be one of: snake, lower")
+		return fmt.Errorf("identifier_case must be one of: snake, lower, preserve")
 	}
 	includeTables, err := normalizeTableFilterEntries("include_tables", cfg.TableFilterMode, cfg.IncludeTables)
 	if err != nil {
