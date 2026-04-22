@@ -230,7 +230,7 @@ func TestMSSQLIntrospectSchemaBatchesSchemaQueries(t *testing.T) {
 	db, stub := openMSSQLIntrospectionStubDB(t)
 	defer db.Close()
 
-	src := &mssqlSourceDB{snakeCaseIDs: true, sourceSchema: "dbo"}
+	src := &mssqlSourceDB{identCase: "snake", sourceSchema: "dbo"}
 	schema, err := src.IntrospectSchema(db, "")
 	if err != nil {
 		t.Fatalf("IntrospectSchema: %v", err)
@@ -320,7 +320,7 @@ func TestMSSQLIntrospectSchemaSemanticWarnings(t *testing.T) {
 	db, _ := openMSSQLIntrospectionStubDB(t)
 	defer db.Close()
 
-	src := &mssqlSourceDB{snakeCaseIDs: true, sourceSchema: "dbo"}
+	src := &mssqlSourceDB{identCase: "snake", sourceSchema: "dbo"}
 	warnings, err := src.IntrospectSchemaSemanticWarnings(db, "")
 	if err != nil {
 		t.Fatalf("IntrospectSchemaSemanticWarnings: %v", err)

@@ -440,6 +440,66 @@ func TestFinalizeConfig_PostGISMariaDBRejected(t *testing.T) {
 	}
 }
 
+func TestFinalizeConfig_IdentifierCaseSnake(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "snake"
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "snake" {
+		t.Fatalf("IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
+	}
+}
+
+func TestFinalizeConfig_IdentifierCaseLower(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "lower"
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "lower" {
+		t.Fatalf("IdentifierCase = %q, want %q", cfg.IdentifierCase, "lower")
+	}
+}
+
+func TestFinalizeConfig_IdentifierCasePreserveAccepted(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "preserve"
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "preserve" {
+		t.Fatalf("IdentifierCase = %q, want %q", cfg.IdentifierCase, "preserve")
+	}
+}
+
+func TestFinalizeConfig_IdentifierCaseNormalization(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "  SNAKE  "
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "snake" {
+		t.Fatalf("IdentifierCase = %q, want %q (whitespace + case normalization)", cfg.IdentifierCase, "snake")
+	}
+}
+
 func TestNormalizeTableFilterEntries_Empty(t *testing.T) {
 	got, err := normalizeTableFilterEntries("include_tables", "exact", nil)
 	if err != nil {

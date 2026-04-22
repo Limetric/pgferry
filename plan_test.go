@@ -550,7 +550,7 @@ func TestRenderPlanReport_MarkdownWithContent(t *testing.T) {
 			CopyRiskAnalysis:   true,
 			PreserveDefaults:   true,
 			CleanOrphans:       true,
-			SnakeCaseIDs:       true,
+			IdentifierCase:     "snake",
 		},
 		TableFilterReport: &PlanTableFilterReport{
 			TotalTables:       3,

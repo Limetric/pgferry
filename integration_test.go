@@ -914,7 +914,7 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 	seedMySQLResumeFixture(t, mysqlDB)
 
 	src := &mysqlSourceDB{}
-	src.SetSnakeCaseIdentifiers(true)
+	src.SetIdentifierCase("snake")
 
 	sourceDB, err := src.OpenDB(mysqlDSN)
 	if err != nil {
@@ -948,21 +948,21 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	cfg := &MigrationConfig{
-		Source:               SourceConfig{Type: "mysql", DSN: mysqlDSN},
-		Target:               TargetConfig{DSN: pgDSN},
-		Schema:               pgSchema,
-		IncludeTables:        []string{"events"},
-		Workers:              1,
-		ChunkSize:            2,
-		Resume:               true,
-		UnloggedTables:       false,
-		PreserveDefaults:     true,
-		OnSchemaExists:       "error",
-		SourceSnapshotMode:   "none",
-		SnakeCaseIdentifiers: true,
-		Validation:           "none",
-		TypeMapping:          defaultTypeMappingConfig(),
-		configDir:            tmpDir,
+		Source:             SourceConfig{Type: "mysql", DSN: mysqlDSN},
+		Target:             TargetConfig{DSN: pgDSN},
+		Schema:             pgSchema,
+		IncludeTables:      []string{"events"},
+		Workers:            1,
+		ChunkSize:          2,
+		Resume:             true,
+		UnloggedTables:     false,
+		PreserveDefaults:   true,
+		OnSchemaExists:     "error",
+		SourceSnapshotMode: "none",
+		IdentifierCase:     "snake",
+		Validation:         "none",
+		TypeMapping:        defaultTypeMappingConfig(),
+		configDir:          tmpDir,
 	}
 	schema, _, err = filterSchemaTables(schema, cfg)
 	if err != nil {
@@ -1323,6 +1323,93 @@ dsn = %q
 	}
 	if ignoredExists {
 		t.Fatalf("unexpected table migrated from dbo schema into %s.ignored_users", pgSchema)
+	}
+}
+
+func TestIntegration_MSSQL_IdentifierCasePreserve(t *testing.T) {
+	mssqlDSN, pgDSN := requireMSSQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mssqlDB, err := sql.Open("sqlserver", mssqlDSN)
+	if err != nil {
+		t.Fatalf("open mssql: %v", err)
+	}
+	defer mssqlDB.Close()
+
+	seedMSSQL(t, mssqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_mssql_preserve")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 2
+identifier_case = "preserve"
+
+[source]
+type = "mssql"
+dsn = %q
+source_schema = "sales"
+
+[type_mapping]
+spatial_mode = "wkt_text"
+
+[target]
+dsn = %q
+`, pgSchema, mssqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	// Source table names are PascalCase (Users, Orders, ExactNumerics, SpecialTypes);
+	// under identifier_case = "preserve" the PG-side names must match byte-for-byte.
+	wantTables := []string{"Users", "Orders", "ExactNumerics", "SpecialTypes"}
+	for _, name := range wantTables {
+		var count int
+		err := pgPool.QueryRow(ctx, `
+			SELECT count(*) FROM information_schema.tables
+			 WHERE table_schema = $1 AND table_name = $2
+		`, pgSchema, name).Scan(&count)
+		if err != nil {
+			t.Fatalf("query table %q: %v", name, err)
+		}
+		if count != 1 {
+			t.Fatalf("expected table %q in schema %q, got count=%d", name, pgSchema, count)
+		}
+	}
+
+	// Spot-check a PascalCase column.
+	var colCount int
+	err = pgPool.QueryRow(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		 WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+	`, pgSchema, "Users", "DisplayName").Scan(&colCount)
+	if err != nil {
+		t.Fatalf("query column Users.DisplayName: %v", err)
+	}
+	if colCount != 1 {
+		t.Fatalf("expected column DisplayName in %s.Users, got count=%d", pgSchema, colCount)
+	}
+
+	// Sanity: the lowercased form must NOT exist (guards against a silent regression
+	// to lower/snake mode).
+	var lowerCount int
+	err = pgPool.QueryRow(ctx, `
+		SELECT count(*) FROM information_schema.tables
+		 WHERE table_schema = $1 AND table_name = $2
+	`, pgSchema, "users").Scan(&lowerCount)
+	if err != nil {
+		t.Fatalf("query lowercase users: %v", err)
+	}
+	if lowerCount != 0 {
+		t.Fatalf("unexpected lowercased table %q.users present; identifier_case=preserve did not apply", pgSchema)
 	}
 }
 
@@ -2342,7 +2429,7 @@ func introspectMySQLSchemaForTest(t *testing.T, mysqlDSN string) (*mysqlSourceDB
 	t.Helper()
 
 	src := &mysqlSourceDB{}
-	src.SetSnakeCaseIdentifiers(true)
+	src.SetIdentifierCase("snake")
 
 	mysqlDB, err := src.OpenDB(mysqlDSN)
 	if err != nil {

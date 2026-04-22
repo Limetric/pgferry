@@ -140,8 +140,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.CleanOrphansMaxRows != 0 {
 		t.Errorf("default CleanOrphansMaxRows = %d, want 0", cfg.CleanOrphansMaxRows)
 	}
-	if !cfg.SnakeCaseIdentifiers {
-		t.Errorf("default SnakeCaseIdentifiers = %t, want true", cfg.SnakeCaseIdentifiers)
+	if cfg.IdentifierCase != "snake" {
+		t.Errorf("default IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
 	}
 	wantWorkers := runtime.NumCPU()
 	if wantWorkers < 1 {
@@ -2181,5 +2181,41 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.ChunkSize != 100000 {
 		t.Errorf("ChunkSize = %d, want 100000 (default)", cfg.ChunkSize)
+	}
+}
+
+func TestIdentifierCase_AcceptsPreserve(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "user:pass@tcp(127.0.0.1:3306)/db"
+	cfg.Target.DSN = "postgres://u:p@127.0.0.1/db?sslmode=disable"
+	cfg.Schema = "public"
+	cfg.IdentifierCase = "preserve"
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig error: %v", err)
+	}
+	if cfg.IdentifierCase != "preserve" {
+		t.Fatalf("IdentifierCase after finalize = %q, want preserve", cfg.IdentifierCase)
+	}
+}
+
+func TestIdentifierCase_RejectsInvalid(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "user:pass@tcp(127.0.0.1:3306)/db"
+	cfg.Target.DSN = "postgres://u:p@127.0.0.1/db?sslmode=disable"
+	cfg.Schema = "public"
+	cfg.IdentifierCase = "camel"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for identifier_case = camel")
+	}
+	if !strings.Contains(err.Error(), "identifier_case must be one of") {
+		t.Fatalf("error = %q, want identifier_case validation message", err.Error())
+	}
+	if !strings.Contains(err.Error(), "preserve") {
+		t.Fatalf("error = %q, want it to list preserve as a valid value", err.Error())
 	}
 }

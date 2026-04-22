@@ -16,20 +16,23 @@ import (
 const sqliteMaxCompoundSelectTerms = 400
 
 type sqliteSourceDB struct {
-	snakeCaseIDs bool
+	identCase string
 }
 
-func (s *sqliteSourceDB) SetSnakeCaseIdentifiers(enabled bool) { s.snakeCaseIDs = enabled }
-func (s *sqliteSourceDB) SetCharset(_ string)                  {}
-func (s *sqliteSourceDB) SetSourceSchema(_ string)             {}
+func (s *sqliteSourceDB) SetIdentifierCase(mode string) { s.identCase = mode }
+func (s *sqliteSourceDB) SetCharset(_ string)           {}
+func (s *sqliteSourceDB) SetSourceSchema(_ string)      {}
 
-// identName converts a source identifier to its PostgreSQL name.
-// When snakeCaseIDs is true, applies toSnakeCase; otherwise lowercases.
+// identName converts a source identifier to its PostgreSQL name according to identCase.
 func (s *sqliteSourceDB) identName(name string) string {
-	if s.snakeCaseIDs {
+	switch s.identCase {
+	case "preserve":
+		return name
+	case "snake":
 		return toSnakeCase(name)
+	default: // "lower"
+		return strings.ToLower(name)
 	}
-	return strings.ToLower(name)
 }
 
 func (s *sqliteSourceDB) Name() string { return "SQLite" }

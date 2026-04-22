@@ -9,7 +9,7 @@ func TestNewConfiguredSourceDB_MSSQLSourceSchema(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "mssql"
 	cfg.Source.SourceSchema = "sales"
-	cfg.SnakeCaseIdentifiers = true
+	cfg.IdentifierCase = "snake"
 
 	src, err := newConfiguredSourceDB(&cfg)
 	if err != nil {
@@ -24,8 +24,8 @@ func TestNewConfiguredSourceDB_MSSQLSourceSchema(t *testing.T) {
 	if mssqlSrc.sourceSchema != "sales" {
 		t.Fatalf("sourceSchema = %q, want sales", mssqlSrc.sourceSchema)
 	}
-	if !mssqlSrc.snakeCaseIDs {
-		t.Fatal("snakeCaseIDs = false, want true")
+	if mssqlSrc.identCase != "snake" {
+		t.Fatalf("identCase = %q, want snake", mssqlSrc.identCase)
 	}
 }
 
@@ -33,7 +33,7 @@ func TestNewConfiguredSourceDB_MySQLAppliesCharsetAndIdentifiers(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "mysql"
 	cfg.Source.Charset = "latin1"
-	cfg.SnakeCaseIdentifiers = false
+	cfg.IdentifierCase = "lower"
 
 	src, err := newConfiguredSourceDB(&cfg)
 	if err != nil {
@@ -48,8 +48,8 @@ func TestNewConfiguredSourceDB_MySQLAppliesCharsetAndIdentifiers(t *testing.T) {
 	if mysqlSrc.charset != "latin1" {
 		t.Fatalf("charset = %q, want latin1", mysqlSrc.charset)
 	}
-	if mysqlSrc.snakeCaseIDs {
-		t.Fatal("snakeCaseIDs = true, want false")
+	if mysqlSrc.identCase != "lower" {
+		t.Fatalf("identCase = %q, want lower", mysqlSrc.identCase)
 	}
 }
 
@@ -57,7 +57,7 @@ func TestNewConfiguredSourceDB_MariaDBAppliesCharsetAndIdentifiers(t *testing.T)
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "mariadb"
 	cfg.Source.Charset = "latin1"
-	cfg.SnakeCaseIdentifiers = false
+	cfg.IdentifierCase = "lower"
 
 	src, err := newConfiguredSourceDB(&cfg)
 	if err != nil {
@@ -72,8 +72,8 @@ func TestNewConfiguredSourceDB_MariaDBAppliesCharsetAndIdentifiers(t *testing.T)
 	if mariaSrc.charset != "latin1" {
 		t.Fatalf("charset = %q, want latin1", mariaSrc.charset)
 	}
-	if mariaSrc.snakeCaseIDs {
-		t.Fatal("snakeCaseIDs = true, want false")
+	if mariaSrc.identCase != "lower" {
+		t.Fatalf("identCase = %q, want lower", mariaSrc.identCase)
 	}
 	if mariaSrc.Name() != "MariaDB" {
 		t.Fatalf("Name() = %q, want MariaDB", mariaSrc.Name())
@@ -83,7 +83,7 @@ func TestNewConfiguredSourceDB_MariaDBAppliesCharsetAndIdentifiers(t *testing.T)
 func TestNewConfiguredSourceDB_SQLiteAppliesIdentifiers(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Source.Type = "sqlite"
-	cfg.SnakeCaseIdentifiers = false
+	cfg.IdentifierCase = "lower"
 
 	src, err := newConfiguredSourceDB(&cfg)
 	if err != nil {
@@ -95,8 +95,8 @@ func TestNewConfiguredSourceDB_SQLiteAppliesIdentifiers(t *testing.T) {
 		t.Fatalf("source type = %T, want *sqliteSourceDB", src)
 	}
 
-	if sqliteSrc.snakeCaseIDs {
-		t.Fatal("snakeCaseIDs = true, want false")
+	if sqliteSrc.identCase != "lower" {
+		t.Fatalf("identCase = %q, want lower", sqliteSrc.identCase)
 	}
 }
 
@@ -149,12 +149,44 @@ func (f fakeNamedSource) SourceTableRef(Table) string                           
 func (f fakeNamedSource) SupportsSnapshotMode() bool                                 { return false }
 func (f fakeNamedSource) MaxWorkers() int                                            { return 0 }
 func (f fakeNamedSource) ValidateTypeMapping(TypeMappingConfig) error                { return nil }
-func (f fakeNamedSource) SetSnakeCaseIdentifiers(bool)                               {}
+func (f fakeNamedSource) SetIdentifierCase(string)                                   {}
 func (f fakeNamedSource) SetCharset(string)                                          {}
 func (f fakeNamedSource) SetSourceSchema(string)                                     {}
 
 func TestSourceTypeForDB_FallsBackToNameForTestDoubles(t *testing.T) {
 	if got := sourceTypeForDB(fakeNamedSource{name: "MariaDB"}); got != "mariadb" {
 		t.Fatalf("sourceTypeForDB(fake MariaDB) = %q, want mariadb", got)
+	}
+}
+
+func TestMySQLIdentName_PreserveMode(t *testing.T) {
+	src := &mysqlSourceDB{}
+	src.SetIdentifierCase("preserve")
+	cases := []struct{ in, want string }{
+		{"SomeProducts", "SomeProducts"},
+		{"SomeProductId", "SomeProductId"},
+		{"HTMLParser", "HTMLParser"},
+		{"user_id", "user_id"},
+	}
+	for _, tc := range cases {
+		if got := src.identName(tc.in); got != tc.want {
+			t.Errorf("identName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSQLiteIdentName_PreserveMode(t *testing.T) {
+	src := &sqliteSourceDB{}
+	src.SetIdentifierCase("preserve")
+	if got := src.identName("MixedCase"); got != "MixedCase" {
+		t.Errorf("identName(\"MixedCase\") = %q, want %q", got, "MixedCase")
+	}
+}
+
+func TestMSSQLIdentName_PreserveMode(t *testing.T) {
+	src := &mssqlSourceDB{}
+	src.SetIdentifierCase("preserve")
+	if got := src.identName("SomeProducts"); got != "SomeProducts" {
+		t.Errorf("identName(\"SomeProducts\") = %q, want %q", got, "SomeProducts")
 	}
 }

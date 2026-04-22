@@ -483,12 +483,12 @@ func TestMSSQLName(t *testing.T) {
 }
 
 func TestMSSQLIdentName(t *testing.T) {
-	src := &mssqlSourceDB{snakeCaseIDs: true}
+	src := &mssqlSourceDB{identCase: "snake"}
 	if got := src.identName("MyColumn"); got != "my_column" {
 		t.Errorf("identName(MyColumn) = %q, want my_column", got)
 	}
 
-	src.snakeCaseIDs = false
+	src.identCase = "lower"
 	if got := src.identName("MyColumn"); got != "mycolumn" {
 		t.Errorf("identName(MyColumn) = %q, want mycolumn", got)
 	}

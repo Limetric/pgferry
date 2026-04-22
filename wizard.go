@@ -252,11 +252,11 @@ func collectGeneratedConfig(w *wizardPrompter, configDir string) (*MigrationConf
 		return nil, err
 	}
 
-	cfg.SnakeCaseIdentifiers, err = w.promptBoolGuided(
-		"Convert identifiers to snake_case",
-		cfg.SnakeCaseIdentifiers,
-		"Produces cleaner PostgreSQL names, for example OrderItems -> order_items and USER_ID -> user_id. If turned off, pgferry only lowercases names, so OrderItems becomes orderitems instead. Leave it on unless existing SQL or application code depends on the original source naming.",
-	)
+	cfg.IdentifierCase, err = w.promptChoice("Identifier casing", []wizardOption{
+		{key: "snake", help: "OrderItems -> order_items, USER_ID -> user_id. Cleanest PostgreSQL style; recommended default."},
+		{key: "lower", help: "OrderItems -> orderitems. Lowercase only — no boundary insertion."},
+		{key: "preserve", help: "OrderItems -> OrderItems. Keeps source casing; PostgreSQL DDL is always quoted so mixed case is safe."},
+	}, cfg.IdentifierCase)
 	if err != nil {
 		return nil, err
 	}
@@ -614,8 +614,8 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	if !cfg.CleanOrphans {
 		writeLine("clean_orphans = false")
 	}
-	if !cfg.SnakeCaseIdentifiers {
-		writeLine("snake_case_identifiers = false")
+	if cfg.IdentifierCase != "" && cfg.IdentifierCase != "snake" {
+		writeLine("identifier_case = %q", cfg.IdentifierCase)
 	}
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		writeLine("replicate_on_update_current_timestamp = true")
