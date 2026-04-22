@@ -107,7 +107,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
 | `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
-| `snake_case_identifiers` | bool | `true` | Convert source names to `snake_case`. When false, pgferry lowercases only. |
+| `identifier_case` | string | `"snake"` | How source identifiers map to PostgreSQL names. `"snake"` converts `OrderItems` → `order_items`. `"lower"` lowercases only (`OrderItems` → `orderitems`). `"preserve"` keeps the source casing unchanged (`OrderItems` → `OrderItems`); PostgreSQL DDL is always quoted so mixed-case names are safe. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
 | `preserve_defaults` | bool | `true` | Keep source column defaults in the created PostgreSQL schema. |
 | `add_unsigned_checks` | bool | `false` | Add `CHECK` constraints for MySQL-family unsigned ranges. |

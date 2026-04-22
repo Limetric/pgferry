@@ -7,15 +7,24 @@ pgferry tries to be explicit about where it is opinionated and where it delibera
 
 ## Naming
 
-- `snake_case_identifiers = true` converts source identifiers to PostgreSQL-style `snake_case`.
-- `snake_case_identifiers = false` keeps names lowercased only.
-- Generated PostgreSQL SQL uses quoted identifiers.
+The `identifier_case` option controls how source identifiers map to PostgreSQL names:
+
+- `identifier_case = "snake"` (default) converts to PostgreSQL-style `snake_case`.
+- `identifier_case = "lower"` lowercases only — no word-boundary insertion.
+- `identifier_case = "preserve"` keeps the original source casing unchanged.
+
+Generated PostgreSQL DDL always uses quoted identifiers, so mixed-case names produced by `"preserve"` are safe to use in downstream SQL and tooling (referenced as `"SomeProducts"` rather than `someproducts`).
 
 Examples:
 
-- `parentUserId` becomes `parent_user_id`
-- `UserName` becomes `username` when `snake_case_identifiers = false`
-- PostgreSQL SQL is emitted as `"app"."users"` rather than `app.users`
+| Source identifier | `"snake"` | `"lower"` | `"preserve"` |
+| --- | --- | --- | --- |
+| `parentUserId` | `parent_user_id` | `parentuserid` | `parentUserId` |
+| `UserName` | `user_name` | `username` | `UserName` |
+| `SomeProducts` | `some_products` | `someproducts` | `SomeProducts` |
+| `HTMLParser` | `html_parser` | `htmlparser` | `HTMLParser` |
+
+PostgreSQL SQL is emitted as `"app"."users"` rather than `app.users` under all three modes.
 
 ## Auto-increment and sequences
 
