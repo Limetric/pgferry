@@ -2,7 +2,7 @@ name: Claude Code Issue Triage
 
 on:
   issues:
-    types: [opened]
+    types: [ opened ]
 
 jobs:
   triage-issue:
@@ -21,9 +21,16 @@ jobs:
 
       - name: Run Claude Code for Issue Triage
         uses: anthropics/claude-code-action@v1
+        env:
+          # Skip the bubblewrap subprocess sandbox: it fails to init intermittently
+          # on ubuntu-slim runners (unprivileged user namespaces unavailable),
+          # causing every Bash tool call to return "Sandbox failed to initialize."
+          # The allowedTools restriction below still constrains what gh commands run.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "0"
         with:
           # NOTE: /label-issue here requires a .claude/commands/label-issue.md file in your repo (see this repo's .claude directory for an example)
-          prompt: "/label-issue REPO: ${{ github.repository }} ISSUE_NUMBER: ${{ github.event.issue.number }}"
+          prompt: "/label-issue REPO: ${{ github.repository }} ISSUE_NUMBER: ${{
+            github.event.issue.number }}"
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_non_write_users: "*" # Required for issue triage workflow, if users without repo write access create issues
           # github_token: ${{ secrets.GITHUB_TOKEN }}
