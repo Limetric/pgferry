@@ -158,3 +158,35 @@ func TestSourceTypeForDB_FallsBackToNameForTestDoubles(t *testing.T) {
 		t.Fatalf("sourceTypeForDB(fake MariaDB) = %q, want mariadb", got)
 	}
 }
+
+func TestMySQLIdentName_PreserveMode(t *testing.T) {
+	src := &mysqlSourceDB{}
+	src.SetIdentifierCase("preserve")
+	cases := []struct{ in, want string }{
+		{"SomeProducts", "SomeProducts"},
+		{"SomeProductId", "SomeProductId"},
+		{"HTMLParser", "HTMLParser"},
+		{"user_id", "user_id"},
+	}
+	for _, tc := range cases {
+		if got := src.identName(tc.in); got != tc.want {
+			t.Errorf("identName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSQLiteIdentName_PreserveMode(t *testing.T) {
+	src := &sqliteSourceDB{}
+	src.SetIdentifierCase("preserve")
+	if got := src.identName("MixedCase"); got != "MixedCase" {
+		t.Errorf("identName(\"MixedCase\") = %q, want %q", got, "MixedCase")
+	}
+}
+
+func TestMSSQLIdentName_PreserveMode(t *testing.T) {
+	src := &mssqlSourceDB{}
+	src.SetIdentifierCase("preserve")
+	if got := src.identName("SomeProducts"); got != "SomeProducts" {
+		t.Errorf("identName(\"SomeProducts\") = %q, want %q", got, "SomeProducts")
+	}
+}

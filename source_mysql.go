@@ -34,6 +34,8 @@ func (m *mysqlSourceDB) SetSourceSchema(_ string)      {}
 // identName converts a source identifier to its PostgreSQL name according to identCase.
 func (m *mysqlSourceDB) identName(s string) string {
 	switch m.identCase {
+	case "preserve":
+		return s
 	case "snake":
 		return toSnakeCase(s)
 	default: // "lower"

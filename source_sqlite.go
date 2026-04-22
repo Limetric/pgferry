@@ -26,6 +26,8 @@ func (s *sqliteSourceDB) SetSourceSchema(_ string)      {}
 // identName converts a source identifier to its PostgreSQL name according to identCase.
 func (s *sqliteSourceDB) identName(name string) string {
 	switch s.identCase {
+	case "preserve":
+		return name
 	case "snake":
 		return toSnakeCase(name)
 	default: // "lower"

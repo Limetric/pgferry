@@ -33,6 +33,8 @@ func (m *mssqlSourceDB) MaxWorkers() int            { return 0 }
 // identName converts a source identifier to its PostgreSQL name according to identCase.
 func (m *mssqlSourceDB) identName(s string) string {
 	switch m.identCase {
+	case "preserve":
+		return s
 	case "snake":
 		return toSnakeCase(s)
 	default: // "lower"
