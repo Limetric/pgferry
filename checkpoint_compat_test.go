@@ -202,14 +202,7 @@ func TestValidateCheckpointCompatibility_IdentifierCaseChanged(t *testing.T) {
 	state := newCheckpointStateWithCompatibility(&compat)
 
 	changed := *compat.Summary
-	if changed.IdentifierCase == "" {
-		changed.IdentifierCase = "snake"
-	}
-	if changed.IdentifierCase == "snake" {
-		changed.IdentifierCase = "lower"
-	} else {
-		changed.IdentifierCase = "snake"
-	}
+	changed.IdentifierCase = "lower"
 	changedCompat := testCheckpointCompatibilityWithSummary(changed)
 
 	err := validateCheckpointCompatibility(filepath.Join(t.TempDir(), "cp.json"), state, changedCompat)

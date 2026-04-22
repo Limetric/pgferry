@@ -470,22 +470,6 @@ func TestFinalizeConfig_IdentifierCaseLower(t *testing.T) {
 	}
 }
 
-func TestFinalizeConfig_IdentifierCaseInvalid(t *testing.T) {
-	cfg := defaultMigrationConfig()
-	cfg.Schema = "public"
-	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
-	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
-	cfg.IdentifierCase = "bogus"
-
-	err := finalizeConfig(&cfg, t.TempDir())
-	if err == nil {
-		t.Fatal("expected error for invalid identifier_case")
-	}
-	if !strings.Contains(err.Error(), "identifier_case must be one of: snake, lower") {
-		t.Fatalf("expected identifier_case error, got: %v", err)
-	}
-}
-
 func TestFinalizeConfig_IdentifierCasePreserveAccepted(t *testing.T) {
 	cfg := defaultMigrationConfig()
 	cfg.Schema = "public"

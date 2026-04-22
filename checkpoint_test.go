@@ -16,6 +16,7 @@ func testCheckpointCompatibility() checkpointCompatibility {
 		TargetSchema:       "public",
 		SourceSnapshotMode: "none",
 		ChunkSize:          100000,
+		IdentifierCase:     "snake",
 		TypeMapping:        defaultTypeMappingConfig(),
 		Tables: []checkpointCompatibilityTable{
 			{SourceName: "users", PGName: "users", TableHash: "users-hash"},
