@@ -440,6 +440,87 @@ func TestFinalizeConfig_PostGISMariaDBRejected(t *testing.T) {
 	}
 }
 
+func TestFinalizeConfig_IdentifierCaseSnake(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "snake"
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "snake" {
+		t.Fatalf("IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
+	}
+}
+
+func TestFinalizeConfig_IdentifierCaseLower(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "lower"
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "lower" {
+		t.Fatalf("IdentifierCase = %q, want %q", cfg.IdentifierCase, "lower")
+	}
+}
+
+func TestFinalizeConfig_IdentifierCaseInvalid(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "bogus"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for invalid identifier_case")
+	}
+	if !strings.Contains(err.Error(), "identifier_case must be one of: snake, lower") {
+		t.Fatalf("expected identifier_case error, got: %v", err)
+	}
+}
+
+// TestFinalizeConfig_IdentifierCasePreserveRejected documents Task-1 scope:
+// "preserve" is not yet a valid value and must be rejected. Task 2 will add
+// the "preserve" arm to the validation switch, at which point this test
+// should be updated to assert that "preserve" is accepted.
+func TestFinalizeConfig_IdentifierCasePreserveRejected(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "preserve"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for identifier_case=preserve in Task 1")
+	}
+	if !strings.Contains(err.Error(), "identifier_case must be one of: snake, lower") {
+		t.Fatalf("expected identifier_case error, got: %v", err)
+	}
+}
+
+func TestFinalizeConfig_IdentifierCaseNormalization(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Schema = "public"
+	cfg.Source = SourceConfig{Type: "mysql", DSN: "root@tcp(localhost)/test"}
+	cfg.Target = TargetConfig{DSN: "postgres://localhost/test"}
+	cfg.IdentifierCase = "  SNAKE  "
+
+	if err := finalizeConfig(&cfg, t.TempDir()); err != nil {
+		t.Fatalf("finalizeConfig: %v", err)
+	}
+	if cfg.IdentifierCase != "snake" {
+		t.Fatalf("IdentifierCase = %q, want %q (whitespace + case normalization)", cfg.IdentifierCase, "snake")
+	}
+}
+
 func TestNormalizeTableFilterEntries_Empty(t *testing.T) {
 	got, err := normalizeTableFilterEntries("include_tables", "exact", nil)
 	if err != nil {
