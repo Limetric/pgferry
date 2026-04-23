@@ -15,7 +15,7 @@ MSSQL support uses `sys.*` catalog introspection and a small set of SQL Server-s
 - choose the right `source_schema` instead of relying on the `dbo` default blindly
 - decide whether `datetime_as_timestamptz` should be enabled
 - keep `money_as_numeric = true` unless you explicitly want text preservation
-- enable `single_tx` only if snapshot isolation is available on the source database
+- `single_tx` turns on `ALLOW_SNAPSHOT_ISOLATION` on the source database when the login can run `ALTER DATABASE`; otherwise grant that or enable it ahead of time
 
 ## Common caveats
 

@@ -278,8 +278,16 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 	var tx *sql.Tx
 	switch cfg.Src.Name() {
 	case "MSSQL":
+		dbName, nameErr := cfg.Src.ExtractDBName(cfg.SrcDSN)
+		if nameErr != nil {
+			return fmt.Errorf("mssql single_tx: %w", nameErr)
+		}
+		alter := fmt.Sprintf("ALTER DATABASE %s SET ALLOW_SNAPSHOT_ISOLATION ON", cfg.Src.QuoteIdentifier(dbName))
+		if _, err := srcDB.ExecContext(ctx, alter); err != nil {
+			return fmt.Errorf("enable allow_snapshot_isolation on source database %q (required for source_snapshot_mode=single_tx; login needs ALTER on the database): %w", dbName, err)
+		}
 		if _, err := srcDB.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"); err != nil {
-			return fmt.Errorf("set source transaction isolation (hint: ensure ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON): %w", err)
+			return fmt.Errorf("set source transaction isolation: %w", err)
 		}
 		// go-mssqldb rejects ReadOnly transactions ("read-only transactions are not supported").
 		// Snapshot isolation still gives a consistent point-in-time view; we only issue SELECTs.
