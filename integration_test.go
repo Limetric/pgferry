@@ -408,6 +408,179 @@ dsn = %q
 	}
 }
 
+func TestIntegration_MySQL_TableFilter_ExactExcludeComments(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_tbl_exact")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 2
+exclude_tables = ["comments"]
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "users", 5)
+	assertRowCount(t, pgPool, pgSchema, "posts", 5)
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "comments", 0)
+	assertFKExists(t, pgPool, pgSchema, "posts", "users")
+
+	var name string
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("SELECT name FROM %s.users WHERE id = 1", pgIdent(pgSchema)),
+	).Scan(&name)
+	if err != nil {
+		t.Fatalf("spot-check users: %v", err)
+	}
+	if name != "Alice" {
+		t.Errorf("users.name = %q, want Alice", name)
+	}
+}
+
+func TestIntegration_MySQL_TableFilter_GlobIncludeMeta(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLTableFilterGlob(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_tbl_glob")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 2
+table_filter_mode = "glob"
+include_tables = ["meta_*"]
+exclude_tables = ["meta_skip"]
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "meta_keep", 1)
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "meta_skip", 0)
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "users", 0)
+	assertRowCount(t, pgPool, pgSchema, "meta_keep", 1)
+}
+
+func TestIntegration_MySQL_IdentifierCasePreserve(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+	ctx := context.Background()
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+
+	var lowerCaseTableNames int
+	if err := mysqlDB.QueryRow("SELECT @@lower_case_table_names").Scan(&lowerCaseTableNames); err != nil {
+		t.Fatalf("read lower_case_table_names: %v", err)
+	}
+	if lowerCaseTableNames != 0 {
+		t.Skipf("skipping: MySQL @@lower_case_table_names=%d (need 0 for case-preserved table names)", lowerCaseTableNames)
+	}
+
+	seedMySQLMixedCaseIdentifiers(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_mysql_preserve")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 1
+identifier_case = "preserve"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "UserAccounts", 1)
+	var colCount int
+	err = pgPool.QueryRow(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		 WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+	`, pgSchema, "UserAccounts", "DisplayName").Scan(&colCount)
+	if err != nil {
+		t.Fatalf("query column UserAccounts.DisplayName: %v", err)
+	}
+	if colCount != 1 {
+		t.Fatalf("expected column DisplayName in %s.UserAccounts, got count=%d", pgSchema, colCount)
+	}
+
+	var display string
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf(`SELECT %s FROM %s.%s WHERE %s = 1`,
+			pgIdent("DisplayName"), pgIdent(pgSchema), pgIdent("UserAccounts"), pgIdent("UserID")),
+	).Scan(&display)
+	if err != nil {
+		t.Fatalf("select DisplayName: %v", err)
+	}
+	if display != "Alice" {
+		t.Fatalf("DisplayName = %q, want Alice", display)
+	}
+
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "user_accounts", 0)
+	assertInformationSchemaTableCount(t, pgPool, pgSchema, "useraccounts", 0)
+}
+
 func TestIntegration_MySQL_SchemaOnly(t *testing.T) {
 	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
 	ctx := context.Background()
@@ -1608,6 +1781,90 @@ func seedMySQLNoOrphans(t *testing.T, db *sql.DB) {
 	}
 }
 
+// seedMySQLTableFilterGlob loads users/posts/comments plus meta_keep and meta_skip for glob filter tests.
+func seedMySQLTableFilterGlob(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS meta_skip",
+		"DROP TABLE IF EXISTS meta_keep",
+		"DROP TABLE IF EXISTS places_optional",
+		"DROP TABLE IF EXISTS places",
+		"DROP TABLE IF EXISTS events",
+		"DROP TABLE IF EXISTS comments",
+		"DROP TABLE IF EXISTS posts",
+		"DROP TABLE IF EXISTS users",
+
+		`CREATE TABLE users (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL,
+			email VARCHAR(200) NULL
+		)`,
+		`CREATE TABLE posts (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			user_id INT NOT NULL,
+			title VARCHAR(200) NOT NULL,
+			body TEXT,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		`CREATE TABLE comments (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			post_id INT NOT NULL,
+			user_id INT NOT NULL,
+			content TEXT,
+			FOREIGN KEY (post_id) REFERENCES posts(id),
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		)`,
+		`CREATE TABLE meta_keep (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			note VARCHAR(50) NOT NULL
+		)`,
+		`CREATE TABLE meta_skip (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			junk VARCHAR(10)
+		)`,
+
+		"INSERT INTO users (name, email) VALUES ('Alice', 'alice@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Bob', NULL)",
+		"INSERT INTO users (name, email) VALUES ('Charlie', 'charlie@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Diana', 'diana@example.com')",
+		"INSERT INTO users (name, email) VALUES ('Eve', NULL)",
+
+		"INSERT INTO posts (user_id, title, body) VALUES (1, 'First Post', 'Hello world')",
+		"INSERT INTO posts (user_id, title, body) VALUES (2, 'Bobs Post', 'Content here')",
+		"INSERT INTO posts (user_id, title, body) VALUES (3, 'Thoughts', 'Some thoughts')",
+		"INSERT INTO posts (user_id, title, body) VALUES (4, 'Update', NULL)",
+		"INSERT INTO posts (user_id, title, body) VALUES (5, 'Hello', 'Eve here')",
+
+		"INSERT INTO comments (post_id, user_id, content) VALUES (1, 2, 'Nice post!')",
+		"INSERT INTO meta_keep (note) VALUES ('keep-me')",
+		"INSERT INTO meta_skip (junk) VALUES ('skip')",
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql table filter glob %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
+// seedMySQLMixedCaseIdentifiers creates a single PascalCase table for identifier_case=preserve tests.
+func seedMySQLMixedCaseIdentifiers(t *testing.T, db *sql.DB) {
+	t.Helper()
+
+	stmts := []string{
+		"DROP TABLE IF EXISTS `UserAccounts`",
+		"CREATE TABLE `UserAccounts` (`UserID` INT AUTO_INCREMENT PRIMARY KEY, `DisplayName` VARCHAR(100) NOT NULL)",
+		"INSERT INTO `UserAccounts` (`DisplayName`) VALUES ('Alice')",
+	}
+
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed mysql mixed-case identifiers %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+}
+
 func seedMySQLResumeFixture(t *testing.T, db *sql.DB) {
 	t.Helper()
 	ctx := context.Background()
@@ -2472,6 +2729,21 @@ func assertRowCount(t *testing.T, pool *pgxpool.Pool, schema, table string, want
 	}
 	if got != want {
 		t.Errorf("%s.%s row count: got %d, want %d", schema, table, got, want)
+	}
+}
+
+func assertInformationSchemaTableCount(t *testing.T, pool *pgxpool.Pool, schema, table string, want int) {
+	t.Helper()
+	var got int
+	err := pool.QueryRow(context.Background(), `
+		SELECT count(*) FROM information_schema.tables
+		 WHERE table_schema = $1 AND table_name = $2
+	`, schema, table).Scan(&got)
+	if err != nil {
+		t.Fatalf("information_schema.tables %s.%s: %v", schema, table, err)
+	}
+	if got != want {
+		t.Errorf("information_schema table %q in schema %q: count=%d, want %d", table, schema, got, want)
 	}
 }
 
