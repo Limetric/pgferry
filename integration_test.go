@@ -2111,6 +2111,9 @@ func seedSakila(t *testing.T, db *sql.DB) {
 		"DROP TABLE IF EXISTS comments",
 		"DROP TABLE IF EXISTS posts",
 		"DROP TABLE IF EXISTS users",
+		"DROP TABLE IF EXISTS meta_skip",
+		"DROP TABLE IF EXISTS meta_keep",
+		"DROP TABLE IF EXISTS `UserAccounts`",
 
 		// Drop in reverse dependency order
 		"DROP TABLE IF EXISTS payment",
