@@ -786,6 +786,12 @@ func TestIntegration_SQLite_ResumeAfterChunkFailure(t *testing.T) {
 	if state == nil || state.Tables["events"] == nil {
 		t.Fatalf("checkpoint state = %+v, want events progress", state)
 	}
+	if !state.isChunkCompleted("events", 0) {
+		t.Fatalf("checkpoint should mark first chunk completed: %+v", state.Tables["events"])
+	}
+	if state.isChunkCompleted("events", 1) {
+		t.Fatalf("checkpoint should not mark failed chunk completed: %+v", state.Tables["events"])
+	}
 
 	fixDB, err := sql.Open("sqlite", sqliteFile)
 	if err != nil {
