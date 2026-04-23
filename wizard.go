@@ -134,6 +134,16 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 		if err := generatedConfigPlanner(cfg, w.out, wizardPlanOptions()); err != nil {
 			return fmt.Errorf("run plan: %w", err)
 		}
+		runAfterPlan, err := w.promptBool(
+			"Run the migration now with this config",
+			false,
+		)
+		if err != nil {
+			return err
+		}
+		if runAfterPlan {
+			nextStep = "run"
+		}
 	}
 
 	if nextStep == "run" {

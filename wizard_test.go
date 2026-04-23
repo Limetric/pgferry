@@ -329,6 +329,7 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 		"n",
 		"n",
 		"plan",
+		"",
 	}, "\n") + "\n"
 
 	cmd := &cobra.Command{}
@@ -346,6 +347,77 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "plan ok") {
 		t.Fatalf("expected planner output, got:\n%s", out.String())
+	}
+}
+
+func TestRunGenerateWizardRunsMigrationAfterPlanWhenConfirmed(t *testing.T) {
+	dir := t.TempDir()
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(prevWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+
+	prevPlanner := generatedConfigPlanner
+	generatedConfigPlanner = func(cfg *MigrationConfig, out io.Writer, _ PlanOptions) error {
+		_, err := out.Write([]byte("plan ok\n"))
+		return err
+	}
+	t.Cleanup(func() {
+		generatedConfigPlanner = prevPlanner
+	})
+
+	var runnerCalled bool
+	prevRunner := generatedConfigRunner
+	generatedConfigRunner = func(cfg *MigrationConfig, _ MigrateOptions) error {
+		runnerCalled = true
+		return nil
+	}
+	t.Cleanup(func() {
+		generatedConfigRunner = prevRunner
+	})
+
+	var out bytes.Buffer
+	input := strings.Join([]string{
+		"sqlite",
+		"/tmp/source.db",
+		"n",
+		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable",
+		"n",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"n",
+		"n",
+		"plan",
+		"y",
+	}, "\n") + "\n"
+
+	cmd := &cobra.Command{}
+	cmd.SetIn(strings.NewReader(input))
+	cmd.SetOut(&out)
+
+	if err := runGenerateWizard(cmd, nil); err != nil {
+		t.Fatalf("runGenerateWizard() error: %v", err)
+	}
+	if !runnerCalled {
+		t.Fatal("expected generated config runner to be called after confirming post-plan migration")
+	}
+	if !strings.Contains(out.String(), "Starting migration...") {
+		t.Fatalf("expected migration start message, got:\n%s", out.String())
 	}
 }
 
