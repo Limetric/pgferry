@@ -33,7 +33,8 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 		return nil
 	}
 
-	// schema_only: skip SET LOGGED (tables are already LOGGED)
+	// schema_only: skip SET LOGGED. createTables already chose logged vs UNLOGGED;
+	// without this step, UNLOGGED tables from an unlogged load stay UNLOGGED.
 	if !cfg.SchemaOnly {
 		log.Printf("  SET LOGGED...")
 		if err := setLogged(ctx, pool, schema, pgSchema); err != nil {

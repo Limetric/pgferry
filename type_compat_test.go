@@ -39,8 +39,9 @@ func TestCollectUnsupportedTypeErrors_UnknownAsText_PerSource(t *testing.T) {
 			}
 			tm := def
 			tm.UnknownAsText = true
-			if n := len(collectUnsupportedTypeErrors(tt.schema, tm, tt.mapper)); n != 0 {
-				t.Fatalf("with unknown_as_text, want no errors, got %d: %v", n, collectUnsupportedTypeErrors(tt.schema, tm, tt.mapper))
+			errs := collectUnsupportedTypeErrors(tt.schema, tm, tt.mapper)
+			if len(errs) != 0 {
+				t.Fatalf("with unknown_as_text, want no errors, got %d: %v", len(errs), errs)
 			}
 			col := tt.schema.Tables[0].Columns[0]
 			got, err := tt.mapper(col, tm)

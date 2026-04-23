@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
 
@@ -54,6 +53,8 @@ func introspectMSSQLSchemaForTest(t *testing.T, mssqlDSN string) (*mssqlSourceDB
 
 func runValidateFromConfig(t *testing.T, cfgPath string) {
 	t.Helper()
+	prev, prevV := configPath, validateConfigPath
+	t.Cleanup(func() { configPath, validateConfigPath = prev, prevV })
 	configPath = ""
 	validateConfigPath = ""
 	if err := runValidate(&cobra.Command{}, []string{cfgPath}); err != nil {
@@ -461,16 +462,12 @@ func TestIntegration_SQLite_SchemaOnly(t *testing.T) {
 	if pgDSN == "" {
 		t.Skip("POSTGRES_DSN env var required")
 	}
-	ctx := context.Background()
 	tmpDir := t.TempDir()
 	sqliteFile := filepath.Join(tmpDir, "test.db")
 	seedSQLite(t, sqliteFile)
 
-	pgPool, err := pgxpool.New(ctx, pgDSN)
-	if err != nil {
-		t.Fatalf("connect pg: %v", err)
-	}
-	defer pgPool.Close()
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_sqlite_schema_only")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -478,7 +475,6 @@ func TestIntegration_SQLite_SchemaOnly(t *testing.T) {
 
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
 schema_only = true
-unlogged_tables = true
 
 [source]
 type = "sqlite"
@@ -530,11 +526,8 @@ func TestIntegration_SQLite_DataOnly_PrecreatedSchema(t *testing.T) {
 		t.Fatalf("introspect: %v", err)
 	}
 
-	pgPool, err := pgxpool.New(ctx, pgDSN)
-	if err != nil {
-		t.Fatalf("connect pg: %v", err)
-	}
-	defer pgPool.Close()
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_sqlite_data_only")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -604,11 +597,8 @@ func TestIntegration_SQLite_SchemaOnlyThenDataOnly(t *testing.T) {
 	sqliteFile := filepath.Join(tmpDir, "test.db")
 	seedSQLite(t, sqliteFile)
 
-	pgPool, err := pgxpool.New(ctx, pgDSN)
-	if err != nil {
-		t.Fatalf("connect pg: %v", err)
-	}
-	defer pgPool.Close()
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_sqlite_split")
 	ensureDroppedSchema(t, pgPool, pgSchema)
@@ -647,7 +637,7 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "comments", 10)
 
 	var body string
-	err = pgPool.QueryRow(ctx,
+	err := pgPool.QueryRow(ctx,
 		fmt.Sprintf("SELECT body FROM %s.posts WHERE id = 1", pgIdent(pgSchema)),
 	).Scan(&body)
 	if err != nil {
@@ -780,6 +770,10 @@ func TestIntegration_SQLite_ResumeAfterChunkFailure(t *testing.T) {
 	err = migrateData(ctx, dataCfg)
 	if err == nil {
 		t.Fatal("expected migrateData to fail on invalid timestamp chunk")
+	}
+	low := strings.ToLower(err.Error())
+	if !strings.Contains(low, "timestamp") && !strings.Contains(low, "invalid") && !strings.Contains(low, "parse") && !strings.Contains(low, "date/time") && !strings.Contains(low, "datetime") {
+		t.Fatalf("unexpected migrateData error (want timestamp/parse failure): %v", err)
 	}
 
 	assertRowCount(t, pgPool, pgSchema, "events", 2)

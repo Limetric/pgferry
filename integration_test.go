@@ -420,15 +420,11 @@ func TestIntegration_MySQL_TableFilter_ExactExcludeComments(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_tbl_exact")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -473,15 +469,11 @@ func TestIntegration_MySQL_TableFilter_GlobIncludeMeta(t *testing.T) {
 	seedMySQLTableFilterGlob(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_tbl_glob")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -517,15 +509,11 @@ func TestIntegration_MySQL_HookBeforeDataFails(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_hook_before_data")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	badHook := filepath.Join(tmpDir, "bad_before_data.sql")
@@ -571,15 +559,11 @@ func TestIntegration_MySQL_HookBeforeFkFails(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_hook_before_fk")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	badHook := filepath.Join(tmpDir, "bad_before_fk.sql")
@@ -626,15 +610,11 @@ func TestIntegration_MySQL_CleanOrphansApplyWithoutBeforeFkHook(t *testing.T) {
 	seedMySQL(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_clean_orphans")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -679,15 +659,11 @@ func TestIntegration_MySQL_IdentifierCasePreserve(t *testing.T) {
 	seedMySQLMixedCaseIdentifiers(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_mysql_preserve")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -745,20 +721,15 @@ func TestIntegration_MySQL_SchemaOnly(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_schema_only")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
 schema_only = true
-unlogged_tables = true
 
 [source]
 type = "mysql"
@@ -812,15 +783,11 @@ func TestIntegration_MySQL_DataOnly_PrecreatedSchema(t *testing.T) {
 	src, schema := introspectMySQLSchemaForTest(t, mysqlDSN)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_data_only")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(pgSchema))); err != nil {
 		t.Fatalf("create schema: %v", err)
@@ -889,15 +856,11 @@ func TestIntegration_MySQL_SchemaOnlyThenDataOnly(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_split_mode")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	schemaOnlyCfg := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -965,15 +928,11 @@ func TestIntegration_MySQL_SequenceReset_AllowsNextInsert(t *testing.T) {
 	seedMySQL(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_sequence")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -1015,15 +974,11 @@ func TestIntegration_MySQL_SingleTx(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_single_tx")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -1068,15 +1023,11 @@ func TestIntegration_MySQL_ValidationRowCount(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_validate_rows")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -1108,15 +1059,11 @@ func TestIntegration_MySQL_ValidationRowCountMismatchAfterHook(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_validate_rows_fail")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "after_data.sql"), []byte(`DELETE FROM {{schema}}.users WHERE id = 1;`), 0644); err != nil {
@@ -1153,15 +1100,11 @@ func TestIntegration_MySQL_ValidationSampledHash(t *testing.T) {
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_validate_hash")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -1193,15 +1136,11 @@ func TestIntegration_MySQL_ValidationSampledHashMismatchAfterHook(t *testing.T) 
 	seedMySQLNoOrphans(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_validate_hash_fail")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "after_data.sql"), []byte(`UPDATE {{schema}}.users SET name = 'Mallory' WHERE id = 1;`), 0644); err != nil {
@@ -1258,15 +1197,11 @@ func TestIntegration_MySQL_ResumeAfterChunkFailure(t *testing.T) {
 	}
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_resume")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 	if _, err := pgPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s", pgIdent(pgSchema))); err != nil {
 		t.Fatalf("create schema: %v", err)
 	}
@@ -1406,18 +1341,14 @@ func TestIntegration_MySQL_PostGIS(t *testing.T) {
 	seedMySQLSpatial(t, mysqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 	if !extensionAvailable(t, pgPool, "postgis") {
 		t.Skip("postgis extension is not available on the target server")
 	}
 
 	pgSchema := integrationSchemaName("inttest_postgis")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -1492,15 +1423,11 @@ func TestIntegration_MSSQL(t *testing.T) {
 	seedMSSQL(t, mssqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_mssql")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -1664,15 +1591,11 @@ func TestIntegration_MSSQL_IdentifierCasePreserve(t *testing.T) {
 	seedMSSQL(t, mssqlDB)
 
 	pgPool := openIntegrationPGPool(t, pgDSN)
-	t.Cleanup(func() {
-		pgPool.Close()
-	})
+	t.Cleanup(func() { pgPool.Close() })
 
 	pgSchema := integrationSchemaName("inttest_mssql_preserve")
 	ensureDroppedSchema(t, pgPool, pgSchema)
-	t.Cleanup(func() {
-		dropSchema(t, pgPool, pgSchema)
-	})
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
 
 	tmpDir := t.TempDir()
 	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
@@ -2817,6 +2740,8 @@ func writeIntegrationConfig(t *testing.T, dir, content string) string {
 func runMigrationFromConfig(t *testing.T, cfgPath string) {
 	t.Helper()
 
+	prev := configPath
+	t.Cleanup(func() { configPath = prev })
 	configPath = ""
 	if err := runMigration(nil, []string{cfgPath}); err != nil {
 		t.Fatalf("runMigration(%s): %v", cfgPath, err)
@@ -2826,6 +2751,8 @@ func runMigrationFromConfig(t *testing.T, cfgPath string) {
 func runMigrationFromConfigExpectError(t *testing.T, cfgPath string) error {
 	t.Helper()
 
+	prev := configPath
+	t.Cleanup(func() { configPath = prev })
 	configPath = ""
 	err := runMigration(nil, []string{cfgPath})
 	if err == nil {
