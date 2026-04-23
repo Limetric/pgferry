@@ -281,9 +281,11 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 		if _, err := srcDB.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"); err != nil {
 			return fmt.Errorf("set source transaction isolation (hint: ensure ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON): %w", err)
 		}
+		// go-mssqldb rejects ReadOnly transactions ("read-only transactions are not supported").
+		// Snapshot isolation still gives a consistent point-in-time view; we only issue SELECTs.
 		tx, err = srcDB.BeginTx(ctx, &sql.TxOptions{
 			Isolation: sql.LevelSnapshot,
-			ReadOnly:  true,
+			ReadOnly:  false,
 		})
 	default:
 		if _, err := srcDB.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
