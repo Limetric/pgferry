@@ -506,6 +506,158 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "meta_keep", 1)
 }
 
+func TestIntegration_MySQL_HookBeforeDataFails(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_hook_before_data")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	badHook := filepath.Join(tmpDir, "bad_before_data.sql")
+	if err := os.WriteFile(badHook, []byte("SELECT 1;\nSELECT pgferry_no_such_function_for_hook_test();\n"), 0644); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
+
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 1
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+
+[hooks]
+before_data = [%q]
+`, pgSchema, mysqlDSN, pgDSN, filepath.Base(badHook)))
+
+	err = runMigrationFromConfigExpectError(t, cfgPath)
+	if err == nil {
+		t.Fatal("expected migration error from failing before_data hook")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "before_data hooks") {
+		t.Fatalf("error should mention before_data hooks: %v", err)
+	}
+	if !strings.Contains(msg, "bad_before_data.sql") || !strings.Contains(msg, "statement 2") {
+		t.Fatalf("error should name hook file and failing statement: %v", err)
+	}
+}
+
+func TestIntegration_MySQL_HookBeforeFkFails(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQLNoOrphans(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_hook_before_fk")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	badHook := filepath.Join(tmpDir, "bad_before_fk.sql")
+	if err := os.WriteFile(badHook, []byte("SELECT pgferry_no_such_function_before_fk();\n"), 0644); err != nil {
+		t.Fatalf("write hook: %v", err)
+	}
+
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 1
+clean_orphans = false
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+
+[hooks]
+before_fk = [%q]
+`, pgSchema, mysqlDSN, pgDSN, filepath.Base(badHook)))
+
+	err = runMigrationFromConfigExpectError(t, cfgPath)
+	if err == nil {
+		t.Fatal("expected migration error from failing before_fk hook")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "before_fk hooks") {
+		t.Fatalf("error should mention before_fk hooks: %v", err)
+	}
+	if !strings.Contains(msg, "bad_before_fk.sql") {
+		t.Fatalf("error should name hook file: %v", err)
+	}
+}
+
+func TestIntegration_MySQL_CleanOrphansApplyWithoutBeforeFkHook(t *testing.T) {
+	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
+
+	mysqlDB, err := sql.Open("mysql", mysqlDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mysql: %v", err)
+	}
+	defer mysqlDB.Close()
+	seedMySQL(t, mysqlDB)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() {
+		pgPool.Close()
+	})
+
+	pgSchema := integrationSchemaName("inttest_clean_orphans")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() {
+		dropSchema(t, pgPool, pgSchema)
+	})
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+workers = 2
+clean_orphans = true
+clean_orphans_mode = "apply"
+
+[source]
+type = "mysql"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mysqlDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	// seedMySQL loads 10 valid comments + 2 orphaned rows; clean_orphans should delete the orphans before FK creation.
+	assertRowCount(t, pgPool, pgSchema, "comments", 10)
+	assertFKExists(t, pgPool, pgSchema, "comments", "posts")
+	assertFKExists(t, pgPool, pgSchema, "comments", "users")
+}
+
 func TestIntegration_MySQL_IdentifierCasePreserve(t *testing.T) {
 	mysqlDSN, pgDSN := requireMySQLAndPostgresDSNs(t)
 	ctx := context.Background()
