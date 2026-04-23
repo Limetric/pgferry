@@ -64,7 +64,7 @@ These are usually maintenance-window or server-level decisions, not pgferry conf
 
 ### MSSQL
 
-- `source_snapshot_mode = "single_tx"` turns on `ALLOW_SNAPSHOT_ISOLATION` on the source database when the login can run `ALTER DATABASE`.
+- `source_snapshot_mode = "single_tx"` on MSSQL turns on `ALLOW_SNAPSHOT_ISOLATION` only when it is not already enabled (`sys.databases`) and the login can run `ALTER DATABASE`; if pgferry runs that `ALTER`, the setting persists (it is not reverted).
 - If that fails (permissions or policy), use `source_snapshot_mode = "none"` or enable snapshot isolation manually, and accept weaker consistency when the source is live.
 - See [MSSQL to PostgreSQL](/guides/mssql/) for source-specific behavior and [How to choose snapshot mode](/operations/how-to-choose-snapshot-mode/) for the consistency tradeoff.
 

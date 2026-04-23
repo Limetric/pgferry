@@ -22,5 +22,5 @@ The rule is simple: use `none` unless the source is live enough that cross-table
 
 - MySQL: supported
 - MariaDB: supported
-- MSSQL: supported; pgferry enables `ALLOW_SNAPSHOT_ISOLATION` if the login may `ALTER DATABASE`
+- MSSQL: supported; pgferry enables `ALLOW_SNAPSHOT_ISOLATION` only when it is not already on and the login may `ALTER DATABASE` (or it is already on without needing `ALTER`)
 - SQLite: unsupported

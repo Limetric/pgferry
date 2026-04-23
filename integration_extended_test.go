@@ -257,6 +257,39 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "comments", 10)
 }
 
+func TestIntegration_MariaDB_ValidateStandaloneRowCount(t *testing.T) {
+	mariaDSN, pgDSN := requireMariaDBAndPostgresDSNs(t)
+
+	db, err := sql.Open("mysql", mariaDSN+"?parseTime=true&loc=UTC&interpolateParams=true&multiStatements=true")
+	if err != nil {
+		t.Fatalf("open mariadb: %v", err)
+	}
+	defer db.Close()
+	seedMySQLNoOrphans(t, db)
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() { pgPool.Close() })
+
+	pgSchema := integrationSchemaName("inttest_validate_standalone_maria")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
+
+	tmpDir := t.TempDir()
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+validation = "row_count"
+
+[source]
+type = "mariadb"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, mariaDSN, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+	runValidateFromConfig(t, cfgPath)
+}
+
 func TestIntegration_MariaDB_ValidationSampledHashMismatchAfterHook(t *testing.T) {
 	mariaDSN, pgDSN := requireMariaDBAndPostgresDSNs(t)
 
@@ -815,6 +848,32 @@ func TestIntegration_SQLite_ResumeAfterChunkFailure(t *testing.T) {
 	}
 
 	assertRowCount(t, pgPool, pgSchema, "events", 5)
+
+	seqName := generatedSequenceName(Table{PGName: "events"}, Column{PGName: "id"})
+	var (
+		lastValue int64
+		isCalled  bool
+	)
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("SELECT last_value, is_called FROM %s", pgQualifiedIdent(pgSchema, seqName)),
+	).Scan(&lastValue, &isCalled)
+	if err != nil {
+		t.Fatalf("query resumed sequence state: %v", err)
+	}
+	if lastValue != 6 || isCalled {
+		t.Fatalf("sequence state after resume = last_value:%d is_called:%t, want last_value:6 is_called:false", lastValue, isCalled)
+	}
+
+	var nextID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.events (happened_at, note) VALUES ('2024-01-06 06:07:08', 'after-resume') RETURNING id", pgIdent(pgSchema)),
+	).Scan(&nextID)
+	if err != nil {
+		t.Fatalf("insert after resume: %v", err)
+	}
+	if nextID != 6 {
+		t.Fatalf("next inserted id after resume = %d, want 6", nextID)
+	}
 }
 
 // --- Standalone pgferry validate (live source + target) ---
@@ -1012,6 +1071,7 @@ dsn = %q
 	runMigrationFromConfig(t, cfgPath)
 
 	assertRowCount(t, pgPool, pgSchema, "users", 3)
+	assertRowCount(t, pgPool, pgSchema, "orders", 3)
 }
 
 func TestIntegration_MSSQL_SchemaOnly(t *testing.T) {

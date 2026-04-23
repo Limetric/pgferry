@@ -100,7 +100,7 @@ SQLite accepts `datetime_as_timestamptz` for `DATETIME` / `TIMESTAMP`. Other MyS
 ### MSSQL-specific mapping notes
 
 - `datetime2` and `time` carry fractional-second **scale** from `sys.columns`; pgferry emits PostgreSQL `timestamp(n)`, `timestamptz(n)`, or `time(n)` when scale &gt; 0, with **n clamped to 6** (SQL Server allows scale 7).
-- `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation; pgferry runs `ALTER DATABASE … SET ALLOW_SNAPSHOT_ISOLATION ON` at COPY start when the login has permission (otherwise enable it manually).
+- `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation on MSSQL. pgferry reads `sys.databases.snapshot_isolation_state` for the current database and runs `ALTER DATABASE … SET ALLOW_SNAPSHOT_ISOLATION ON` only when snapshot isolation is not already fully enabled. If that `ALTER` runs, the database option stays on (pgferry does not revert it). With snapshot already on, a read-only login can still use `single_tx`; otherwise grant `ALTER` on the database or enable the option ahead of time.
 - `uniqueidentifier` values are byte-reordered into standard UUID order during copy.
 - `nvarchar` and `nchar` lengths are divided by two because MSSQL reports byte length, not character length.
 - `(max)` types map to PostgreSQL `text` or `bytea`.
