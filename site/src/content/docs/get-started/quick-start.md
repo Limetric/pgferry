@@ -56,7 +56,7 @@ Use the wizard to generate `migration.toml`.
 
 If you want to stay on the simplest path, skip the optional advanced section and accept the defaults. If you already know you want built-in validation, resume support, or non-default `chunk_size` / `index_workers`, the wizard can now capture those too without sending you straight into manual TOML edits.
 
-When the wizard offers **plan** as the next step (the default) and you take it, the same analysis as `pgferry plan` runs in the terminal. After the report, it asks whether to start **migrate** immediately with that config; the default is **no** so you can still save or edit the TOML first.
+When the wizard offers **plan** as the next step (the default) and you take it, the same analysis as `pgferry plan` runs in the terminal. After the plan report, pgferry asks whether to start **migrate** immediately with that config. The default is **no**. If you saved a TOML in the step above, you can edit that file before migrating; if you skipped saving, **yes** still runs **migrate** using the in-memory config from the wizard.
 
 If you already know your source type and want a fuller starter instead, jump to:
 

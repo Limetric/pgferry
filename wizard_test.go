@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -310,10 +311,21 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 		generatedConfigPlanner = prevPlanner
 	})
 
+	var runnerInvoked bool
+	prevRunner := generatedConfigRunner
+	generatedConfigRunner = func(_ *MigrationConfig, _ MigrateOptions) error {
+		runnerInvoked = true
+		return errors.New("unexpected migrate")
+	}
+	t.Cleanup(func() {
+		generatedConfigRunner = prevRunner
+	})
+
+	sqlitePath := filepath.Join(dir, "source.db")
 	var out bytes.Buffer
 	input := strings.Join([]string{
 		"sqlite",
-		"/tmp/source.db",
+		sqlitePath,
 		"n",
 		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable",
 		"n",
@@ -342,6 +354,9 @@ func TestRunGenerateWizardRunsPlanFromGeneratedConfig(t *testing.T) {
 	if gotCfg == nil {
 		t.Fatal("expected generated config planner to be called")
 	}
+	if runnerInvoked {
+		t.Fatal("migration runner must not run when post-plan migrate is declined")
+	}
 	if !strings.Contains(out.String(), "Generating migration plan...") {
 		t.Fatalf("expected plan start message, got:\n%s", out.String())
 	}
@@ -365,8 +380,10 @@ func TestRunGenerateWizardRunsMigrationAfterPlanWhenConfirmed(t *testing.T) {
 		}
 	})
 
+	var planCfg *MigrationConfig
 	prevPlanner := generatedConfigPlanner
 	generatedConfigPlanner = func(cfg *MigrationConfig, out io.Writer, _ PlanOptions) error {
+		planCfg = cfg
 		_, err := out.Write([]byte("plan ok\n"))
 		return err
 	}
@@ -374,9 +391,11 @@ func TestRunGenerateWizardRunsMigrationAfterPlanWhenConfirmed(t *testing.T) {
 		generatedConfigPlanner = prevPlanner
 	})
 
+	var runCfg *MigrationConfig
 	var runnerCalled bool
 	prevRunner := generatedConfigRunner
 	generatedConfigRunner = func(cfg *MigrationConfig, _ MigrateOptions) error {
+		runCfg = cfg
 		runnerCalled = true
 		return nil
 	}
@@ -384,10 +403,11 @@ func TestRunGenerateWizardRunsMigrationAfterPlanWhenConfirmed(t *testing.T) {
 		generatedConfigRunner = prevRunner
 	})
 
+	sqlitePath := filepath.Join(dir, "source.db")
 	var out bytes.Buffer
 	input := strings.Join([]string{
 		"sqlite",
-		"/tmp/source.db",
+		sqlitePath,
 		"n",
 		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable",
 		"n",
@@ -416,8 +436,86 @@ func TestRunGenerateWizardRunsMigrationAfterPlanWhenConfirmed(t *testing.T) {
 	if !runnerCalled {
 		t.Fatal("expected generated config runner to be called after confirming post-plan migration")
 	}
+	if planCfg == nil || runCfg == nil || planCfg != runCfg {
+		t.Fatalf("expected same config pointer from planner and runner, planCfg=%p runCfg=%p", planCfg, runCfg)
+	}
 	if !strings.Contains(out.String(), "Starting migration...") {
 		t.Fatalf("expected migration start message, got:\n%s", out.String())
+	}
+}
+
+func TestRunGenerateWizardPlanFailureSkipsPostPlanMigratePrompt(t *testing.T) {
+	dir := t.TempDir()
+	prevWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(prevWD); err != nil {
+			t.Fatalf("restore cwd: %v", err)
+		}
+	})
+
+	plannerErr := errors.New("planner failed")
+	prevPlanner := generatedConfigPlanner
+	generatedConfigPlanner = func(_ *MigrationConfig, _ io.Writer, _ PlanOptions) error {
+		return plannerErr
+	}
+	t.Cleanup(func() {
+		generatedConfigPlanner = prevPlanner
+	})
+
+	var runnerInvoked bool
+	prevRunner := generatedConfigRunner
+	generatedConfigRunner = func(_ *MigrationConfig, _ MigrateOptions) error {
+		runnerInvoked = true
+		return nil
+	}
+	t.Cleanup(func() {
+		generatedConfigRunner = prevRunner
+	})
+
+	sqlitePath := filepath.Join(dir, "source.db")
+	input := strings.Join([]string{
+		"sqlite",
+		sqlitePath,
+		"n",
+		"postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable",
+		"n",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		"n",
+		"n",
+		"plan",
+	}, "\n") + "\n"
+
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetIn(strings.NewReader(input))
+	cmd.SetOut(&out)
+
+	wizErr := runGenerateWizard(cmd, nil)
+	if wizErr == nil {
+		t.Fatal("expected error from failed plan")
+	}
+	if !errors.Is(wizErr, plannerErr) {
+		t.Fatalf("expected wrapped planner error, got: %v", wizErr)
+	}
+	if runnerInvoked {
+		t.Fatal("migration runner must not run when plan fails")
+	}
+	if strings.Contains(out.String(), "Run the migration now with this config") {
+		t.Fatal("post-plan migrate prompt must not appear when plan fails")
 	}
 }
 
