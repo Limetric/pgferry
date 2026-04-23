@@ -53,10 +53,10 @@ func TestBuildPlanSummary_TotalEstimatedRows(t *testing.T) {
 		CopyRiskAnalysis: false,
 	}
 	risks := []PlanCopyRiskFinding{{Table: "t", EstimatedRows: 1_000_000}}
-	if got := buildPlanSummary(schema, cfg, "main", risks, false).TotalEstimatedRows; got != 0 {
+	if got := buildPlanSummary(schema, cfg, "main", risks, nil, false).TotalEstimatedRows; got != 0 {
 		t.Fatalf("copy risk disabled: TotalEstimatedRows = %d, want 0", got)
 	}
-	if got := buildPlanSummary(schema, cfg, "main", risks, true).TotalEstimatedRows; got != 1_000_000 {
+	if got := buildPlanSummary(schema, cfg, "main", risks, nil, true).TotalEstimatedRows; got != 1_000_000 {
 		t.Fatalf("copy risk enabled: TotalEstimatedRows = %d, want 1000000", got)
 	}
 }
@@ -1695,6 +1695,59 @@ func TestRunPlanWithConfig_SummaryTotalEstimatedRowsWhenCopyRiskEnabled(t *testi
 	}
 	if report2.Summary.TotalEstimatedRows < 1 {
 		t.Fatalf("TotalEstimatedRows = %d, want >= 1", report2.Summary.TotalEstimatedRows)
+	}
+}
+
+func TestRunPlanWithConfig_SummaryTotalEstimatedRowsUsesTableChunkPlanRows(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plan-copy-risk-table-chunk-sum.sqlite")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	stmts := []string{
+		`CREATE TABLE accounts (id INTEGER PRIMARY KEY, payload TEXT)`,
+		`CREATE TABLE events (id INTEGER PRIMARY KEY, payload TEXT)`,
+		`CREATE TABLE jobs (id INTEGER PRIMARY KEY, payload TEXT)`,
+		`WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 5000) INSERT INTO accounts (id, payload) SELECT x, 'a' FROM seq`,
+		`WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 3000) INSERT INTO events (id, payload) SELECT x, 'e' FROM seq`,
+		`WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 2000) INSERT INTO jobs (id, payload) SELECT x, 'j' FROM seq`,
+	}
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("exec %q: %v", stmt, err)
+		}
+	}
+
+	cfg := &MigrationConfig{
+		Schema:           "app",
+		Source:           SourceConfig{Type: "sqlite", DSN: dbPath},
+		CopyRiskAnalysis: true,
+		ChunkSize:        100000,
+		TypeMapping:      defaultTypeMappingConfig(),
+	}
+
+	var buf bytes.Buffer
+	if err := runPlanWithConfig(cfg, &buf, PlanOptions{Format: "json"}); err != nil {
+		t.Fatalf("runPlanWithConfig: %v", err)
+	}
+
+	var report PlanReport
+	if err := json.Unmarshal(buf.Bytes(), &report); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(report.CopyRiskFindings) != 0 {
+		t.Fatalf("copy risk findings = %d, want 0: %+v", len(report.CopyRiskFindings), report.CopyRiskFindings)
+	}
+	if len(report.TableChunkPlan) != 3 {
+		t.Fatalf("table chunk plan = %d, want 3: %+v", len(report.TableChunkPlan), report.TableChunkPlan)
+	}
+	if report.Summary.TotalEstimatedRows != 10000 {
+		t.Fatalf("TotalEstimatedRows = %d, want 10000", report.Summary.TotalEstimatedRows)
+	}
+	if !strings.Contains(buf.String(), `"total_estimated_rows": 10000`) {
+		t.Fatalf("JSON should include total_estimated_rows from table chunk plan rows:\n%s", buf.String())
 	}
 }
 

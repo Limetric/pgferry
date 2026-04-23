@@ -526,7 +526,7 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 			tableChunkPlan = chunks
 		}
 	}
-	summary := buildPlanSummary(schema, cfg, dbName, copyRisks, cfg.CopyRiskAnalysis)
+	summary := buildPlanSummary(schema, cfg, dbName, copyRisks, tableChunkPlan, cfg.CopyRiskAnalysis)
 	report := buildPlanReport(schema, sourceObjects, semanticWarnings, copyRisks, tableChunkPlan, src, cfg, typeMap, summary)
 	if hasTableFilters(cfg) {
 		report.TableFilterReport = newPlanTableFilterReport(filterReport)
@@ -618,7 +618,7 @@ func runPlanFromInput(path string, out io.Writer, opts PlanOptions) error {
 // passed explicitly (not inferred only inside this function) so callers and tests
 // can control whether TotalEstimatedRows is filled from copyRisks without
 // mutating cfg.
-func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyRisks []PlanCopyRiskFinding, copyRiskEnabled bool) PlanSummary {
+func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyRisks []PlanCopyRiskFinding, tableChunkPlan []PlanTableChunkInfo, copyRiskEnabled bool) PlanSummary {
 	if cfg == nil {
 		return PlanSummary{}
 	}
@@ -642,9 +642,26 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 		s.TableCount = len(schema.Tables)
 	}
 	if copyRiskEnabled {
-		s.TotalEstimatedRows = sumCopyRiskEstimatedRowsByTable(copyRisks)
+		s.TotalEstimatedRows = sumPlanTableChunkEstimatedRowsByTable(tableChunkPlan)
+		if s.TotalEstimatedRows == 0 {
+			s.TotalEstimatedRows = sumCopyRiskEstimatedRowsByTable(copyRisks)
+		}
 	}
 	return s
+}
+
+func sumPlanTableChunkEstimatedRowsByTable(plan []PlanTableChunkInfo) int64 {
+	byTable := make(map[string]int64)
+	for _, row := range plan {
+		if row.EstimatedRows > byTable[row.Table] {
+			byTable[row.Table] = row.EstimatedRows
+		}
+	}
+	var total int64
+	for _, n := range byTable {
+		total += n
+	}
+	return total
 }
 
 func newPlanTableFilterReport(r schemaFilterReport) *PlanTableFilterReport {
