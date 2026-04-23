@@ -159,7 +159,7 @@ Important details:
 - `source_schema` defaults to `dbo`.
 - `timestamp` and `rowversion` map to `bytea`, not PostgreSQL datetime types.
 - `money` and `smallmoney` map to `numeric` by default.
-- `single_tx` requires snapshot isolation on the source database.
+- `single_tx` uses snapshot isolation; on MSSQL, pgferry enables `ALLOW_SNAPSHOT_ISOLATION` only when `sys.databases` shows it is off and the login may `ALTER DATABASE` (already-on databases work with read-only logins). An `ALTER` performed by pgferry leaves that option on.
 
 ## What pgferry does automatically vs what you still own
 

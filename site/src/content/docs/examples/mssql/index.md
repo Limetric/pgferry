@@ -13,6 +13,6 @@ MSSQL support currently has two main operational templates: the safe default and
 ## Notes before you choose
 
 - `source_schema` defaults to `dbo`
-- `single_tx` requires snapshot isolation on the source database
+- `single_tx` enables snapshot isolation: pgferry may `ALTER` the database only when `ALLOW_SNAPSHOT_ISOLATION` is not already on; that change persists if pgferry makes it
 - `money` and `smallmoney` map to `numeric` by default
 - `uniqueidentifier` values are reordered into standard UUID byte order during copy

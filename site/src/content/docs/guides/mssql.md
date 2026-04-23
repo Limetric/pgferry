@@ -15,7 +15,7 @@ MSSQL support uses `sys.*` catalog introspection and a small set of SQL Server-s
 - choose the right `source_schema` instead of relying on the `dbo` default blindly
 - decide whether `datetime_as_timestamptz` should be enabled
 - keep `money_as_numeric = true` unless you explicitly want text preservation
-- enable `single_tx` only if snapshot isolation is available on the source database
+- `single_tx` uses snapshot isolation: pgferry enables `ALLOW_SNAPSHOT_ISOLATION` only when `sys.databases` shows it is not already on and the login may `ALTER DATABASE`; if it is already on, read-only logins work. Any `ALTER` pgferry runs leaves that option enabled (it is not reverted).
 
 ## Common caveats
 

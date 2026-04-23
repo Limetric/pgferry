@@ -278,12 +278,30 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 	var tx *sql.Tx
 	switch cfg.Src.Name() {
 	case "MSSQL":
-		if _, err := srcDB.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"); err != nil {
-			return fmt.Errorf("set source transaction isolation (hint: ensure ALTER DATABASE ... SET ALLOW_SNAPSHOT_ISOLATION ON): %w", err)
+		dbName, nameErr := cfg.Src.ExtractDBName(cfg.SrcDSN)
+		if nameErr != nil {
+			return fmt.Errorf("mssql single_tx: %w", nameErr)
 		}
+		// snapshot_isolation_state 1 = ALLOW_SNAPSHOT_ISOLATION is ON (see sys.databases).
+		// Skip ALTER when already enabled so read-only logins can still use single_tx.
+		var snapState int
+		if err := srcDB.QueryRowContext(ctx, "SELECT snapshot_isolation_state FROM sys.databases WHERE name = DB_NAME()").Scan(&snapState); err != nil {
+			return fmt.Errorf("mssql single_tx: read snapshot_isolation_state: %w", err)
+		}
+		if snapState != 1 {
+			alter := fmt.Sprintf("ALTER DATABASE %s SET ALLOW_SNAPSHOT_ISOLATION ON", cfg.Src.QuoteIdentifier(dbName))
+			if _, err := srcDB.ExecContext(ctx, alter); err != nil {
+				return fmt.Errorf("enable allow_snapshot_isolation on source database %q (required for source_snapshot_mode=single_tx when not already enabled; login needs ALTER on the database): %w", dbName, err)
+			}
+		}
+		if _, err := srcDB.ExecContext(ctx, "SET TRANSACTION ISOLATION LEVEL SNAPSHOT"); err != nil {
+			return fmt.Errorf("set source transaction isolation: %w", err)
+		}
+		// go-mssqldb rejects ReadOnly transactions ("read-only transactions are not supported").
+		// Snapshot isolation still gives a consistent point-in-time view; we only issue SELECTs.
 		tx, err = srcDB.BeginTx(ctx, &sql.TxOptions{
 			Isolation: sql.LevelSnapshot,
-			ReadOnly:  true,
+			ReadOnly:  false,
 		})
 	default:
 		if _, err := srcDB.ExecContext(ctx, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ"); err != nil {
