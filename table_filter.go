@@ -234,6 +234,7 @@ func filterSchemaColumns(schema *Schema, cfg *MigrationConfig) (*Schema, columnF
 	}
 
 	filtered := &Schema{Tables: make([]Table, 0, len(schema.Tables))}
+	keptPGColumnsByTable := make([]map[string]bool, 0, len(schema.Tables))
 	for _, table := range schema.Tables {
 		cloned := Table{
 			SourceName: table.SourceName,
@@ -288,15 +289,13 @@ func filterSchemaColumns(schema *Schema, cfg *MigrationConfig) (*Schema, columnF
 		cloned.ForeignKeys = nil
 
 		filtered.Tables = append(filtered.Tables, cloned)
+		keptPGColumnsByTable = append(keptPGColumnsByTable, keptPGColumns)
 	}
 
 	// filtered.Tables remains parallel to schema.Tables because the first pass
 	// errors instead of omitting a table when all of its columns are excluded.
 	for i, table := range schema.Tables {
-		keptPGColumns := make(map[string]bool, len(filtered.Tables[i].Columns))
-		for _, col := range filtered.Tables[i].Columns {
-			keptPGColumns[normalizeTableFilterKey(col.PGName)] = true
-		}
+		keptPGColumns := keptPGColumnsByTable[i]
 		for _, fk := range table.ForeignKeys {
 			keep, reason := shouldKeepColumnFilteredForeignKey(fk, filtered, keptPGColumns)
 			if keep {
