@@ -24,9 +24,11 @@ type MigrationConfig struct {
 	Target                            TargetConfig      `toml:"target"`
 	PostGIS                           PostGISConfig     `toml:"postgis"`
 	Schema                            string            `toml:"schema"`
-	TableFilterMode                   string            `toml:"table_filter_mode"` // exact|glob
+	TableFilterMode                   string            `toml:"table_filter_mode"`  // exact|glob
+	ColumnFilterMode                  string            `toml:"column_filter_mode"` // exact|glob
 	IncludeTables                     []string          `toml:"include_tables"`
 	ExcludeTables                     []string          `toml:"exclude_tables"`
+	ExcludeColumns                    []string          `toml:"exclude_columns"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
 	DataOnly                          bool              `toml:"data_only"`
@@ -152,6 +154,7 @@ func defaultMigrationConfig() MigrationConfig {
 	return MigrationConfig{
 		OnSchemaExists:     "error",
 		TableFilterMode:    "exact",
+		ColumnFilterMode:   "exact",
 		SourceSnapshotMode: "none",
 		UnloggedTables:     true,
 		PreserveDefaults:   true,
@@ -204,6 +207,15 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	default:
 		return fmt.Errorf("table_filter_mode must be one of: exact, glob")
 	}
+	if cfg.ColumnFilterMode == "" {
+		cfg.ColumnFilterMode = "exact"
+	}
+	cfg.ColumnFilterMode = strings.ToLower(strings.TrimSpace(cfg.ColumnFilterMode))
+	switch cfg.ColumnFilterMode {
+	case "exact", "glob":
+	default:
+		return fmt.Errorf("column_filter_mode must be one of: exact, glob")
+	}
 	cfg.IdentifierCase = strings.ToLower(strings.TrimSpace(cfg.IdentifierCase))
 	if cfg.IdentifierCase == "" {
 		cfg.IdentifierCase = "snake"
@@ -223,6 +235,11 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return err
 	}
 	cfg.ExcludeTables = excludeTables
+	excludeColumns, err := normalizeColumnFilterEntries("exclude_columns", cfg.ColumnFilterMode, cfg.ExcludeColumns)
+	if err != nil {
+		return err
+	}
+	cfg.ExcludeColumns = excludeColumns
 
 	if cfg.OnSchemaExists == "" {
 		cfg.OnSchemaExists = "error"
@@ -491,4 +508,39 @@ func normalizeTableFilterEntries(field, mode string, entries []string) ([]string
 
 func normalizeTableFilterKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func normalizeColumnFilterEntries(field, mode string, entries []string) ([]string, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	out := make([]string, 0, len(entries))
+	seen := make(map[string]string, len(entries))
+	for _, raw := range entries {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			return nil, fmt.Errorf("%s entries must be non-empty", field)
+		}
+		if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
+			return nil, fmt.Errorf("%s entry %q is invalid: use ColumnName or TableName.ColumnName", field, raw)
+		}
+		if mode == "exact" && strings.ContainsAny(name, "*?[]") {
+			return nil, fmt.Errorf("%s entry %q is invalid: glob patterns are not supported; use exact source column names", field, raw)
+		}
+		if mode == "glob" {
+			if strings.ContainsAny(name, "[]\\") {
+				return nil, fmt.Errorf("%s entry %q is invalid glob pattern: only literal characters plus '*' and '?' are supported", field, raw)
+			}
+		}
+
+		key := normalizeTableFilterKey(name)
+		if prev, ok := seen[key]; ok {
+			return nil, fmt.Errorf("%s contains duplicate column filter %q (conflicts with %q after normalization)", field, name, prev)
+		}
+		seen[key] = name
+		out = append(out, name)
+	}
+
+	return out, nil
 }

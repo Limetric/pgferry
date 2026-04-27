@@ -268,6 +268,17 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 			log.Printf("table filter: resume enabled; changing table_filter_mode/include_tables/exclude_tables between runs can invalidate the checkpoint")
 		}
 	}
+	filteredSchema, columnFilterReport, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("filter schema columns: %w", err)
+	}
+	schema = filteredSchema
+	if hasColumnFilters(cfg) {
+		logColumnFilterReport(columnFilterReport)
+		if cfg.Resume {
+			log.Printf("column filter: resume enabled; changing column_filter_mode/exclude_columns between runs can invalidate the checkpoint")
+		}
+	}
 	log.Printf("found %d tables", len(schema.Tables))
 	for _, t := range schema.Tables {
 		log.Printf("  %s → %s (%d cols, %d indexes, %d fks)",

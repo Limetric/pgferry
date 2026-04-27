@@ -27,7 +27,7 @@ unlogged_tables = false
 
 Why: checkpoints only make sense when the target data survives a crash.
 
-If you use table filters, treat `table_filter_mode`, `include_tables`, and `exclude_tables` as part of the checkpoint contract. Changing them between runs can change the selected table set, and pgferry will reject the old checkpoint when the resolved migration scope no longer matches.
+If you use table or column filters, treat `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, and `exclude_columns` as part of the checkpoint contract. Changing them between runs can change the selected migration scope, and pgferry will reject the old checkpoint when the resolved migration scope no longer matches.
 
 ## Practical tradeoff
 
