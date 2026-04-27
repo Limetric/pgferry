@@ -505,6 +505,75 @@ func TestFilterSchemaColumns_PrunesForeignKeysReferencingExcludedColumns(t *test
 	}
 }
 
+func TestFilterSchemaColumns_PrunesForeignKeysUsingExcludedLocalColumns(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Parents",
+				PGName:     "parents",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+				},
+			},
+			{
+				SourceName: "Children",
+				PGName:     "children",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "ParentID", PGName: "parent_id"},
+				},
+				ForeignKeys: []ForeignKey{
+					{Name: "fk_child_parent", Columns: []string{"parent_id"}, RefTable: "Parents", RefPGTable: "parents", RefColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"Children.ParentID"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	children := filtered.Tables[1]
+	if got := len(children.ForeignKeys); got != 0 {
+		t.Fatalf("children foreign keys = %d, want 0", got)
+	}
+	if got := len(report.SkippedForeignKeys); got != 1 {
+		t.Fatalf("skipped foreign keys = %d, want 1", got)
+	}
+	if got := report.SkippedForeignKeys[0].Reason; got != "local column parent_id is excluded" {
+		t.Fatalf("skipped foreign key reason = %q, want local column detail", got)
+	}
+}
+
+func TestFilterSchemaColumns_RejectsAllColumnsExcludedFromTable(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "AuditLog",
+				PGName:     "audit_log",
+				Columns: []Column{
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"RowVersion"},
+	}
+
+	_, _, err := filterSchemaColumns(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exclude_columns removed every column from table AuditLog") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestFilterSchemaColumns_RejectsUnknownExcludeColumn(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

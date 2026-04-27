@@ -283,6 +283,8 @@ func filterSchemaColumns(schema *Schema, cfg *MigrationConfig) (*Schema, columnF
 		filtered.Tables = append(filtered.Tables, cloned)
 	}
 
+	// filtered.Tables remains parallel to schema.Tables because the first pass
+	// errors instead of omitting a table when all of its columns are excluded.
 	for i, table := range schema.Tables {
 		keptPGColumns := make(map[string]bool, len(filtered.Tables[i].Columns))
 		for _, col := range filtered.Tables[i].Columns {
@@ -400,7 +402,7 @@ func indexColumnsExist(idx Index, keptPGColumns map[string]bool) bool {
 func shouldKeepColumnFilteredForeignKey(fk ForeignKey, schema *Schema, keptLocalPGColumns map[string]bool) (bool, string) {
 	for _, col := range fk.Columns {
 		if !keptLocalPGColumns[normalizeTableFilterKey(col)] {
-			return false, "local column is excluded"
+			return false, fmt.Sprintf("local column %s is excluded", col)
 		}
 	}
 	refTable := findSchemaTableBySourceName(schema, fk.RefTable)

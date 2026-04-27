@@ -133,8 +133,7 @@ func loadValidateSchema(ctx context.Context, src SourceDB, pgPool *pgxpool.Pool,
 	if hasTableFilters(cfg) {
 		logTableFilterReport(filterReport)
 	}
-	schema = filteredSchema
-	filteredSchema, columnFilterReport, err := filterSchemaColumns(schema, cfg)
+	filteredSchema, columnFilterReport, err := filterSchemaColumns(filteredSchema, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("filter schema columns: %w", err)
 	}
