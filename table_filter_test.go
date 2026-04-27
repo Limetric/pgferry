@@ -452,6 +452,89 @@ func TestFilterSchemaColumns_QualifiedGlobPattern(t *testing.T) {
 	}
 }
 
+func TestFilterSchemaColumns_UnqualifiedGlobPattern(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RV_Orders", PGName: "rv_orders"},
+				},
+			},
+			{
+				SourceName: "Customers",
+				PGName:     "customers",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "rv_customers", PGName: "rv_customers"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnFilterMode: "glob",
+		ExcludeColumns:   []string{"rv_*"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	if got := sourceColumnNames(filtered.Tables[0].Columns); strings.Join(got, ",") != "ID" {
+		t.Fatalf("orders columns = %v, want [ID]", got)
+	}
+	if got := sourceColumnNames(filtered.Tables[1].Columns); strings.Join(got, ",") != "ID" {
+		t.Fatalf("customers columns = %v, want [ID]", got)
+	}
+	if got := strings.Join(report.ExcludedColumns, ","); got != "Orders.RV_Orders,Customers.rv_customers" {
+		t.Fatalf("excluded columns = %q, want Orders.RV_Orders,Customers.rv_customers", got)
+	}
+}
+
+func TestFilterSchemaColumns_ExcludedTableColumnFilterReportsMigratedSchemaScope(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Customers",
+				PGName:     "customers",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+				},
+			},
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeTables:  []string{"Orders"},
+		ExcludeColumns: []string{"Orders.RowVersion"},
+	}
+
+	filtered, _, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+	_, _, err = filterSchemaColumns(filtered, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exclude_columns entries did not match any source column in the migrated schema") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "table may have been excluded by table filters") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestFilterSchemaColumns_PrunesForeignKeysReferencingExcludedColumns(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

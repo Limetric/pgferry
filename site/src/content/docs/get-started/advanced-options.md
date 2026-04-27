@@ -95,7 +95,7 @@ Column filtering uses source column names. A bare name applies to every table. S
 
 ```toml
 column_filter_mode = "glob"
-exclude_columns = ["*.RowVersion", "audit_*.sys_*"]
+exclude_columns = ["RowVersion", "audit_*.sys_*"]
 ```
 
 When a column is excluded, pgferry omits it from schema creation and data COPY. Keys, indexes, and foreign keys that reference excluded columns are skipped.

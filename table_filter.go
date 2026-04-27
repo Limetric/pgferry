@@ -230,12 +230,15 @@ func filterSchemaColumns(schema *Schema, cfg *MigrationConfig) (*Schema, columnF
 	if missing, err := missingColumnFilterEntries(mode, cfg.ExcludeColumns, schema.Tables); err != nil {
 		return nil, report, err
 	} else if len(missing) > 0 {
-		return nil, report, fmt.Errorf("exclude_columns entries did not match any source column: %s", strings.Join(missing, ", "))
+		return nil, report, fmt.Errorf("exclude_columns entries did not match any source column in the migrated schema (table may have been excluded by table filters): %s", strings.Join(missing, ", "))
 	}
 
 	filtered := &Schema{Tables: make([]Table, 0, len(schema.Tables))}
 	for _, table := range schema.Tables {
-		cloned := cloneTable(table)
+		cloned := Table{
+			SourceName: table.SourceName,
+			PGName:     table.PGName,
+		}
 		keptColumns := make([]Column, 0, len(table.Columns))
 		keptPGColumns := make(map[string]bool, len(table.Columns))
 
@@ -256,6 +259,10 @@ func filterSchemaColumns(schema *Schema, cfg *MigrationConfig) (*Schema, columnF
 		}
 		cloned.Columns = keptColumns
 
+		if table.PrimaryKey != nil {
+			pk := cloneIndex(*table.PrimaryKey)
+			cloned.PrimaryKey = &pk
+		}
 		if cloned.PrimaryKey != nil && !indexColumnsExist(*cloned.PrimaryKey, keptPGColumns) {
 			report.SkippedPrimaryKeys = append(report.SkippedPrimaryKeys, skippedSchemaIndex{
 				Table:  table.SourceName,
