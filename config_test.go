@@ -514,6 +514,34 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_ColumnFiltersRejectMultiDotEntries(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "filters.toml")
+
+	content := `
+schema = "target"
+exclude_columns = ["dbo.Orders.RowVersion"]
+
+[source]
+type = "mssql"
+dsn = "sqlserver://sa:pass@127.0.0.1:1433?database=db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "only ColumnName or TableName.ColumnName are supported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadConfig_TableFiltersRejectDuplicateAfterNormalization(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "filters.toml")

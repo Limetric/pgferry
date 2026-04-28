@@ -584,8 +584,8 @@ func logTableFilterReport(report schemaFilterReport) {
 
 func logColumnFilterReport(report columnFilterReport) {
 	log.Printf("column filter: excluded %d of %d column(s)", len(report.ExcludedColumns), report.TotalColumns)
-	if len(report.ExcludedColumns) > 0 {
-		log.Printf("column filter: excluded columns: %s", strings.Join(report.ExcludedColumns, ", "))
+	for _, col := range report.ExcludedColumns {
+		log.Printf("  excluded column %s", col)
 	}
 	for _, pk := range report.SkippedPrimaryKeys {
 		log.Printf("  WARN: skipping primary key %s on %s because %s", pk.Name, pk.Table, pk.Reason)

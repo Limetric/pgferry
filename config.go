@@ -525,6 +525,9 @@ func normalizeColumnFilterEntries(field, mode string, entries []string) ([]strin
 		if strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
 			return nil, fmt.Errorf("%s entry %q is invalid: use ColumnName or TableName.ColumnName", field, raw)
 		}
+		if strings.Count(name, ".") > 1 {
+			return nil, fmt.Errorf("%s entry %q is invalid: only ColumnName or TableName.ColumnName are supported", field, raw)
+		}
 		if mode == "exact" && strings.ContainsAny(name, "*?[]") {
 			return nil, fmt.Errorf("%s entry %q is invalid: glob patterns are not supported; use exact source column names", field, raw)
 		}
