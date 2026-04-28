@@ -346,6 +346,35 @@ func TestFilterSchemaTables_NilSchemaReturnsEmptySchema(t *testing.T) {
 	}
 }
 
+func TestFilterSchemaColumns_NilConfigReturnsSchemaUnchanged(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+		},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, nil)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+	if filtered != schema {
+		t.Fatal("filtered schema pointer changed, want original schema when no column filters are configured")
+	}
+	if report.TotalColumns != 2 {
+		t.Fatalf("report.TotalColumns = %d, want 2", report.TotalColumns)
+	}
+	if len(report.ExcludedColumns) != 0 {
+		t.Fatalf("report.ExcludedColumns = %v, want none", report.ExcludedColumns)
+	}
+}
+
 func TestFilterSchemaColumns_ExcludesColumnsBySourceNameAndPrunesDependentObjects(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
