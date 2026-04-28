@@ -22,8 +22,26 @@ type skippedForeignKey struct {
 	Reason   string
 }
 
+type columnFilterReport struct {
+	TotalColumns       int
+	ExcludedColumns    []string
+	SkippedPrimaryKeys []skippedSchemaIndex
+	SkippedIndexes     []skippedSchemaIndex
+	SkippedForeignKeys []skippedForeignKey
+}
+
+type skippedSchemaIndex struct {
+	Table  string
+	Name   string
+	Reason string
+}
+
 func hasTableFilters(cfg *MigrationConfig) bool {
 	return cfg != nil && (len(cfg.IncludeTables) > 0 || len(cfg.ExcludeTables) > 0)
+}
+
+func hasColumnFilters(cfg *MigrationConfig) bool {
+	return cfg != nil && len(cfg.ExcludeColumns) > 0
 }
 
 // Some unit tests and internal callers build MigrationConfig values directly
@@ -33,6 +51,17 @@ func effectiveTableFilterMode(cfg *MigrationConfig) string {
 		return "exact"
 	}
 	mode := strings.ToLower(strings.TrimSpace(cfg.TableFilterMode))
+	if mode == "" {
+		return "exact"
+	}
+	return mode
+}
+
+func effectiveColumnFilterMode(cfg *MigrationConfig) string {
+	if cfg == nil {
+		return "exact"
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.ColumnFilterMode))
 	if mode == "" {
 		return "exact"
 	}
@@ -184,6 +213,237 @@ func filterSchemaTables(schema *Schema, cfg *MigrationConfig) (*Schema, schemaFi
 	return filtered, report, nil
 }
 
+func filterSchemaColumns(schema *Schema, cfg *MigrationConfig) (*Schema, columnFilterReport, error) {
+	report := columnFilterReport{}
+	if schema == nil {
+		return &Schema{}, report, nil
+	}
+
+	for _, table := range schema.Tables {
+		report.TotalColumns += len(table.Columns)
+	}
+	if !hasColumnFilters(cfg) {
+		return schema, report, nil
+	}
+	mode := effectiveColumnFilterMode(cfg)
+
+	if missing, err := missingColumnFilterEntries(mode, cfg.ExcludeColumns, schema.Tables); err != nil {
+		return nil, report, err
+	} else if len(missing) > 0 {
+		return nil, report, fmt.Errorf("exclude_columns entries did not match any source column in the migrated schema (table may have been excluded by table filters): %s", strings.Join(missing, ", "))
+	}
+
+	filtered := &Schema{Tables: make([]Table, 0, len(schema.Tables))}
+	keptPGColumnsByTable := make([]map[string]bool, 0, len(schema.Tables))
+	for _, table := range schema.Tables {
+		cloned := Table{
+			SourceName: table.SourceName,
+			PGName:     table.PGName,
+		}
+		keptColumns := make([]Column, 0, len(table.Columns))
+		keptPGColumns := make(map[string]bool, len(table.Columns))
+
+		for _, col := range table.Columns {
+			exclude, err := columnMatchesAnyFilterEntry(mode, table.SourceName, col.SourceName, cfg.ExcludeColumns)
+			if err != nil {
+				return nil, report, err
+			}
+			if exclude {
+				report.ExcludedColumns = append(report.ExcludedColumns, fmt.Sprintf("%s.%s", table.SourceName, col.SourceName))
+				continue
+			}
+			keptColumns = append(keptColumns, col)
+			keptPGColumns[normalizeTableFilterKey(col.PGName)] = true
+		}
+		if len(keptColumns) == 0 {
+			return nil, report, fmt.Errorf("exclude_columns removed every column from table %s; adjust exclude_columns", table.SourceName)
+		}
+		cloned.Columns = keptColumns
+
+		if table.PrimaryKey != nil {
+			pk := cloneIndex(*table.PrimaryKey)
+			cloned.PrimaryKey = &pk
+		}
+		if cloned.PrimaryKey != nil && !indexColumnsExist(*cloned.PrimaryKey, keptPGColumns) {
+			report.SkippedPrimaryKeys = append(report.SkippedPrimaryKeys, skippedSchemaIndex{
+				Table:  table.SourceName,
+				Name:   cloned.PrimaryKey.Name,
+				Reason: "references an excluded column",
+			})
+			cloned.PrimaryKey = nil
+		}
+
+		cloned.Indexes = nil
+		for _, idx := range table.Indexes {
+			if !indexColumnsExist(idx, keptPGColumns) {
+				report.SkippedIndexes = append(report.SkippedIndexes, skippedSchemaIndex{
+					Table:  table.SourceName,
+					Name:   idx.Name,
+					Reason: "references an excluded column",
+				})
+				continue
+			}
+			cloned.Indexes = append(cloned.Indexes, cloneIndex(idx))
+		}
+
+		cloned.ForeignKeys = nil
+
+		filtered.Tables = append(filtered.Tables, cloned)
+		keptPGColumnsByTable = append(keptPGColumnsByTable, keptPGColumns)
+	}
+
+	// filtered.Tables remains parallel to schema.Tables because the first pass
+	// errors instead of omitting a table when all of its columns are excluded.
+	for i, table := range schema.Tables {
+		keptPGColumns := keptPGColumnsByTable[i]
+		for _, fk := range table.ForeignKeys {
+			keep, reason := shouldKeepColumnFilteredForeignKey(fk, filtered, keptPGColumns)
+			if keep {
+				filtered.Tables[i].ForeignKeys = append(filtered.Tables[i].ForeignKeys, cloneForeignKey(fk))
+				continue
+			}
+			report.SkippedForeignKeys = append(report.SkippedForeignKeys, skippedForeignKey{
+				Table:    table.SourceName,
+				Name:     fk.Name,
+				RefTable: fk.RefTable,
+				Reason:   reason,
+			})
+		}
+	}
+
+	return filtered, report, nil
+}
+
+func missingColumnFilterEntries(mode string, entries []string, tables []Table) ([]string, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+
+	var missing []string
+	for _, entry := range entries {
+		matched, err := columnFilterEntryMatchesAnyColumn(mode, entry, tables)
+		if err != nil {
+			return nil, err
+		}
+		if !matched {
+			missing = append(missing, entry)
+		}
+	}
+	return missing, nil
+}
+
+func columnFilterEntryMatchesAnyColumn(mode, entry string, tables []Table) (bool, error) {
+	for _, table := range tables {
+		for _, col := range table.Columns {
+			matched, err := columnFilterEntryMatches(mode, entry, table.SourceName, col.SourceName)
+			if err != nil {
+				return false, err
+			}
+			if matched {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
+func columnMatchesAnyFilterEntry(mode, tableName, columnName string, entries []string) (bool, error) {
+	for _, entry := range entries {
+		matched, err := columnFilterEntryMatches(mode, entry, tableName, columnName)
+		if err != nil {
+			return false, err
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func columnFilterEntryMatches(mode, entry, tableName, columnName string) (bool, error) {
+	tablePattern, columnPattern, qualified := splitColumnFilterEntry(entry)
+	if mode == "glob" {
+		if qualified {
+			tableMatched, err := path.Match(normalizeTableFilterKey(tablePattern), normalizeTableFilterKey(tableName))
+			if err != nil {
+				return false, fmt.Errorf("match column filter %q against %s.%s: %w", entry, tableName, columnName, err)
+			}
+			if !tableMatched {
+				return false, nil
+			}
+		}
+		columnMatched, err := path.Match(normalizeTableFilterKey(columnPattern), normalizeTableFilterKey(columnName))
+		if err != nil {
+			return false, fmt.Errorf("match column filter %q against %s.%s: %w", entry, tableName, columnName, err)
+		}
+		return columnMatched, nil
+	}
+
+	if qualified && normalizeTableFilterKey(tablePattern) != normalizeTableFilterKey(tableName) {
+		return false, nil
+	}
+	return normalizeTableFilterKey(columnPattern) == normalizeTableFilterKey(columnName), nil
+}
+
+func splitColumnFilterEntry(entry string) (string, string, bool) {
+	tableName, columnName, qualified := strings.Cut(strings.TrimSpace(entry), ".")
+	if !qualified {
+		return "", tableName, false
+	}
+	return tableName, columnName, true
+}
+
+func indexColumnsExist(idx Index, keptPGColumns map[string]bool) bool {
+	if idx.HasExpression {
+		return true
+	}
+	for _, col := range idx.Columns {
+		if !keptPGColumns[normalizeTableFilterKey(col)] {
+			return false
+		}
+	}
+	return true
+}
+
+func shouldKeepColumnFilteredForeignKey(fk ForeignKey, schema *Schema, keptLocalPGColumns map[string]bool) (bool, string) {
+	for _, col := range fk.Columns {
+		if !keptLocalPGColumns[normalizeTableFilterKey(col)] {
+			return false, fmt.Sprintf("local column %s is excluded", col)
+		}
+	}
+	refTable := findSchemaTableBySourceName(schema, fk.RefTable)
+	if refTable == nil {
+		return true, ""
+	}
+	for _, col := range fk.RefColumns {
+		if !tableHasPGColumn(*refTable, col) {
+			return false, fmt.Sprintf("referenced column %s is excluded", col)
+		}
+	}
+	return true, ""
+}
+
+func findSchemaTableBySourceName(schema *Schema, sourceName string) *Table {
+	if schema == nil {
+		return nil
+	}
+	for i := range schema.Tables {
+		if strings.EqualFold(schema.Tables[i].SourceName, sourceName) {
+			return &schema.Tables[i]
+		}
+	}
+	return nil
+}
+
+func tableHasPGColumn(table Table, pgName string) bool {
+	for _, col := range table.Columns {
+		if strings.EqualFold(col.PGName, pgName) {
+			return true
+		}
+	}
+	return false
+}
+
 func shouldKeepFilteredForeignKey(fk ForeignKey, cfg *MigrationConfig, selected map[string]bool) (bool, string) {
 	if fk.RefSchema != "" && !strings.EqualFold(strings.TrimSpace(fk.RefSchema), strings.TrimSpace(cfg.Source.SourceSchema)) {
 		return false, fmt.Sprintf("referenced table %s is in schema %q, outside the migrated schema %q", fk.RefTable, fk.RefSchema, cfg.Source.SourceSchema)
@@ -317,6 +577,22 @@ func logTableFilterReport(report schemaFilterReport) {
 	}
 
 	log.Printf("table filter: skipped %d foreign key(s) during table filtering", len(report.SkippedForeignKeys))
+	for _, fk := range report.SkippedForeignKeys {
+		log.Printf("  WARN: skipping foreign key %s on %s because %s", fk.Name, fk.Table, fk.Reason)
+	}
+}
+
+func logColumnFilterReport(report columnFilterReport) {
+	log.Printf("column filter: excluded %d of %d column(s)", len(report.ExcludedColumns), report.TotalColumns)
+	for _, col := range report.ExcludedColumns {
+		log.Printf("  excluded column %s", col)
+	}
+	for _, pk := range report.SkippedPrimaryKeys {
+		log.Printf("  WARN: skipping primary key %s on %s because %s", pk.Name, pk.Table, pk.Reason)
+	}
+	for _, idx := range report.SkippedIndexes {
+		log.Printf("  WARN: skipping index %s on %s because %s", idx.Name, idx.Table, idx.Reason)
+	}
 	for _, fk := range report.SkippedForeignKeys {
 		log.Printf("  WARN: skipping foreign key %s on %s because %s", fk.Name, fk.Table, fk.Reason)
 	}

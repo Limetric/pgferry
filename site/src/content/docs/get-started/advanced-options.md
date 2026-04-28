@@ -85,6 +85,21 @@ exclude_tables = ["app_tmp_*"]
 
 In glob mode, matching is case-insensitive and supports only `*` and `?`. `exclude_tables` is applied after `include_tables`, so excludes still win.
 
+To skip source columns that PostgreSQL should not receive, use `exclude_columns`:
+
+```toml
+exclude_columns = ["RowVersion"]
+```
+
+Column filtering uses source column names. A bare name applies to every table. Scope a rule to one source table with `TableName.ColumnName`; use `column_filter_mode = "glob"` for `*` and `?` patterns in either the table or column part:
+
+```toml
+column_filter_mode = "glob"
+exclude_columns = ["RowVersion", "audit_*.sys_*"]
+```
+
+When a column is excluded, pgferry omits it from schema creation and data COPY. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately.
+
 - [How to read plan output](/operations/how-to-read-plan-output/)
 
 ## Hooks

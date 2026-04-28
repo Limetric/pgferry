@@ -346,6 +346,377 @@ func TestFilterSchemaTables_NilSchemaReturnsEmptySchema(t *testing.T) {
 	}
 }
 
+func TestFilterSchemaColumns_NilConfigReturnsSchemaUnchanged(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+		},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, nil)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+	if filtered != schema {
+		t.Fatal("filtered schema pointer changed, want original schema when no column filters are configured")
+	}
+	if report.TotalColumns != 2 {
+		t.Fatalf("report.TotalColumns = %d, want 2", report.TotalColumns)
+	}
+	if len(report.ExcludedColumns) != 0 {
+		t.Fatalf("report.ExcludedColumns = %v, want none", report.ExcludedColumns)
+	}
+}
+
+func TestFilterSchemaColumns_ExcludesColumnsBySourceNameAndPrunesDependentObjects(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+					{SourceName: "CustomerID", PGName: "customer_id"},
+				},
+				PrimaryKey: &Index{Name: "pk_orders", Columns: []string{"id"}},
+				Indexes: []Index{
+					{Name: "idx_customer", Columns: []string{"customer_id"}},
+					{Name: "idx_row_version", Columns: []string{"row_version"}},
+				},
+				ForeignKeys: []ForeignKey{
+					{Name: "fk_orders_customer", Columns: []string{"customer_id"}, RefTable: "Customers", RefPGTable: "customers", RefColumns: []string{"id"}},
+				},
+			},
+			{
+				SourceName: "Customers",
+				PGName:     "customers",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+				PrimaryKey: &Index{Name: "pk_customers", Columns: []string{"id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"rowversion"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	orders := filtered.Tables[0]
+	if got := sourceColumnNames(orders.Columns); strings.Join(got, ",") != "ID,CustomerID" {
+		t.Fatalf("orders columns = %v, want [ID CustomerID]", got)
+	}
+	if got := len(orders.Indexes); got != 1 {
+		t.Fatalf("orders indexes = %d, want 1", got)
+	}
+	if got := orders.Indexes[0].Name; got != "idx_customer" {
+		t.Fatalf("kept index = %q, want idx_customer", got)
+	}
+	if got := len(orders.ForeignKeys); got != 1 {
+		t.Fatalf("orders foreign keys = %d, want 1", got)
+	}
+	if got := sourceColumnNames(filtered.Tables[1].Columns); strings.Join(got, ",") != "ID" {
+		t.Fatalf("customers columns = %v, want [ID]", got)
+	}
+	if got := strings.Join(report.ExcludedColumns, ","); got != "Orders.RowVersion,Customers.RowVersion" {
+		t.Fatalf("excluded columns = %q, want Orders.RowVersion,Customers.RowVersion", got)
+	}
+	if got := len(report.SkippedIndexes); got != 1 || report.SkippedIndexes[0].Name != "idx_row_version" {
+		t.Fatalf("skipped indexes = %#v, want idx_row_version", report.SkippedIndexes)
+	}
+}
+
+func TestFilterSchemaColumns_QualifiedGlobPattern(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "App_Orders",
+				PGName:     "app_orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "Sys_RowVersion", PGName: "sys_row_version"},
+				},
+			},
+			{
+				SourceName: "AuditLog",
+				PGName:     "audit_log",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "Sys_RowVersion", PGName: "sys_row_version"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnFilterMode: "glob",
+		ExcludeColumns:   []string{"app_*.sys_*"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	if got := sourceColumnNames(filtered.Tables[0].Columns); strings.Join(got, ",") != "ID" {
+		t.Fatalf("app orders columns = %v, want [ID]", got)
+	}
+	if got := sourceColumnNames(filtered.Tables[1].Columns); strings.Join(got, ",") != "ID,Sys_RowVersion" {
+		t.Fatalf("audit columns = %v, want [ID Sys_RowVersion]", got)
+	}
+	if got := strings.Join(report.ExcludedColumns, ","); got != "App_Orders.Sys_RowVersion" {
+		t.Fatalf("excluded columns = %q, want App_Orders.Sys_RowVersion", got)
+	}
+}
+
+func TestFilterSchemaColumns_UnqualifiedGlobPattern(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RV_Orders", PGName: "rv_orders"},
+				},
+			},
+			{
+				SourceName: "Customers",
+				PGName:     "customers",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "rv_customers", PGName: "rv_customers"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnFilterMode: "glob",
+		ExcludeColumns:   []string{"rv_*"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	if got := sourceColumnNames(filtered.Tables[0].Columns); strings.Join(got, ",") != "ID" {
+		t.Fatalf("orders columns = %v, want [ID]", got)
+	}
+	if got := sourceColumnNames(filtered.Tables[1].Columns); strings.Join(got, ",") != "ID" {
+		t.Fatalf("customers columns = %v, want [ID]", got)
+	}
+	if got := strings.Join(report.ExcludedColumns, ","); got != "Orders.RV_Orders,Customers.rv_customers" {
+		t.Fatalf("excluded columns = %q, want Orders.RV_Orders,Customers.rv_customers", got)
+	}
+}
+
+func TestFilterSchemaColumns_ExcludedTableColumnFilterReportsMigratedSchemaScope(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Customers",
+				PGName:     "customers",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+				},
+			},
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeTables:  []string{"Orders"},
+		ExcludeColumns: []string{"Orders.RowVersion"},
+	}
+
+	filtered, _, err := filterSchemaTables(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaTables() error: %v", err)
+	}
+	_, _, err = filterSchemaColumns(filtered, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exclude_columns entries did not match any source column in the migrated schema") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "table may have been excluded by table filters") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFilterSchemaColumns_PrunesForeignKeysReferencingExcludedColumns(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Parents",
+				PGName:     "parents",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+			{
+				SourceName: "Children",
+				PGName:     "children",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "ParentID", PGName: "parent_id"},
+					{SourceName: "ParentRowVersion", PGName: "parent_row_version"},
+				},
+				ForeignKeys: []ForeignKey{
+					{Name: "fk_child_parent_id", Columns: []string{"parent_id"}, RefTable: "Parents", RefPGTable: "parents", RefColumns: []string{"id"}},
+					{Name: "fk_child_parent_version", Columns: []string{"parent_row_version"}, RefTable: "Parents", RefPGTable: "parents", RefColumns: []string{"row_version"}},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"RowVersion"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	children := filtered.Tables[1]
+	if got := len(children.ForeignKeys); got != 1 {
+		t.Fatalf("children foreign keys = %d, want 1", got)
+	}
+	if got := children.ForeignKeys[0].Name; got != "fk_child_parent_id" {
+		t.Fatalf("kept foreign key = %q, want fk_child_parent_id", got)
+	}
+	if got := len(report.SkippedForeignKeys); got != 1 {
+		t.Fatalf("skipped foreign keys = %d, want 1", got)
+	}
+	if got := report.SkippedForeignKeys[0].Name; got != "fk_child_parent_version" {
+		t.Fatalf("skipped foreign key = %q, want fk_child_parent_version", got)
+	}
+	if got := report.SkippedForeignKeys[0].Reason; !strings.Contains(got, "referenced column row_version is excluded") {
+		t.Fatalf("skipped foreign key reason = %q, want referenced column detail", got)
+	}
+}
+
+func TestFilterSchemaColumns_PrunesForeignKeysUsingExcludedLocalColumns(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Parents",
+				PGName:     "parents",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+				},
+			},
+			{
+				SourceName: "Children",
+				PGName:     "children",
+				Columns: []Column{
+					{SourceName: "ID", PGName: "id"},
+					{SourceName: "ParentID", PGName: "parent_id"},
+				},
+				ForeignKeys: []ForeignKey{
+					{Name: "fk_child_parent", Columns: []string{"parent_id"}, RefTable: "Parents", RefPGTable: "parents", RefColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"Children.ParentID"},
+	}
+
+	filtered, report, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		t.Fatalf("filterSchemaColumns() error: %v", err)
+	}
+
+	children := filtered.Tables[1]
+	if got := len(children.ForeignKeys); got != 0 {
+		t.Fatalf("children foreign keys = %d, want 0", got)
+	}
+	if got := len(report.SkippedForeignKeys); got != 1 {
+		t.Fatalf("skipped foreign keys = %d, want 1", got)
+	}
+	if got := report.SkippedForeignKeys[0].Reason; got != "local column parent_id is excluded" {
+		t.Fatalf("skipped foreign key reason = %q, want local column detail", got)
+	}
+}
+
+func TestFilterSchemaColumns_RejectsAllColumnsExcludedFromTable(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "AuditLog",
+				PGName:     "audit_log",
+				Columns: []Column{
+					{SourceName: "RowVersion", PGName: "row_version"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"RowVersion"},
+	}
+
+	_, _, err := filterSchemaColumns(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exclude_columns removed every column from table AuditLog") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFilterSchemaColumns_RejectsUnknownExcludeColumn(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ExcludeColumns: []string{"RowVersion"},
+	}
+
+	_, _, err := filterSchemaColumns(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exclude_columns entries did not match any source column") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func sourceColumnNames(cols []Column) []string {
+	names := make([]string, 0, len(cols))
+	for _, col := range cols {
+		names = append(names, col.SourceName)
+	}
+	return names
+}
+
 func TestFilterTriggersBySelectedTables(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

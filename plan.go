@@ -498,6 +498,14 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	if hasTableFilters(cfg) {
 		logTableFilterReport(filterReport)
 	}
+	filteredSchema, columnFilterReport, err := filterSchemaColumns(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("filter schema columns: %w", err)
+	}
+	schema = filteredSchema
+	if hasColumnFilters(cfg) {
+		logColumnFilterReport(columnFilterReport)
+	}
 
 	sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName)
 	if err != nil {

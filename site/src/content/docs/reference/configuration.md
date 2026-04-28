@@ -101,8 +101,10 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | --- | --- | --- | --- |
 | `schema` | string | required | Target PostgreSQL schema name. |
 | `table_filter_mode` | string | `"exact"` | Table-filter matching mode. `"exact"` preserves current exact-name behavior. `"glob"` enables case-insensitive `*` and `?` patterns in `include_tables` and `exclude_tables`. Character classes like `[]` are intentionally not supported. |
+| `column_filter_mode` | string | `"exact"` | Column-filter matching mode. `"exact"` matches source column names exactly, case-insensitively. `"glob"` enables case-insensitive `*` and `?` patterns in `exclude_columns`. |
 | `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Entries are exact names by default, or glob patterns when `table_filter_mode = "glob"`. |
 | `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied after `include_tables`, so excludes win when both match the same table. |
+| `exclude_columns` | array of strings | `[]` | Source columns to skip. Use `ColumnName` to skip matching columns in any table, or `TableName.ColumnName` to scope a rule to one source table. Entries are exact by default, or glob patterns in either the table or column part when `column_filter_mode = "glob"`. |
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
@@ -124,7 +126,9 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 
 Table filters always match source table names, not the transformed PostgreSQL names. In `glob` mode the matching is case-insensitive, mirroring exact-mode normalization. If a filter entry matches no source table, pgferry fails early instead of silently migrating the wrong scope.
 
-Changing `table_filter_mode`, `include_tables`, or `exclude_tables` can change the selected table set. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
+Column filters also match source names, not transformed PostgreSQL names. When a column is excluded, pgferry omits it from `CREATE TABLE`, source `SELECT`, and target `COPY`. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately. If a filter entry matches no source column in the migrated schema, pgferry fails early.
+
+Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, or `exclude_columns` can change the selected migration scope. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
 
 ### `[source]`
 
