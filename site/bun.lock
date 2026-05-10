@@ -9,7 +9,7 @@
         "@fontsource/fraunces": "5.2.9",
         "@fontsource/ibm-plex-mono": "5.2.7",
         "@fontsource/ibm-plex-sans": "5.2.8",
-        "@plausible-analytics/tracker": "0.4.4",
+        "@plausible-analytics/tracker": "0.4.5",
         "@vercel/speed-insights": "2.0.0",
         "astro": "6.2.1",
       },
@@ -188,7 +188,7 @@
 
     "@pagefind/windows-x64": ["@pagefind/windows-x64@1.4.0", "", { "os": "win32", "cpu": "x64" }, "sha512-NkT+YAdgS2FPCn8mIA9bQhiBs+xmniMGq1LFPDhcFn0+2yIUEiIG06t7bsZlhdjknEQRTSdT7YitP6fC5qwP0g=="],
 
-    "@plausible-analytics/tracker": ["@plausible-analytics/tracker@0.4.4", "", {}, "sha512-fz0NOYUEYXtg1TBaPEEvtcBq3FfmLFuTe1VZw4M8sTWX129br5dguu3M15+plOQnc181ShYe67RfwhKgK89VnA=="],
+    "@plausible-analytics/tracker": ["@plausible-analytics/tracker@0.4.5", "", {}, "sha512-6BfAGejXY+YA3Cw6LYT2Zpn4hTxDtPQAawFsYUsQCOg78wIS5C4deAGXTfJffa5VleMWITv5lpJ/EYuQBl1tPA=="],
 
     "@rollup/pluginutils": ["@rollup/pluginutils@5.3.0", "", { "dependencies": { "@types/estree": "^1.0.0", "estree-walker": "^2.0.2", "picomatch": "^4.0.2" }, "peerDependencies": { "rollup": "^1.20.0||^2.0.0||^3.0.0||^4.0.0" }, "optionalPeers": ["rollup"] }, "sha512-5EdhGZtnu3V88ces7s53hhfK5KSASnJZv8Lulpc04cWO3REESroJXg73DFsOmgbU2BhwV0E20bu2IDZb3VKW4Q=="],
 
