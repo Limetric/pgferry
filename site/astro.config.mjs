@@ -58,27 +58,27 @@ export default defineConfig({
 				},
 				{
 					label: 'Start Here',
-					autogenerate: { directory: 'get-started' },
+					items: [{ autogenerate: { directory: 'get-started' } }],
 				},
 				{
 					label: 'Migration Patterns',
-					autogenerate: { directory: 'migration-patterns' },
+					items: [{ autogenerate: { directory: 'migration-patterns' } }],
 				},
 				{
 					label: 'Guides',
-					autogenerate: { directory: 'guides' },
+					items: [{ autogenerate: { directory: 'guides' } }],
 				},
 				{
 					label: 'Examples',
-					autogenerate: { directory: 'examples' },
+					items: [{ autogenerate: { directory: 'examples' } }],
 				},
 				{
 					label: 'Operations',
-					autogenerate: { directory: 'operations' },
+					items: [{ autogenerate: { directory: 'operations' } }],
 				},
 				{
 					label: 'Reference',
-					autogenerate: { directory: 'reference' },
+					items: [{ autogenerate: { directory: 'reference' } }],
 				},
 				{
 					label: 'Project',
