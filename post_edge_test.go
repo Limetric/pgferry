@@ -350,7 +350,7 @@ func TestResetSequenceStatements_Structure(t *testing.T) {
 	table := Table{PGName: "users"}
 	col := Column{PGName: "id", Extra: "auto_increment"}
 
-	stmts := resetSequenceStatements("public", table, col)
+	stmts := resetSequenceStatements("public", table, col, sequenceResetWithDDL)
 	if len(stmts) != 3 {
 		t.Fatalf("expected 3 statements, got %d", len(stmts))
 	}

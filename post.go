@@ -24,7 +24,7 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 	// data_only: skip all DDL steps, only reset sequences + after_all hooks
 	if cfg.DataOnly {
 		log.Printf("  sequences...")
-		if err := resetSequences(ctx, pool, schema, pgSchema); err != nil {
+		if err := resetSequences(ctx, pool, schema, pgSchema, sequenceResetDataOnly); err != nil {
 			return fmt.Errorf("sequences: %w", err)
 		}
 		if err := loadAndExecSQLFiles(ctx, pool, cfg, cfg.Hooks.AfterAll, "after_all"); err != nil {
@@ -73,7 +73,7 @@ func postMigrate(ctx context.Context, pool *pgxpool.Pool, schema *Schema, cfg *M
 	}
 
 	log.Printf("  sequences...")
-	if err := resetSequences(ctx, pool, schema, pgSchema); err != nil {
+	if err := resetSequences(ctx, pool, schema, pgSchema, sequenceResetWithDDL); err != nil {
 		return fmt.Errorf("sequences: %w", err)
 	}
 
@@ -428,14 +428,14 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 
 // resetSequences resets auto-increment sequences by finding columns with auto_increment
 // and setting the sequence to max(col)+1.
-func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string) error {
+func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, mode sequenceResetMode) error {
 	for _, t := range schema.Tables {
 		for _, col := range t.Columns {
 			if !hasAutoIncrementExtra(col) {
 				continue
 			}
 			seqName := generatedSequenceName(t, col)
-			stmts := resetSequenceStatements(pgSchema, t, col)
+			stmts := resetSequenceStatements(pgSchema, t, col, mode)
 			for _, q := range stmts {
 				if err := execSQL(ctx, pool, seqName, q); err != nil {
 					return err
@@ -447,15 +447,27 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 	return nil
 }
 
-func resetSequenceStatements(pgSchema string, t Table, col Column) []string {
+type sequenceResetMode int
+
+const (
+	sequenceResetWithDDL sequenceResetMode = iota
+	sequenceResetDataOnly
+)
+
+func resetSequenceStatements(pgSchema string, t Table, col Column, mode sequenceResetMode) []string {
 	seqName := generatedSequenceName(t, col)
 	seqRef := pgQualifiedRegclassLiteral(pgSchema, seqName)
+	setvalStmt := fmt.Sprintf("SELECT setval(%s, COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)",
+		seqRef,
+		pgIdent(col.PGName), pgQualifiedIdent(pgSchema, t.PGName))
+
+	if mode == sequenceResetDataOnly {
+		return []string{setvalStmt}
+	}
 
 	return []string{
 		fmt.Sprintf("CREATE SEQUENCE IF NOT EXISTS %s", pgQualifiedIdent(pgSchema, seqName)),
-		fmt.Sprintf("SELECT setval(%s, COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)",
-			seqRef,
-			pgIdent(col.PGName), pgQualifiedIdent(pgSchema, t.PGName)),
+		setvalStmt,
 		fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT nextval(%s)",
 			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName), seqRef),
 	}
