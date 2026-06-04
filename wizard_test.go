@@ -772,6 +772,22 @@ func TestRenderConfigTOMLIncludesAdvancedOverrides(t *testing.T) {
 	}
 }
 
+func TestRenderConfigTOMLIncludesTruncateBeforeCopy(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "sakila"
+	cfg.DataOnly = true
+	cfg.TruncateBeforeCopy = true
+
+	rendered := renderConfigTOML(&cfg)
+
+	if !strings.Contains(rendered, "truncate_before_copy = true") {
+		t.Fatalf("expected truncate_before_copy in rendered config, got:\n%s", rendered)
+	}
+}
+
 func TestSuggestSchemaNameFallsBackWhenItMatchesTargetDatabase(t *testing.T) {
 	got := suggestSchemaName(
 		"mysql",

@@ -13,19 +13,20 @@ The default pgferry flow is built to load data first and add expensive constrain
 | 2 | Introspect the source schema | Yes | Yes | Yes |
 | 3 | Create target schema and tables | Yes | Yes | No |
 | 4 | Run `before_data` hooks | Yes | No | Yes |
-| 5 | Stream data with `COPY` | Yes | No | Yes |
-| 6 | Run `after_data` hooks | Yes | No | Yes |
-| 7 | Optional validation | Yes | No | Yes |
-| 8 | `SET LOGGED` for full migrations using `UNLOGGED` tables | Yes | No | No |
-| 9 | Add primary keys | Yes | Yes | No |
-| 10 | Add indexes with bounded parallelism | Yes | Yes | No |
-| 11 | Run `before_fk` hooks | Yes | Yes | No |
-| 12 | Optional orphan cleanup | Yes | No | No |
-| 13 | Add foreign keys | Yes | Yes | No |
-| 14 | Reset sequences | Yes | Yes | Yes |
-| 15 | Optional unsigned checks | Yes | Yes | No |
-| 16 | Optional trigger emulation | Yes | Yes | No |
-| 17 | Run `after_all` hooks | Yes | Yes | Yes |
+| 5 | Optional `truncate_before_copy` target-table truncate | Yes | No | Yes |
+| 6 | Stream data with `COPY` | Yes | No | Yes |
+| 7 | Run `after_data` hooks | Yes | No | Yes |
+| 8 | Optional validation | Yes | No | Yes |
+| 9 | `SET LOGGED` for full migrations using `UNLOGGED` tables | Yes | No | No |
+| 10 | Add primary keys | Yes | Yes | No |
+| 11 | Add indexes with bounded parallelism | Yes | Yes | No |
+| 12 | Run `before_fk` hooks | Yes | Yes | No |
+| 13 | Optional orphan cleanup | Yes | No | No |
+| 14 | Add foreign keys | Yes | Yes | No |
+| 15 | Reset sequences | Yes | Yes | Yes |
+| 16 | Optional unsigned checks | Yes | Yes | No |
+| 17 | Optional trigger emulation | Yes | Yes | No |
+| 18 | Run `after_all` hooks | Yes | Yes | Yes |
 
 ## Modes
 
@@ -74,6 +75,8 @@ Use this when the target schema already exists from a prior `schema_only` run or
 Operational note: before COPY starts, pgferry verifies that the target role can run `ALTER TABLE ... DISABLE TRIGGER ALL` and later re-enable those triggers on the selected target tables. If that preflight fails, pgferry aborts before copying any data.
 
 This matters because `data_only` loads into a schema where foreign keys and other triggers may already exist. pgferry temporarily disables those triggers during the load so parallel COPY can proceed without immediate FK enforcement.
+
+When an external schema migrator also inserts seed or reference rows, set `truncate_before_copy = true` in the data-only config. pgferry will run one `TRUNCATE TABLE ... CASCADE` statement for the selected target tables after `before_data` hooks and before COPY, so duplicate source rows do not collide with pre-seeded target rows.
 
 ## Two-phase workflow
 

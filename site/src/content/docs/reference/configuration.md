@@ -108,6 +108,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then reset sequences. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
+| `truncate_before_copy` | bool | `false` | Run `TRUNCATE TABLE ... CASCADE` on the selected target tables after `before_data` hooks and before COPY. Useful with `data_only` when an external schema migrator pre-seeds reference rows that should be replaced by source data. |
 | `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
 | `identifier_case` | string | `"snake"` | How source identifiers map to PostgreSQL names. `"snake"` converts `OrderItems` → `order_items`. `"lower"` lowercases only (`OrderItems` → `orderitems`). `"preserve"` keeps the source casing unchanged (`OrderItems` → `OrderItems`); PostgreSQL DDL is always quoted so mixed-case names are safe. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
@@ -129,6 +130,8 @@ Table filters always match source table names, not the transformed PostgreSQL na
 Column filters also match source names, not transformed PostgreSQL names. When a column is excluded, pgferry omits it from `CREATE TABLE`, source `SELECT`, and target `COPY`. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately. If a filter entry matches no source column in the migrated schema, pgferry fails early.
 
 Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, or `exclude_columns` can change the selected migration scope. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
+
+`truncate_before_copy` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ... CASCADE` statement, though PostgreSQL can still truncate dependent tables through `CASCADE`.
 
 ### `[source]`
 
@@ -246,6 +249,7 @@ The `database` parameter is required because pgferry extracts the DB name for in
 | `resume = true` + `on_schema_exists = "recreate"` | Invalid because the target schema would be dropped. |
 | `resume = true` + `on_schema_exists = "use"` | Invalid because a resumed run would re-enter a now non-empty schema. |
 | `resume = true` + `schema_only = true` | Invalid because there is no data stage to resume. |
+| `resume = true` + `truncate_before_copy = true` | Invalid because a resumed run would truncate rows that the checkpoint may skip. |
 | `resume = true` + `unlogged_tables = true` | Invalid because checkpointed progress could outlive crash-truncated tables. |
 | `schema_only = true` + `data_only = true` | Invalid. Choose one or neither. |
 | SQLite + `source_snapshot_mode = "single_tx"` | Invalid. SQLite only supports `none`. |
@@ -260,5 +264,6 @@ The `database` parameter is required because pgferry extracts the DB name for in
 - Use `source_snapshot_mode = "single_tx"` when the source stays live during the migration and you need one consistent read view.
 - Keep `on_schema_exists = "error"` for the first production dry runs so you do not destroy previous target state by mistake.
 - Use `on_schema_exists = "use"` only when infrastructure or policy pre-creates the schema shell and you want pgferry to own everything inside it from empty.
+- Use `truncate_before_copy = true` with `data_only` when the target schema was created by another migrator and contains seed rows that should be replaced before COPY.
 - Expect `data_only` to fail early on PostgreSQL roles that cannot run `ALTER TABLE ... DISABLE/ENABLE TRIGGER ALL`; rehearse that path with the real target role before cutover.
 - Prefer hooks for views, routines, cleanup SQL, or post-load validation queries that are specific to your application.

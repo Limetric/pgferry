@@ -192,7 +192,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d identifier_case=%s replicate_on_update_current_timestamp=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
+		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d identifier_case=%s replicate_on_update_current_timestamp=%t truncate_before_copy=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
 		mode,
 		cfg.Workers,
 		cfg.IndexWorkers,
@@ -207,6 +207,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		cfg.CleanOrphansMaxRows,
 		cfg.IdentifierCase,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
+		cfg.TruncateBeforeCopy,
 		cfg.ChunkSize,
 		cfg.CopyRiskAnalysis,
 		cfg.Resume,
@@ -420,6 +421,13 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 				return loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data")
 			},
 			func() error {
+				if !cfg.TruncateBeforeCopy {
+					return nil
+				}
+				log.Printf("truncating target tables before COPY...")
+				return truncateTargetTablesBeforeCopy(ctx, pgPool, schema, cfg.Schema)
+			},
+			func() error {
 				if cfg.SourceSnapshotMode == "single_tx" {
 					log.Printf("migrating data with source_snapshot_mode=single_tx (sequential)")
 				} else {
@@ -528,12 +536,16 @@ func runDataMigrationPhase(
 	preflightTriggerControl func() error,
 	setTriggers func(enable bool) error,
 	beforeData func() error,
+	truncateBeforeCopy func() error,
 	migrate func() error,
 	afterData func() error,
 ) (err error) {
 	if !dataOnly {
 		if err := beforeData(); err != nil {
 			return fmt.Errorf("before_data hooks: %w", err)
+		}
+		if err := truncateBeforeCopy(); err != nil {
+			return fmt.Errorf("truncate before copy: %w", err)
 		}
 		if err := migrate(); err != nil {
 			return fmt.Errorf("migrate data: %w", err)
@@ -572,6 +584,9 @@ func runDataMigrationPhase(
 
 	if err := beforeData(); err != nil {
 		return fmt.Errorf("before_data hooks: %w", err)
+	}
+	if err := truncateBeforeCopy(); err != nil {
+		return fmt.Errorf("truncate before copy: %w", err)
 	}
 	if err := migrate(); err != nil {
 		return fmt.Errorf("migrate data: %w", err)
