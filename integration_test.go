@@ -832,6 +832,17 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "posts", 5)
 	assertRowCount(t, pgPool, pgSchema, "comments", 10)
 
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('PrecreatedProbe', NULL) RETURNING id", pgIdent(pgSchema)),
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert precreated-schema user after data_only: %v", err)
+	}
+	if insertedID != 6 {
+		t.Errorf("inserted user id after precreated-schema data_only reset: got %d, want 6", insertedID)
+	}
+
 	var markerCount int
 	err = pgPool.QueryRow(ctx,
 		fmt.Sprintf("SELECT COUNT(*) FROM %s.manual_marker", pgIdent(pgSchema)),
@@ -913,6 +924,17 @@ dsn = %q
 	}
 	if body != "Hello world" {
 		t.Errorf("posts.id=1 body: got %q, want %q", body, "Hello world")
+	}
+
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('SplitModeProbe', NULL) RETURNING id", pgIdent(pgSchema)),
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert split-mode user after data_only: %v", err)
+	}
+	if insertedID != 6 {
+		t.Errorf("inserted user id after data_only reset: got %d, want 6", insertedID)
 	}
 }
 
