@@ -331,6 +331,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.SchemaOnly && cfg.DataOnly {
 		return fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
+	if cfg.SchemaOnly && cfg.TruncateBeforeCopy {
+		return fmt.Errorf("truncate_before_copy is incompatible with schema_only (no data phase runs)")
+	}
 	if cfg.Resume && cfg.OnSchemaExists == "recreate" {
 		return fmt.Errorf("resume is incompatible with on_schema_exists=recreate (would destroy data to resume into)")
 	}

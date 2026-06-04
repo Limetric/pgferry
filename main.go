@@ -424,7 +424,6 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 				if !cfg.TruncateBeforeCopy {
 					return nil
 				}
-				log.Printf("truncating target tables before COPY...")
 				return truncateTargetTablesBeforeCopy(ctx, pgPool, schema, cfg.Schema)
 			},
 			func() error {

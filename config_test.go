@@ -242,6 +242,35 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 }
 
+func TestLoadConfig_SchemaOnlyRejectsTruncateBeforeCopy(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "schema-only-truncate.toml")
+
+	content := `
+schema = "target"
+schema_only = true
+truncate_before_copy = true
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "truncate_before_copy is incompatible with schema_only") {
+		t.Fatalf("error = %v, want schema_only/truncate incompatibility", err)
+	}
+}
+
 func TestLoadConfig_DSNEnvOverrides(t *testing.T) {
 	tests := []struct {
 		name        string

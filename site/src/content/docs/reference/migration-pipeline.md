@@ -13,7 +13,7 @@ The default pgferry flow is built to load data first and add expensive constrain
 | 2 | Introspect the source schema | Yes | Yes | Yes |
 | 3 | Create target schema and tables | Yes | Yes | No |
 | 4 | Run `before_data` hooks | Yes | No | Yes |
-| 5 | Optional `truncate_before_copy` target-table truncate | Yes | No | Yes |
+| 5 | Optional target-table truncate (`truncate_before_copy`) | Yes | No | Yes |
 | 6 | Stream data with `COPY` | Yes | No | Yes |
 | 7 | Run `after_data` hooks | Yes | No | Yes |
 | 8 | Optional validation | Yes | No | Yes |

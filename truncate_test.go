@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"strings"
 	"testing"
 )
@@ -21,6 +23,28 @@ func TestTruncateTargetTablesBeforeCopy_GeneratesSingleCascadeStatement(t *testi
 	want := `TRUNCATE TABLE "app"."users", "app"."order""items" CASCADE`
 	if len(exec.calls) != 1 || exec.calls[0] != want {
 		t.Fatalf("exec calls = %v, want [%q]", exec.calls, want)
+	}
+}
+
+func TestTruncateTargetTablesBeforeCopy_LogsCascadeScope(t *testing.T) {
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	exec := &recordingStatementExecutor{}
+	schema := &Schema{Tables: []Table{
+		{PGName: "orders"},
+		{PGName: "order_items"},
+	}}
+
+	if err := truncateTargetTablesBeforeCopy(context.Background(), exec, schema, "app"); err != nil {
+		t.Fatalf("truncateTargetTablesBeforeCopy() error: %v", err)
+	}
+
+	want := `truncating target tables before COPY (CASCADE may affect dependent tables outside migration scope): "app"."orders", "app"."order_items"`
+	if !strings.Contains(buf.String(), want) {
+		t.Fatalf("log output = %q, want %q", buf.String(), want)
 	}
 }
 

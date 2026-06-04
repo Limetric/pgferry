@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -17,5 +18,6 @@ func truncateTargetTablesBeforeCopy(ctx context.Context, exec statementExecutor,
 	}
 
 	q := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", strings.Join(targets, ", "))
+	log.Printf("truncating target tables before COPY (CASCADE may affect dependent tables outside migration scope): %s", strings.Join(targets, ", "))
 	return execSQL(ctx, exec, "truncate target tables before copy", q)
 }
