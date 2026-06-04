@@ -426,6 +426,13 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 	return nil
 }
 
+type sequenceResetMode int
+
+const (
+	sequenceResetWithDDL sequenceResetMode = iota
+	sequenceResetDataOnly
+)
+
 // resetSequences resets auto-increment sequences by finding columns with auto_increment
 // and setting the sequence to max(col)+1.
 func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgSchema string, mode sequenceResetMode) error {
@@ -446,13 +453,6 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 	}
 	return nil
 }
-
-type sequenceResetMode int
-
-const (
-	sequenceResetWithDDL sequenceResetMode = iota
-	sequenceResetDataOnly
-)
 
 func resetSequenceStatements(pgSchema string, t Table, col Column, mode sequenceResetMode) []string {
 	seqName := generatedSequenceName(t, col)
