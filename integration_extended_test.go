@@ -608,6 +608,17 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "posts", 5)
 	assertRowCount(t, pgPool, pgSchema, "comments", 10)
 
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('SQLitePrecreatedProbe', NULL) RETURNING id", pgIdent(pgSchema)),
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert SQLite precreated-schema user after data_only: %v", err)
+	}
+	if insertedID != 6 {
+		t.Errorf("inserted user id after SQLite precreated-schema data_only reset: got %d, want 6", insertedID)
+	}
+
 	var markerCount int
 	err = pgPool.QueryRow(ctx,
 		fmt.Sprintf("SELECT COUNT(*) FROM %s.manual_marker", pgIdent(pgSchema)),
@@ -678,6 +689,17 @@ dsn = %q
 	}
 	if body != "Hello world" {
 		t.Errorf("posts.id=1 body: got %q, want %q", body, "Hello world")
+	}
+
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('SQLiteSplitProbe', NULL) RETURNING id", pgIdent(pgSchema)),
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert SQLite split-mode user after data_only: %v", err)
+	}
+	if insertedID != 6 {
+		t.Errorf("inserted user id after SQLite split-mode data_only reset: got %d, want 6", insertedID)
 	}
 }
 
@@ -1123,6 +1145,7 @@ dsn = %q
 
 func TestIntegration_MSSQL_SchemaOnlyThenDataOnly(t *testing.T) {
 	mssqlDSN, pgDSN := requireMSSQLAndPostgresDSNs(t)
+	ctx := context.Background()
 
 	mssqlDB, err := sql.Open("sqlserver", mssqlDSN)
 	if err != nil {
@@ -1178,6 +1201,23 @@ dsn = %q
 	assertRowCount(t, pgPool, pgSchema, "users", 3)
 	assertRowCount(t, pgPool, pgSchema, "orders", 3)
 	assertFKExists(t, pgPool, pgSchema, "orders", "users")
+
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (external_id, display_name, display_name_upper, email, is_active, version_token) VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id", pgIdent(pgSchema)),
+		"22222222-3333-4444-5555-666666666666",
+		"MSSQLSplitProbe",
+		"MSSQLSPLITPROBE",
+		"mssql-split@example.com",
+		true,
+		[]byte{0, 0, 0, 0, 0, 0, 0, 5},
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert MSSQL split-mode user after data_only: %v", err)
+	}
+	if insertedID != 4 {
+		t.Fatalf("inserted user_id after MSSQL split-mode data_only reset = %d, want 4", insertedID)
+	}
 }
 
 func TestIntegration_MSSQL_DataOnly_PrecreatedSchema(t *testing.T) {
@@ -1245,6 +1285,23 @@ dsn = %q
 	runMigrationFromConfig(t, cfgPath)
 
 	assertRowCount(t, pgPool, pgSchema, "users", 3)
+
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (external_id, display_name, display_name_upper, email, is_active, version_token) VALUES ($1, $2, $3, $4, $5, $6) RETURNING user_id", pgIdent(pgSchema)),
+		"33333333-4444-5555-6666-777777777777",
+		"MSSQLPrecreatedProbe",
+		"MSSQLPRECREATEDPROBE",
+		"mssql-precreated@example.com",
+		true,
+		[]byte{0, 0, 0, 0, 0, 0, 0, 6},
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert MSSQL precreated-schema user after data_only: %v", err)
+	}
+	if insertedID != 4 {
+		t.Fatalf("inserted user_id after MSSQL precreated-schema data_only reset = %d, want 4", insertedID)
+	}
 
 	var markerCount int
 	err = pgPool.QueryRow(ctx,
