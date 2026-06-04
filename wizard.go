@@ -630,6 +630,9 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		writeLine("replicate_on_update_current_timestamp = true")
 	}
+	if cfg.TruncateBeforeCopy {
+		writeLine("truncate_before_copy = true")
+	}
 	if cfg.Workers != effectiveDefaultWorkers(cfg.Source.Type) {
 		writeLine("workers = %d", cfg.Workers)
 	}

@@ -22,6 +22,7 @@ preserve_defaults = true
 add_unsigned_checks = true
 replicate_on_update_current_timestamp = true
 workers = 8
+truncate_before_copy = true
 
 [source]
 type = "mysql"
@@ -78,6 +79,9 @@ after_all = ["post.sql"]
 	if !cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("ReplicateOnUpdateCurrentTimestamp = %t, want true", cfg.ReplicateOnUpdateCurrentTimestamp)
 	}
+	if !cfg.TruncateBeforeCopy {
+		t.Errorf("TruncateBeforeCopy = %t, want true", cfg.TruncateBeforeCopy)
+	}
 	if len(cfg.Hooks.BeforeFk) != 1 || cfg.Hooks.BeforeFk[0] != "cleanup.sql" {
 		t.Errorf("Hooks.BeforeFk = %v", cfg.Hooks.BeforeFk)
 	}
@@ -130,6 +134,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("default ReplicateOnUpdateCurrentTimestamp = %t, want false", cfg.ReplicateOnUpdateCurrentTimestamp)
+	}
+	if cfg.TruncateBeforeCopy {
+		t.Errorf("default TruncateBeforeCopy = %t, want false", cfg.TruncateBeforeCopy)
 	}
 	if !cfg.CleanOrphans {
 		t.Errorf("default CleanOrphans = %t, want true", cfg.CleanOrphans)
@@ -203,6 +210,64 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.Source.Charset != "utf8mb4" {
 		t.Errorf("default Source.Charset = %q, want %q", cfg.Source.Charset, "utf8mb4")
+	}
+}
+
+func TestLoadConfig_ResumeRejectsTruncateBeforeCopy(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "resume-truncate.toml")
+
+	content := `
+schema = "target"
+resume = true
+truncate_before_copy = true
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "resume is incompatible with truncate_before_copy=true") {
+		t.Fatalf("error = %v, want resume/truncate incompatibility", err)
+	}
+}
+
+func TestLoadConfig_SchemaOnlyRejectsTruncateBeforeCopy(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "schema-only-truncate.toml")
+
+	content := `
+schema = "target"
+schema_only = true
+truncate_before_copy = true
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "truncate_before_copy is incompatible with schema_only") {
+		t.Fatalf("error = %v, want schema_only/truncate incompatibility", err)
 	}
 }
 

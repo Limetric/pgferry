@@ -29,6 +29,10 @@ func TestRunDataMigrationPhase_DataOnlySuccess(t *testing.T) {
 			return nil
 		},
 		func() error {
+			calls = append(calls, "truncate")
+			return nil
+		},
+		func() error {
 			calls = append(calls, "migrate")
 			return nil
 		},
@@ -41,7 +45,56 @@ func TestRunDataMigrationPhase_DataOnlySuccess(t *testing.T) {
 		t.Fatalf("runDataMigrationPhase() error: %v", err)
 	}
 
-	want := []string{"preflight", "disable", "before", "migrate", "after", "enable"}
+	want := []string{"preflight", "disable", "before", "truncate", "migrate", "after", "enable"}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("call order = %v, want %v", calls, want)
+	}
+}
+
+func TestRunDataMigrationPhase_DataOnlyTruncateFailureStillEnables(t *testing.T) {
+	truncateErr := errors.New("truncate failed")
+	var calls []string
+
+	err := runDataMigrationPhase(
+		true,
+		func(string, ...any) {},
+		func() error {
+			calls = append(calls, "preflight")
+			return nil
+		},
+		func(enable bool) error {
+			if enable {
+				calls = append(calls, "enable")
+			} else {
+				calls = append(calls, "disable")
+			}
+			return nil
+		},
+		func() error {
+			calls = append(calls, "before")
+			return nil
+		},
+		func() error {
+			calls = append(calls, "truncate")
+			return truncateErr
+		},
+		func() error {
+			calls = append(calls, "migrate")
+			return nil
+		},
+		func() error {
+			calls = append(calls, "after")
+			return nil
+		},
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, truncateErr) {
+		t.Fatalf("expected error to wrap truncateErr, got %v", err)
+	}
+
+	want := []string{"preflight", "disable", "before", "truncate", "enable"}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("call order = %v, want %v", calls, want)
 	}
@@ -70,6 +123,10 @@ func TestRunDataMigrationPhase_DataOnlyBeforeFailureStillEnables(t *testing.T) {
 		func() error {
 			calls = append(calls, "before")
 			return beforeErr
+		},
+		func() error {
+			calls = append(calls, "truncate")
+			return nil
 		},
 		func() error {
 			calls = append(calls, "migrate")
@@ -120,6 +177,10 @@ func TestRunDataMigrationPhase_DataOnlyMigrateFailureStillEnables(t *testing.T) 
 			return nil
 		},
 		func() error {
+			calls = append(calls, "truncate")
+			return nil
+		},
+		func() error {
 			calls = append(calls, "migrate")
 			return migrateErr
 		},
@@ -135,7 +196,7 @@ func TestRunDataMigrationPhase_DataOnlyMigrateFailureStillEnables(t *testing.T) 
 		t.Fatalf("expected error to wrap migrateErr, got %v", err)
 	}
 
-	want := []string{"preflight", "disable", "before", "migrate", "enable"}
+	want := []string{"preflight", "disable", "before", "truncate", "migrate", "enable"}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("call order = %v, want %v", calls, want)
 	}
@@ -165,6 +226,10 @@ func TestRunDataMigrationPhase_DataOnlyAfterFailureStillEnables(t *testing.T) {
 			return nil
 		},
 		func() error {
+			calls = append(calls, "truncate")
+			return nil
+		},
+		func() error {
 			calls = append(calls, "migrate")
 			return nil
 		},
@@ -180,7 +245,7 @@ func TestRunDataMigrationPhase_DataOnlyAfterFailureStillEnables(t *testing.T) {
 		t.Fatalf("expected error to wrap afterErr, got %v", err)
 	}
 
-	want := []string{"preflight", "disable", "before", "migrate", "after", "enable"}
+	want := []string{"preflight", "disable", "before", "truncate", "migrate", "after", "enable"}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("call order = %v, want %v", calls, want)
 	}
@@ -207,6 +272,10 @@ func TestRunDataMigrationPhase_DataOnlyPreflightFailureStopsEarly(t *testing.T) 
 		},
 		func() error {
 			calls = append(calls, "before")
+			return nil
+		},
+		func() error {
+			calls = append(calls, "truncate")
 			return nil
 		},
 		func() error {
@@ -255,6 +324,10 @@ func TestRunDataMigrationPhase_DataOnlyDisableFailureStopsEarly(t *testing.T) {
 			return nil
 		},
 		func() error {
+			calls = append(calls, "truncate")
+			return nil
+		},
+		func() error {
 			calls = append(calls, "migrate")
 			return nil
 		},
@@ -299,6 +372,10 @@ func TestRunDataMigrationPhase_NonDataOnlySkipsTriggerCalls(t *testing.T) {
 			return nil
 		},
 		func() error {
+			calls = append(calls, "truncate")
+			return nil
+		},
+		func() error {
 			calls = append(calls, "migrate")
 			return nil
 		},
@@ -311,7 +388,7 @@ func TestRunDataMigrationPhase_NonDataOnlySkipsTriggerCalls(t *testing.T) {
 		t.Fatalf("runDataMigrationPhase() error: %v", err)
 	}
 
-	want := []string{"before", "migrate", "after"}
+	want := []string{"before", "truncate", "migrate", "after"}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("call order = %v, want %v", calls, want)
 	}
@@ -329,6 +406,7 @@ func TestRunDataMigrationPhase_CleanupLogsOnFailure(t *testing.T) {
 		func() error { return nil },
 		func(bool) error { return nil },
 		func() error { return beforeErr },
+		func() error { return nil },
 		func() error { return nil },
 		func() error { return nil },
 	)

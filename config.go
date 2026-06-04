@@ -32,6 +32,7 @@ type MigrationConfig struct {
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
 	DataOnly                          bool              `toml:"data_only"`
+	TruncateBeforeCopy                bool              `toml:"truncate_before_copy"`
 	SourceSnapshotMode                string            `toml:"source_snapshot_mode"` // none|single_tx
 	UnloggedTables                    bool              `toml:"unlogged_tables"`
 	PreserveDefaults                  bool              `toml:"preserve_defaults"`
@@ -330,6 +331,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.SchemaOnly && cfg.DataOnly {
 		return fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
+	if cfg.SchemaOnly && cfg.TruncateBeforeCopy {
+		return fmt.Errorf("truncate_before_copy is incompatible with schema_only (no data phase runs)")
+	}
 	if cfg.Resume && cfg.OnSchemaExists == "recreate" {
 		return fmt.Errorf("resume is incompatible with on_schema_exists=recreate (would destroy data to resume into)")
 	}
@@ -338,6 +342,9 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 	if cfg.Resume && cfg.SchemaOnly {
 		return fmt.Errorf("resume is incompatible with schema_only (no data to resume)")
+	}
+	if cfg.Resume && cfg.TruncateBeforeCopy {
+		return fmt.Errorf("resume is incompatible with truncate_before_copy=true (a resumed run would truncate rows that the checkpoint may skip)")
 	}
 	if cfg.Resume && cfg.UnloggedTables {
 		return fmt.Errorf("resume is incompatible with unlogged_tables=true (checkpointed progress can outlive crash-truncated UNLOGGED tables)")
