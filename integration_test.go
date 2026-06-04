@@ -914,6 +914,17 @@ dsn = %q
 	if body != "Hello world" {
 		t.Errorf("posts.id=1 body: got %q, want %q", body, "Hello world")
 	}
+
+	var insertedID int64
+	err = pgPool.QueryRow(ctx,
+		fmt.Sprintf("INSERT INTO %s.users (name, email) VALUES ('SplitModeProbe', NULL) RETURNING id", pgIdent(pgSchema)),
+	).Scan(&insertedID)
+	if err != nil {
+		t.Fatalf("insert split-mode user after data_only: %v", err)
+	}
+	if insertedID != 6 {
+		t.Errorf("inserted user id after data_only reset: got %d, want 6", insertedID)
+	}
 }
 
 func TestIntegration_MySQL_SequenceReset_AllowsNextInsert(t *testing.T) {
