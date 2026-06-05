@@ -12,6 +12,7 @@
         "@plausible-analytics/tracker": "0.4.5",
         "@vercel/speed-insights": "2.0.0",
         "astro": "6.4.2",
+        "remark-gfm": "4.0.1",
       },
     },
   },
