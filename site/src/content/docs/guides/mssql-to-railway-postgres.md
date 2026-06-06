@@ -50,7 +50,7 @@ datetime_as_timestamptz = false
 money_as_numeric = true
 ```
 
-`resume = true` requires `unlogged_tables = false`. On MSSQL, `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation — see the [MSSQL guide](/guides/mssql/) for the `ALLOW_SNAPSHOT_ISOLATION` details (and the [Azure SQL guides](/guides/azure-sql-to-neon/) if your source is Azure SQL).
+`resume = true` requires `unlogged_tables = false`. On MSSQL, `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation — see the [MSSQL guide](/guides/mssql/) for the `ALLOW_SNAPSHOT_ISOLATION` details (and the [Azure SQL to Neon guide](/guides/azure-sql-to-neon/) if your source is Azure SQL).
 
 ## Railway DSN, TLS, proxy, and networking notes
 
