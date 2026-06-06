@@ -13,7 +13,7 @@ Use this guide when your source is **Azure SQL Database** (the managed PaaS offe
 
 ## Why use pgferry instead of generic pgloader advice
 
-For SQL Server sources the generic advice is especially weak: `pgloader`'s MSSQL path is thin and largely unmaintained, and most tutorials assume MySQL. `pgferry` is built for this pair:
+For SQL Server sources, the generic advice is especially weak: `pgloader`'s MSSQL path is thin and largely unmaintained, and most tutorials assume MySQL. `pgferry` is built for this pair:
 
 - It introspects Azure SQL through `sys.*` catalog views and applies SQL Server-specific conversions (UUID byte reordering, `datetime2`/`time` scale clamping, `money` → `numeric`).
 - It streams with chunked, parallel `COPY` and **resumes** from a checkpoint — important over a hosted Supabase connection.
