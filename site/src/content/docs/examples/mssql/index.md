@@ -16,3 +16,11 @@ MSSQL support currently has two main operational templates: the safe default and
 - `single_tx` enables snapshot isolation: pgferry may `ALTER` the database only when `ALLOW_SNAPSHOT_ISOLATION` is not already on; that change persists if pgferry makes it
 - `money` and `smallmoney` map to `numeric` by default
 - `uniqueidentifier` values are reordered into standard UUID byte order during copy
+
+## Migrating to a specific provider?
+
+Provider-specific playbooks with connection, TLS, pooling, and firewall setup:
+
+- [MSSQL to Supabase](/guides/mssql-to-supabase/)
+- [MSSQL to Neon](/guides/mssql-to-neon/)
+- [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/)
