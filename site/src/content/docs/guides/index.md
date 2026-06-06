@@ -26,5 +26,5 @@ Destination-specific playbooks with provider connection, TLS, pooling, and firew
 
 The provider environment changes the access, TLS, and firewall setup as much as the destination does. These guides cover the source-side specifics for managed and hosted databases:
 
-- **Managed MySQL sources**: [PlanetScale (MySQL/Vitess)](/guides/planetscale-to-neon/) · [AWS RDS / Aurora MySQL](/guides/aws-rds-mysql-to-neon/) · [Google Cloud SQL for MySQL](/guides/cloud-sql-mysql-to-neon/)
+- **Managed MySQL sources**: PlanetScale (MySQL/Vitess) — [to Supabase](/guides/planetscale-to-supabase/) · [to Neon](/guides/planetscale-to-neon/); AWS RDS / Aurora MySQL — [to Supabase](/guides/aws-rds-mysql-to-supabase/) · [to Neon](/guides/aws-rds-mysql-to-neon/); Google Cloud SQL for MySQL — [to Supabase](/guides/cloud-sql-mysql-to-supabase/) · [to Neon](/guides/cloud-sql-mysql-to-neon/)
 - **Azure SQL / SQL Server sources**: [Azure SQL to Supabase](/guides/azure-sql-to-supabase/) · [Azure SQL to Neon](/guides/azure-sql-to-neon/) · [MSSQL to Railway](/guides/mssql-to-railway-postgres/) · [MSSQL to Render](/guides/mssql-to-render-postgres/)

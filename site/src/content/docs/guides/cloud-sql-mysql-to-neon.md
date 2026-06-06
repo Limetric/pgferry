@@ -58,7 +58,7 @@ sanitize_json_null_bytes = true
 
 pgferry uses the `go-sql-driver/mysql` driver. There are two practical ways to reach Cloud SQL — the Auth Proxy is the cleaner default:
 
-**1. Cloud SQL Auth Proxy (recommended).** Run the proxy on your migration host; it listens locally, authenticates with IAM, and encrypts automatically — no authorized networks, no certificate download. Point pgferry at the local socket with TLS off (the proxy already encrypts):
+**1. Cloud SQL Auth Proxy (recommended).** Run the proxy on your migration host; it listens locally, authenticates with IAM, and encrypts automatically — no authorized networks, no certificate download. Point pgferry at the proxy's local TCP port (`127.0.0.1:3306`) with TLS off — the proxy already encrypts:
 
 ```bash
 # cloud-sql-proxy <project>:<region>:<instance> --port 3306 &

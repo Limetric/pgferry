@@ -50,7 +50,7 @@ datetime_as_timestamptz = false
 money_as_numeric = true
 ```
 
-`resume = true` requires `unlogged_tables = false`. On MSSQL, `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation — see the [MSSQL guide](/guides/mssql/) for the `ALLOW_SNAPSHOT_ISOLATION` details (and the [Azure SQL guides](/guides/azure-sql-to-neon/) if your source is Azure SQL).
+`resume = true` requires `unlogged_tables = false`. On MSSQL, `source_snapshot_mode = "single_tx"` uses `SNAPSHOT` isolation — see the [MSSQL guide](/guides/mssql/) for the `ALLOW_SNAPSHOT_ISOLATION` details (and the [Azure SQL to Supabase guide](/guides/azure-sql-to-supabase/) if your source is Azure SQL).
 
 ## Render DSN, TLS, and firewall notes
 
@@ -64,7 +64,7 @@ Render gives every instance two URLs:
 - **From your laptop or any external host, use the External Database URL.** Only a service running inside Render (same region) can use the internal host.
 - **TLS is required for external connections.** Append `?sslmode=require`. Render manages the certificate; `sslmode=require` encrypts in transit (the documented/safe setting — it does not validate the chain).
 - **Inbound IP allowlist:** by default a Render Postgres instance is reachable from any IP (`0.0.0.0/0`), gated only by credentials + SSL. If you have tightened the inbound rules, **add your migration host's IP** (e.g. `203.0.113.45/32`) under the instance's **Networking** section before starting. If a dynamic IP makes that impractical, temporarily widen the rule for the load and tighten it afterward. The allowlist applies only to the external URL — internal connections are always allowed.
-- **Connection limits** scale with instance RAM (100 connections below 8 GB, 200 at 8–16 GB, and up). Keep pgferry's `workers`/`index_workers` within the instance's ceiling.
+- **Connection limits** scale with instance RAM (100 connections below 8 GB, 200 at 8–16 GB, and up). Keep pgferry's `workers`/`index_workers` within the instance's ceiling (see the [configuration reference](/reference/configuration/)).
 
 Example external target DSN, with an MSSQL source DSN:
 
@@ -88,7 +88,7 @@ These come from the MSSQL side (full detail in the [MSSQL guide](/guides/mssql/)
 ## Step-by-step MSSQL to Render Postgres migration flow
 
 1. Create a **paid** Render Postgres instance sized for the dataset; copy the External Database URL.
-2. Add your migration host's IP to the inbound rules if you have restricted them; enable storage autoscaling or pre-provision storage.
+2. Add your migration host's IP to the inbound rules if you have restricted them; choose an instance plan with enough disk for your dataset plus index/WAL overhead (increase the disk before the load if needed).
 3. Generate a config with `pgferry wizard` or start from the snippet above; export `PGFERRY_SOURCE_DSN` and `PGFERRY_TARGET_DSN`.
 4. Run `pgferry plan migration.toml` and resolve every warning (computed columns, skipped indexes, sequence defaults, temporal tables).
 5. Run `pgferry migrate migration.toml`; rerun on interruption (`resume = true`).
