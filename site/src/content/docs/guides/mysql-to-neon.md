@@ -131,4 +131,4 @@ See [common failures and recovery](/operations/common-failures-and-recovery/) fo
 - [Type mapping](/reference/type-mapping/)
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
-- Other destinations: [MySQL to Supabase](/guides/mysql-to-supabase/) · [MSSQL to Neon](/guides/mssql-to-neon/)
+- Other destinations: [MySQL to Supabase](/guides/mysql-to-supabase/) · [MySQL to Railway Postgres](/guides/mysql-to-railway-postgres/) · [MySQL to Render Postgres](/guides/mysql-to-render-postgres/) · [MySQL to PlanetScale Postgres](/guides/mysql-to-planetscale-postgres/) · [MSSQL to Neon](/guides/mssql-to-neon/)

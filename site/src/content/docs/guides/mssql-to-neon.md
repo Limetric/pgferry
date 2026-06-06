@@ -126,4 +126,4 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [Type mapping](/reference/type-mapping/)
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
-- Other destinations: [MSSQL to Supabase](/guides/mssql-to-supabase/) · [MySQL to Neon](/guides/mysql-to-neon/)
+- Other destinations: [MSSQL to Supabase](/guides/mssql-to-supabase/) · [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/) · [MySQL to Neon](/guides/mysql-to-neon/)
