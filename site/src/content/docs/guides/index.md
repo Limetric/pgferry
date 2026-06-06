@@ -14,13 +14,10 @@ Guides for specific sources, destinations, and combinations — covering caveats
 
 ## By managed Postgres destination
 
-Destination-specific playbooks with provider connection, TLS, pooling, and firewall setup — not just generic source advice.
+Destination-specific playbooks with provider connection, TLS, pooling, and firewall setup — not just generic source advice. Grouped by destination:
 
-- [MySQL to Supabase](/guides/mysql-to-supabase/)
-- [MySQL to Neon](/guides/mysql-to-neon/)
-- [MySQL to Railway Postgres](/guides/mysql-to-railway-postgres/)
-- [MySQL to Render Postgres](/guides/mysql-to-render-postgres/)
-- [MySQL to PlanetScale Postgres](/guides/mysql-to-planetscale-postgres/)
-- [MSSQL to Supabase](/guides/mssql-to-supabase/)
-- [MSSQL to Neon](/guides/mssql-to-neon/)
-- [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/)
+- **Supabase**: [from MySQL](/guides/mysql-to-supabase/) · [from MSSQL](/guides/mssql-to-supabase/)
+- **Neon**: [from MySQL](/guides/mysql-to-neon/) · [from MSSQL](/guides/mssql-to-neon/)
+- **PlanetScale Postgres**: [from MySQL](/guides/mysql-to-planetscale-postgres/) · [from MSSQL](/guides/mssql-to-planetscale-postgres/)
+- **Railway Postgres**: [from MySQL](/guides/mysql-to-railway-postgres/)
+- **Render Postgres**: [from MySQL](/guides/mysql-to-render-postgres/)

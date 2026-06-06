@@ -77,8 +77,10 @@ export PGFERRY_SOURCE_DSN='user:pass@tcp(mysql-host:3306)/source_db'
 Inside Railway (same project, no egress):
 
 ```bash
-export PGFERRY_TARGET_DSN='postgres://postgres:<password>@postgres.railway.internal:5432/railway?sslmode=disable'
+export PGFERRY_TARGET_DSN='postgres://postgres:<password>@postgres.railway.internal:5432/railway?sslmode=require'
 ```
+
+The private network is isolated to your Railway project, so `sslmode=disable` also connects internally — but Railway's image serves SSL on the same port, so keep `sslmode=require` to encrypt the wire with no practical downside.
 
 ### Capacity gotcha
 
@@ -132,4 +134,4 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [Type mapping](/reference/type-mapping/)
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
-- Other destinations: [MySQL to Render Postgres](/guides/mysql-to-render-postgres/) · [MySQL to Neon](/guides/mysql-to-neon/)
+- Other destinations: [MySQL to Supabase](/guides/mysql-to-supabase/) · [MySQL to Neon](/guides/mysql-to-neon/) · [MySQL to Render Postgres](/guides/mysql-to-render-postgres/) · [MySQL to PlanetScale Postgres](/guides/mysql-to-planetscale-postgres/)

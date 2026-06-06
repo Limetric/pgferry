@@ -34,6 +34,7 @@ on_schema_exists = "error"
 unlogged_tables = false
 resume = true
 validation = "row_count"
+chunk_size = 100000
 source_snapshot_mode = "single_tx"
 
 [source]

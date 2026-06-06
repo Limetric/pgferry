@@ -33,6 +33,7 @@ on_schema_exists = "error"
 unlogged_tables = false
 resume = true
 validation = "row_count"
+chunk_size = 100000
 source_snapshot_mode = "single_tx"
 
 [source]
@@ -107,7 +108,7 @@ These come from the MSSQL side (full detail in the [MSSQL guide](/guides/mssql/)
 | Prepared-statement / session errors | Connected via PSBouncer (6432) | Use the direct port (5432) |
 | TLS handshake / cert error | Missing verify-full params | Use `sslmode=verify-full&sslrootcert=system` |
 | Connection refused after enabling IP restrictions | Migration host not allow-listed | Add your egress IP to the branch allowlist |
-| `single_tx` fails on a read-only login | Snapshot isolation not enabled | Enable `ALLOW_SNAPSHOT_ISOLATION` or grant `ALTER` |
+| `single_tx` fails on a read-only login | Snapshot isolation not enabled | Enable `ALLOW_SNAPSHOT_ISOLATION` or grant `ALTER` (see [MSSQL guide](/guides/mssql/)) |
 | Missing column defaults | `NEXT VALUE FOR` not translated | Recreate sequences/defaults via hooks |
 
 See [common failures and recovery](/operations/common-failures-and-recovery/).

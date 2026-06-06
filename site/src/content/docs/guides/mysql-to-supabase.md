@@ -88,7 +88,7 @@ alter role postgres set statement_timeout = '0';
 alter role postgres reset statement_timeout;
 ```
 
-You may need to reconnect (or briefly restart the project) for the change to take effect. If you bumped any PostgREST-facing roles, run `NOTIFY pgrst, 'reload config';`.
+Reconnect for the change to take effect — `ALTER ROLE ... SET` applies to new sessions only.
 
 ## Source-specific caveats (MySQL)
 
