@@ -42,4 +42,13 @@ These destination-specific guides add the provider connection, TLS, pooling, and
 
 - [MSSQL to Supabase](/guides/mssql-to-supabase/)
 - [MSSQL to Neon](/guides/mssql-to-neon/)
+- [MSSQL to Railway Postgres](/guides/mssql-to-railway-postgres/)
+- [MSSQL to Render Postgres](/guides/mssql-to-render-postgres/)
 - [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/)
+
+## Source is Azure SQL Database?
+
+Azure SQL Database is the same T-SQL engine, but the access, encryption, and snapshot-isolation setup are Azure-specific. These guides read as Azure-specific playbooks rather than generic MSSQL pages:
+
+- [Azure SQL to Supabase](/guides/azure-sql-to-supabase/)
+- [Azure SQL to Neon](/guides/azure-sql-to-neon/)
