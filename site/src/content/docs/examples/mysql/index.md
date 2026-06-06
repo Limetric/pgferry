@@ -21,3 +21,13 @@ MySQL has the broadest example surface because it exercises the most pgferry fea
 - [schema-only](/examples/mysql/schema-only/)
 - [data-only](/examples/mysql/data-only/)
 - [sakila](/examples/mysql/sakila/)
+
+## Migrating to a specific provider?
+
+Provider-specific playbooks with connection, TLS, pooling, and firewall setup:
+
+- [MySQL to Supabase](/guides/mysql-to-supabase/)
+- [MySQL to Neon](/guides/mysql-to-neon/)
+- [MySQL to Railway Postgres](/guides/mysql-to-railway-postgres/)
+- [MySQL to Render Postgres](/guides/mysql-to-render-postgres/)
+- [MySQL to PlanetScale Postgres](/guides/mysql-to-planetscale-postgres/)

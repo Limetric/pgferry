@@ -35,3 +35,11 @@ MSSQL support uses `sys.*` catalog introspection and a small set of SQL Server-s
 - **Synonyms**: Introspection follows real objects in `source_schema`. `sys.synonyms` targets are not expanded; point the DSN/schema at underlying tables or use hooks.
 - **Cross-schema foreign keys**: When a FK references another schema, pgferry logs a warning at introspection. The FK may fail in PostgreSQL if the referenced table is not in the target schema; adjust migration order, use hooks, or align schemas.
 - **Azure SQL / connectivity**: Firewalls, TLS, and `encrypt` / trust settings are environment-specific; the config wizard validates DSN shape via `msdsn` but does not cover every hosting matrix.
+
+## Migrating to a managed Postgres provider?
+
+These destination-specific guides add the provider connection, TLS, pooling, and firewall setup on top of the MSSQL behavior above:
+
+- [MSSQL to Supabase](/guides/mssql-to-supabase/)
+- [MSSQL to Neon](/guides/mssql-to-neon/)
+- [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/)

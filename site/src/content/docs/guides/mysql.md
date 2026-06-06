@@ -29,3 +29,13 @@ MySQL is still the richest pgferry source because it includes enums, sets, unsig
 - unsupported indexes such as `FULLTEXT`, prefix indexes, and expression indexes are reported and skipped
 - `single_tx` is available when you need one consistent snapshot on a live source
 - zero dates need explicit handling through `zero_date_mode`
+
+## Migrating to a managed Postgres provider?
+
+These destination-specific guides add the provider connection, TLS, pooling, and firewall setup on top of the MySQL behavior above:
+
+- [MySQL to Supabase](/guides/mysql-to-supabase/)
+- [MySQL to Neon](/guides/mysql-to-neon/)
+- [MySQL to Railway Postgres](/guides/mysql-to-railway-postgres/)
+- [MySQL to Render Postgres](/guides/mysql-to-render-postgres/)
+- [MySQL to PlanetScale Postgres](/guides/mysql-to-planetscale-postgres/)
