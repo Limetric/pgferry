@@ -39,3 +39,11 @@ These destination-specific guides add the provider connection, TLS, pooling, and
 - [MySQL to Railway Postgres](/guides/mysql-to-railway-postgres/)
 - [MySQL to Render Postgres](/guides/mysql-to-render-postgres/)
 - [MySQL to PlanetScale Postgres](/guides/mysql-to-planetscale-postgres/)
+
+## Migrating from a managed MySQL source?
+
+PlanetScale, RDS, and Cloud SQL are all MySQL — the type behavior above applies unchanged — but each adds its own access, TLS, and firewall setup. These guides cover the source-side specifics:
+
+- [PlanetScale to Supabase](/guides/planetscale-to-supabase/) · [PlanetScale to Neon](/guides/planetscale-to-neon/) — PlanetScale's MySQL/Vitess product as a source
+- [AWS RDS MySQL to Supabase](/guides/aws-rds-mysql-to-supabase/) · [AWS RDS MySQL to Neon](/guides/aws-rds-mysql-to-neon/) — RDS and Aurora MySQL
+- [Cloud SQL for MySQL to Supabase](/guides/cloud-sql-mysql-to-supabase/) · [Cloud SQL for MySQL to Neon](/guides/cloud-sql-mysql-to-neon/) — Google Cloud SQL
