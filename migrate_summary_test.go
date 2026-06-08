@@ -19,12 +19,77 @@ func TestMigrateOptionsFromCmd(t *testing.T) {
 	if opts.LogFormat != "text" {
 		t.Fatalf("nil cmd: LogFormat = %q, want text", opts.LogFormat)
 	}
+	if opts.LogLevel != migrateLogLevelVerbose {
+		t.Fatalf("nil cmd: LogLevel = %q, want verbose", opts.LogLevel)
+	}
 	opts, err = migrateOptionsFromCmd(&cobra.Command{})
 	if err != nil {
 		t.Fatalf("bare cmd: %v", err)
 	}
 	if opts.LogFormat != "text" {
 		t.Fatalf("bare cmd: LogFormat = %q, want text", opts.LogFormat)
+	}
+	if opts.LogLevel != migrateLogLevelVerbose {
+		t.Fatalf("bare cmd: LogLevel = %q, want verbose", opts.LogLevel)
+	}
+}
+
+func TestMigrateOptionsFromCmdLogLevelAndQuiet(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("log-format", "text", "")
+	cmd.Flags().String("log-level", "verbose", "")
+	cmd.Flags().BoolP("quiet", "q", false, "")
+
+	if err := cmd.Flags().Set("log-level", "table"); err != nil {
+		t.Fatalf("set log-level: %v", err)
+	}
+	opts, err := migrateOptionsFromCmd(cmd)
+	if err != nil {
+		t.Fatalf("log-level table: %v", err)
+	}
+	if opts.LogLevel != migrateLogLevelTable {
+		t.Fatalf("LogLevel = %q, want table", opts.LogLevel)
+	}
+
+	if err := cmd.Flags().Set("log-level", "verbose"); err != nil {
+		t.Fatalf("set log-level: %v", err)
+	}
+	if err := cmd.Flags().Set("quiet", "true"); err != nil {
+		t.Fatalf("set quiet: %v", err)
+	}
+	opts, err = migrateOptionsFromCmd(cmd)
+	if err != nil {
+		t.Fatalf("quiet: %v", err)
+	}
+	if opts.LogLevel != migrateLogLevelTable {
+		t.Fatalf("quiet LogLevel = %q, want table", opts.LogLevel)
+	}
+}
+
+func TestMigrateOptionsFromCmdReadsInheritedFlags(t *testing.T) {
+	parent := &cobra.Command{Use: "pgferry"}
+	child := &cobra.Command{Use: "migrate"}
+	parent.PersistentFlags().String("log-format", "text", "")
+	parent.PersistentFlags().String("log-level", migrateLogLevelVerbose, "")
+	parent.PersistentFlags().BoolP("quiet", "q", false, "")
+	parent.AddCommand(child)
+
+	if err := parent.PersistentFlags().Set("log-format", "json"); err != nil {
+		t.Fatalf("set log-format: %v", err)
+	}
+	if err := parent.PersistentFlags().Set("quiet", "true"); err != nil {
+		t.Fatalf("set quiet: %v", err)
+	}
+
+	opts, err := migrateOptionsFromCmd(child)
+	if err != nil {
+		t.Fatalf("inherited flags: %v", err)
+	}
+	if opts.LogFormat != "json" {
+		t.Fatalf("LogFormat = %q, want json", opts.LogFormat)
+	}
+	if opts.LogLevel != migrateLogLevelTable {
+		t.Fatalf("LogLevel = %q, want table", opts.LogLevel)
 	}
 }
 
@@ -54,6 +119,37 @@ func TestParseMigrateLogFormat(t *testing.T) {
 		}
 		if got != tt.want {
 			t.Fatalf("parseMigrateLogFormat(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestParseMigrateLogLevel(t *testing.T) {
+	tests := []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"verbose", migrateLogLevelVerbose, false},
+		{"VERBOSE", migrateLogLevelVerbose, false},
+		{"table", migrateLogLevelTable, false},
+		{"schema", migrateLogLevelSchema, false},
+		{"", migrateLogLevelVerbose, false},
+		{"  table  ", migrateLogLevelTable, false},
+		{"debug", "", true},
+	}
+	for _, tt := range tests {
+		got, err := parseMigrateLogLevel(tt.in)
+		if tt.wantErr {
+			if err == nil {
+				t.Fatalf("parseMigrateLogLevel(%q) err = nil, want error", tt.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("parseMigrateLogLevel(%q): %v", tt.in, err)
+		}
+		if got != tt.want {
+			t.Fatalf("parseMigrateLogLevel(%q) = %q, want %q", tt.in, got, tt.want)
 		}
 	}
 }

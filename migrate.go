@@ -27,6 +27,7 @@ type migrateDataConfig struct {
 	ChunkSize          int64
 	Resume             bool
 	ConfigDir          string
+	LogLevel           string
 	// ResumeCompatibility is used only when Resume=true to validate that an
 	// existing checkpoint still matches the current migration shape.
 	ResumeCompatibility checkpointCompatibility
@@ -44,7 +45,7 @@ func migrateData(ctx context.Context, cfg migrateDataConfig) error {
 
 func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 	// Plan chunks for each table
-	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize, cfg.TypeMap, cfg.Workers)
+	plans, err := buildChunkPlans(ctx, cfg.Src, cfg.SrcDSN, cfg.Schema, cfg.ChunkSize, cfg.TypeMap, cfg.Workers, cfg.LogLevel)
 	if err != nil {
 		return err
 	}
@@ -64,6 +65,7 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 	}
 
 	workItems := buildParallelMigrationWorkItems(plans, mgr)
+	progress := newMigrationProgressLogger(cfg.LogLevel, workItems)
 	if err := runParallelMigrationWorkers(
 		ctx,
 		cfg.Workers,
@@ -74,9 +76,15 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 		mgr,
 		func(ctx context.Context, source dbQuerier, item migrationWorkItem) (int64, error) {
 			if item.ChunkKey == nil {
-				return migrateTableFromSourceFull(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, item.PGCopyColumns)
+				return migrateTableFromSourceFull(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, item.PGCopyColumns, cfg.LogLevel)
 			}
-			return migrateChunkFromSource(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, *item.ChunkKey, item.Chunk, item.ColumnSelectList, item.PGCopyColumns)
+			progress.StartChunkedTable(item.Table.SourceName)
+			count, err := migrateChunkFromSource(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, *item.ChunkKey, item.Chunk, item.ColumnSelectList, item.PGCopyColumns, cfg.LogLevel)
+			if err != nil {
+				return 0, err
+			}
+			progress.FinishChunk(item.Table.SourceName, count)
+			return count, nil
 		},
 	); err != nil {
 		// Flush partial progress so a resumed run can skip completed work.
@@ -350,7 +358,7 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 				log.Printf("  [%s] skipping (completed in previous run)", t.SourceName)
 				continue
 			}
-			count, copyErr := migrateTableFromSourceFull(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, tablePGCopyColumns(t))
+			count, copyErr := migrateTableFromSourceFull(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, tablePGCopyColumns(t), cfg.LogLevel)
 			if copyErr != nil {
 				return fmt.Errorf("table %s: %w", t.SourceName, copyErr)
 			}
@@ -372,16 +380,26 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 		chunks := planChunks(min, max, cfg.ChunkSize)
 		colSelectList := buildColumnSelectList(cfg.Src, t, cfg.TypeMap)
 		pgCols := tablePGCopyColumns(t)
-		log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
+		if isVerboseMigrateLogLevel(cfg.LogLevel) {
+			log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
+		}
+		if isTableMigrateLogLevel(cfg.LogLevel) {
+			log.Printf("  [%s] starting row copy", t.SourceName)
+		}
+		var copied int64
 		for _, chunk := range chunks {
 			if mgr.IsChunkCompleted(t.SourceName, chunk.Index) {
 				continue
 			}
-			count, copyErr := migrateChunkFromSource(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, *key, chunk, colSelectList, pgCols)
+			count, copyErr := migrateChunkFromSource(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, *key, chunk, colSelectList, pgCols, cfg.LogLevel)
 			if copyErr != nil {
 				return fmt.Errorf("table %s chunk %d: %w", t.SourceName, chunk.Index, copyErr)
 			}
+			copied += count
 			mgr.RecordChunk(t.SourceName, chunk.Index, count, len(chunks))
+		}
+		if isTableMigrateLogLevel(cfg.LogLevel) {
+			log.Printf("  [%s] done (%d rows copied)", t.SourceName, copied)
 		}
 	}
 
@@ -430,31 +448,131 @@ type dbQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
-func migrateTableFromSourceFull(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, pgCopyColumns []string) (int64, error) {
-	log.Printf("  [%s] starting row copy", table.SourceName)
+func migrateTableFromSourceFull(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, pgCopyColumns []string, logLevel string) (int64, error) {
+	if shouldLogTableRowCopy(logLevel) {
+		log.Printf("  [%s] starting row copy", table.SourceName)
+	}
 
 	query := buildSourceSelectQuery(src, table, typeMap)
-	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query, pgCopyColumns)
+	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query, pgCopyColumns, logLevel)
 	if err != nil {
 		return 0, err
 	}
 
-	log.Printf("  [%s] done (%d rows copied)", table.SourceName, count)
+	if shouldLogTableRowCopy(logLevel) {
+		log.Printf("  [%s] done (%d rows copied)", table.SourceName, count)
+	}
 	return count, nil
 }
 
 // migrateChunkFromSource copies a single chunk using an existing source querier.
-func migrateChunkFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, key ChunkKey, chunk Chunk, columnSelectList string, pgCopyColumns []string) (int64, error) {
-	log.Printf("  [%s] chunk %d starting", table.SourceName, chunk.Index)
+func migrateChunkFromSource(ctx context.Context, src SourceDB, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, key ChunkKey, chunk Chunk, columnSelectList string, pgCopyColumns []string, logLevel string) (int64, error) {
+	logChunkProgress(logLevel, table.SourceName, chunk.Index, "starting", 0)
 
 	query := buildChunkedSelectQuery(src, table, key, chunk, columnSelectList)
-	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query, pgCopyColumns)
+	count, err := copyFromSource(ctx, source, pool, table, pgSchema, typeMap, src, query, pgCopyColumns, logLevel)
 	if err != nil {
 		return 0, err
 	}
 
-	log.Printf("  [%s] chunk %d done (%d rows)", table.SourceName, chunk.Index, count)
+	logChunkProgress(logLevel, table.SourceName, chunk.Index, "done", count)
 	return count, nil
+}
+
+type migrationProgressLogger struct {
+	logLevel string
+	mu       sync.Mutex
+	tables   map[string]*migrationTableProgress
+}
+
+type migrationTableProgress struct {
+	totalChunks    int
+	finishedChunks int
+	copiedRows     int64
+	started        bool
+	done           bool
+}
+
+func newMigrationProgressLogger(logLevel string, workItems []migrationWorkItem) *migrationProgressLogger {
+	p := &migrationProgressLogger{
+		logLevel: logLevel,
+		tables:   make(map[string]*migrationTableProgress),
+	}
+	if !isTableMigrateLogLevel(logLevel) {
+		return p
+	}
+	for _, item := range workItems {
+		if item.ChunkKey == nil {
+			continue
+		}
+		tableName := item.Table.SourceName
+		if p.tables[tableName] == nil {
+			p.tables[tableName] = &migrationTableProgress{}
+		}
+		p.tables[tableName].totalChunks++
+	}
+	return p
+}
+
+func (p *migrationProgressLogger) StartChunkedTable(tableName string) {
+	if p == nil || !isTableMigrateLogLevel(p.logLevel) {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	table := p.tables[tableName]
+	if table == nil || table.started {
+		return
+	}
+	table.started = true
+	log.Printf("  [%s] starting row copy", tableName)
+}
+
+func (p *migrationProgressLogger) FinishChunk(tableName string, copiedRows int64) {
+	if p == nil || !isTableMigrateLogLevel(p.logLevel) {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	table := p.tables[tableName]
+	if table == nil || table.done {
+		return
+	}
+	table.finishedChunks++
+	table.copiedRows += copiedRows
+	if table.finishedChunks == table.totalChunks {
+		table.done = true
+		log.Printf("  [%s] done (%d rows copied)", tableName, table.copiedRows)
+	}
+}
+
+func logChunkProgress(logLevel, tableName string, chunkIndex int, state string, rows int64) {
+	if !isVerboseMigrateLogLevel(logLevel) {
+		return
+	}
+	if state == "done" {
+		log.Printf("  [%s] chunk %d done (%d rows)", tableName, chunkIndex, rows)
+		return
+	}
+	log.Printf("  [%s] chunk %d %s", tableName, chunkIndex, state)
+}
+
+func isVerboseMigrateLogLevel(logLevel string) bool {
+	return logLevel == "" || logLevel == migrateLogLevelVerbose
+}
+
+func isTableMigrateLogLevel(logLevel string) bool {
+	return logLevel == migrateLogLevelTable
+}
+
+func shouldLogTableRowCopy(logLevel string) bool {
+	return isVerboseMigrateLogLevel(logLevel) || isTableMigrateLogLevel(logLevel)
+}
+
+func shouldLogRowCopyProgress(logLevel string) bool {
+	return isVerboseMigrateLogLevel(logLevel)
 }
 
 // tablePGCopyColumns returns PostgreSQL column names in table.Columns order for COPY.
@@ -467,7 +585,7 @@ func tablePGCopyColumns(table Table) []string {
 }
 
 // copyFromSource runs a SELECT query on the source and streams results into PG via COPY.
-func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, src SourceDB, query string, pgColumns []string) (int64, error) {
+func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, table Table, pgSchema string, typeMap TypeMappingConfig, src SourceDB, query string, pgColumns []string, logLevel string) (int64, error) {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("acquire pg conn: %w", err)
@@ -480,7 +598,7 @@ func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, t
 	}
 	defer rows.Close()
 
-	rs := newRowSource(rows, table, src, typeMap)
+	rs := newRowSource(rows, table, src, typeMap, logLevel)
 
 	count, err := conn.Conn().CopyFrom(
 		ctx,
@@ -497,7 +615,7 @@ func copyFromSource(ctx context.Context, source dbQuerier, pool *pgxpool.Pool, t
 // buildChunkPlans creates chunk plans for all tables by querying MIN/MAX on chunkable tables.
 // typeMap must be the same validated TypeMappingConfig used for the data migration so
 // ColumnSelectList matches buildSourceSelectQuery / columnSelectExpr semantics.
-func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int) ([]ChunkPlan, error) {
+func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int, logLevel string) ([]ChunkPlan, error) {
 	return buildChunkPlansWithDeps(
 		ctx,
 		src,
@@ -505,6 +623,7 @@ func buildChunkPlans(ctx context.Context, src SourceDB, srcDSN string, schema *S
 		chunkSize,
 		typeMap,
 		chunkPlanningWorkers(workers, src),
+		logLevel,
 		chunkPlanningDeps{
 			openSource: func() (migrationWorkerSource, error) {
 				srcDB, err := openMigrationSourceDB(src, srcDSN)
@@ -531,7 +650,7 @@ type chunkPlanningJob struct {
 	pgCopyColumns    []string
 }
 
-func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int, deps chunkPlanningDeps) ([]ChunkPlan, error) {
+func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, chunkSize int64, typeMap TypeMappingConfig, workers int, logLevel string, deps chunkPlanningDeps) ([]ChunkPlan, error) {
 	plans := make([]ChunkPlan, len(schema.Tables))
 	jobs := make([]chunkPlanningJob, 0, len(schema.Tables))
 	nonChunkable := 0
@@ -648,7 +767,9 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 						ColumnSelectList: job.columnSelectList,
 						PGCopyColumns:    job.pgCopyColumns,
 					}
-					log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", job.table.SourceName, len(chunks), job.key.SourceColumn, min, max)
+					if isVerboseMigrateLogLevel(logLevel) {
+						log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", job.table.SourceName, len(chunks), job.key.SourceColumn, min, max)
+					}
 				}
 			}
 		}()
@@ -709,9 +830,10 @@ type rowSource struct {
 	copied       int64
 	tableName    string
 	lastLog      time.Time
+	logLevel     string
 }
 
-func newRowSource(rows *sql.Rows, table Table, src SourceDB, typeMap TypeMappingConfig) *rowSource {
+func newRowSource(rows *sql.Rows, table Table, src SourceDB, typeMap TypeMappingConfig, logLevel string) *rowSource {
 	numCols := len(table.Columns)
 	scanDest := make([]any, numCols)
 	scanPtrs := make([]any, numCols)
@@ -728,6 +850,7 @@ func newRowSource(rows *sql.Rows, table Table, src SourceDB, typeMap TypeMapping
 		values:       make([]any, numCols),
 		tableName:    table.SourceName,
 		lastLog:      time.Now(),
+		logLevel:     logLevel,
 	}
 }
 
@@ -752,7 +875,7 @@ func (r *rowSource) Next() bool {
 	}
 
 	r.copied++
-	if shouldSampleProgressLogTime(r.copied) {
+	if shouldLogRowCopyProgress(r.logLevel) && shouldSampleProgressLogTime(r.copied) {
 		if now := time.Now(); now.Sub(r.lastLog) >= 10*time.Second {
 			log.Printf("  [%s] progress: %d rows copied", r.tableName, r.copied)
 			r.lastLog = now

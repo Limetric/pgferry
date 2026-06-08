@@ -27,6 +27,8 @@ const migrateLogFormatFlagShort = "migrate progress: text or json"
 // migrateLogFormatFlagDesc documents JSON mode for migrateCmd.Long and site docs.
 const migrateLogFormatFlagDesc = `With json, one JSON object is written to stdout when the run finishes; human messages remain on stderr. JSON fields: version, duration_ms, mode, validation, success, error, stage (on failure), tables_migrated (omitted when zero).`
 
+const migrateLogLevelFlagDesc = `Use --log-level=table, or --quiet, to suppress per-chunk row-copy progress and keep one row-copy start/done pair per table. Use --log-level=schema to suppress row-copy progress detail.`
+
 var rootCmd = &cobra.Command{
 	Use:   "pgferry [migration.toml]",
 	Short: "Source database to PostgreSQL migration tool",
@@ -54,7 +56,7 @@ var migrateCmd = &cobra.Command{
 	Use:     "migrate [migration.toml]",
 	Aliases: []string{"run"},
 	Short:   "Run a migration from a TOML config file",
-	Long:    "Run a migration from a TOML config file.\n\n" + migrateLogFormatFlagDesc,
+	Long:    "Run a migration from a TOML config file.\n\n" + migrateLogFormatFlagDesc + "\n\n" + migrateLogLevelFlagDesc,
 	Args:    cobra.MaximumNArgs(1),
 	RunE:    runMigration,
 }
@@ -76,6 +78,8 @@ func init() {
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 	rootCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	rootCmd.PersistentFlags().String("log-format", "text", migrateLogFormatFlagShort)
+	rootCmd.PersistentFlags().String("log-level", migrateLogLevelVerbose, "row-copy progress detail: verbose, table, or schema")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress per-chunk row-copy progress (same as --log-level=table)")
 	migrateCmd.Flags().StringVar(&configPath, "config", "", "path to migration TOML config file")
 	versionCmd.Flags().BoolVarP(&versionVerbose, "verbose", "v", false, "print detailed build metadata")
 	rootCmd.AddCommand(versionCmd)
@@ -444,6 +448,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 					ChunkSize:           cfg.ChunkSize,
 					Resume:              cfg.Resume,
 					ConfigDir:           cfg.configDir,
+					LogLevel:            opts.LogLevel,
 					ResumeCompatibility: resumeCompatibility,
 				})
 			},

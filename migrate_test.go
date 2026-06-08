@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"slices"
 	"strings"
@@ -32,6 +34,44 @@ func TestShouldSampleProgressLogTime(t *testing.T) {
 	}
 }
 
+func TestLogChunkProgressHonorsLogLevel(t *testing.T) {
+	var buf bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() {
+		log.SetOutput(orig)
+	})
+
+	logChunkProgress(migrateLogLevelVerbose, "users", 7, "starting", 0)
+	logChunkProgress(migrateLogLevelTable, "users", 8, "starting", 0)
+	logChunkProgress(migrateLogLevelSchema, "users", 9, "done", 12)
+
+	got := buf.String()
+	if !strings.Contains(got, "[users] chunk 7 starting") {
+		t.Fatalf("verbose chunk log missing from %q", got)
+	}
+	if strings.Contains(got, "chunk 8") || strings.Contains(got, "chunk 9") {
+		t.Fatalf("non-verbose chunk log was emitted: %q", got)
+	}
+}
+
+func TestShouldLogRowCopyProgressOnlyInVerboseMode(t *testing.T) {
+	tests := []struct {
+		logLevel string
+		want     bool
+	}{
+		{"", true},
+		{migrateLogLevelVerbose, true},
+		{migrateLogLevelTable, false},
+		{migrateLogLevelSchema, false},
+	}
+	for _, tt := range tests {
+		if got := shouldLogRowCopyProgress(tt.logLevel); got != tt.want {
+			t.Fatalf("shouldLogRowCopyProgress(%q) = %v, want %v", tt.logLevel, got, tt.want)
+		}
+	}
+}
+
 func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 	table := Table{
 		SourceName: "users",
@@ -42,7 +82,7 @@ func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 		},
 	}
 
-	rs := newRowSource(nil, table, &sqliteSourceDB{}, defaultTypeMappingConfig())
+	rs := newRowSource(nil, table, &sqliteSourceDB{}, defaultTypeMappingConfig(), migrateLogLevelVerbose)
 
 	if len(rs.scanDest) != len(table.Columns) {
 		t.Fatalf("scanDest len = %d, want %d", len(rs.scanDest), len(table.Columns))
@@ -359,7 +399,7 @@ func TestBuildChunkPlansWithDeps_UsesBoundedConcurrencyAndPreservesTableOrder(t 
 	)
 	done := make(chan struct{})
 	go func() {
-		plans, err = buildChunkPlansWithDeps(context.Background(), src, schema, 100, defaultTypeMappingConfig(), 2, deps)
+		plans, err = buildChunkPlansWithDeps(context.Background(), src, schema, 100, defaultTypeMappingConfig(), 2, migrateLogLevelVerbose, deps)
 		close(done)
 	}()
 
@@ -418,6 +458,7 @@ func TestBuildChunkPlansWithDeps_CancelsSiblingQueriesAfterFirstError(t *testing
 		100,
 		defaultTypeMappingConfig(),
 		2,
+		migrateLogLevelVerbose,
 		chunkPlanningDeps{
 			openSource: func() (migrationWorkerSource, error) {
 				return &fakeMigrationWorkerSource{id: 1, closeMu: &sync.Mutex{}, closeCounts: map[int]int{}}, nil
@@ -465,6 +506,7 @@ func TestBuildChunkPlansWithDeps_OpenSourceErrorIncludesTableName(t *testing.T) 
 		100,
 		defaultTypeMappingConfig(),
 		1,
+		migrateLogLevelVerbose,
 		chunkPlanningDeps{
 			openSource: func() (migrationWorkerSource, error) {
 				return nil, errors.New("dial tcp timeout")
