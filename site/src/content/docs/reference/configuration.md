@@ -28,7 +28,7 @@ These are command-line flags, not TOML keys:
 | --- | --- | --- |
 | `--log-format` | `text` | Values: `text`, `json`. `json` writes one machine-readable summary object to stdout when `migrate` finishes. Human progress and errors stay on stderr. |
 | `--log-level` | `verbose` | Values: `verbose`, `table`, `schema`. Controls row-copy progress detail. `verbose` includes per-chunk start/done logs. `table` emits one row-copy start/done pair per table. `schema` suppresses row-copy detail. |
-| `--quiet`, `-q` | `false` | Shorthand for `--log-level table`. |
+| `--quiet`, `-q` | `false` | Shorthand for `--log-level table`. Cannot be combined with an explicit `--log-level`. |
 
 ## Minimal config
 

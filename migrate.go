@@ -380,6 +380,10 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 		chunks := planChunks(min, max, cfg.ChunkSize)
 		colSelectList := buildColumnSelectList(cfg.Src, t, cfg.TypeMap)
 		pgCols := tablePGCopyColumns(t)
+		chunksToCopy := pendingChunks(t.SourceName, chunks, mgr)
+		if len(chunksToCopy) == 0 {
+			continue
+		}
 		if isVerboseMigrateLogLevel(cfg.LogLevel) {
 			log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", t.SourceName, len(chunks), key.SourceColumn, min, max)
 		}
@@ -387,10 +391,7 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 			log.Printf("  [%s] starting row copy", t.SourceName)
 		}
 		var copied int64
-		for _, chunk := range chunks {
-			if mgr.IsChunkCompleted(t.SourceName, chunk.Index) {
-				continue
-			}
+		for _, chunk := range chunksToCopy {
 			count, copyErr := migrateChunkFromSource(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, *key, chunk, colSelectList, pgCols, cfg.LogLevel)
 			if copyErr != nil {
 				return fmt.Errorf("table %s chunk %d: %w", t.SourceName, chunk.Index, copyErr)
@@ -414,6 +415,17 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 		log.Printf("WARN: failed to delete checkpoint: %v", err)
 	}
 	return nil
+}
+
+func pendingChunks(tableName string, chunks []Chunk, mgr checkpointManager) []Chunk {
+	pending := make([]Chunk, 0, len(chunks))
+	for _, chunk := range chunks {
+		if mgr.IsChunkCompleted(tableName, chunk.Index) {
+			continue
+		}
+		pending = append(pending, chunk)
+	}
+	return pending
 }
 
 func openMigrationSourceDB(src SourceDB, srcDSN string) (*sql.DB, error) {

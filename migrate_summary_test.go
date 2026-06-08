@@ -51,18 +51,41 @@ func TestMigrateOptionsFromCmdLogLevelAndQuiet(t *testing.T) {
 		t.Fatalf("LogLevel = %q, want table", opts.LogLevel)
 	}
 
-	if err := cmd.Flags().Set("log-level", "verbose"); err != nil {
-		t.Fatalf("set log-level: %v", err)
-	}
-	if err := cmd.Flags().Set("quiet", "true"); err != nil {
+	quietCmd := &cobra.Command{}
+	quietCmd.Flags().String("log-format", "text", "")
+	quietCmd.Flags().String("log-level", "verbose", "")
+	quietCmd.Flags().BoolP("quiet", "q", false, "")
+	if err := quietCmd.Flags().Set("quiet", "true"); err != nil {
 		t.Fatalf("set quiet: %v", err)
 	}
-	opts, err = migrateOptionsFromCmd(cmd)
+	opts, err = migrateOptionsFromCmd(quietCmd)
 	if err != nil {
 		t.Fatalf("quiet: %v", err)
 	}
 	if opts.LogLevel != migrateLogLevelTable {
 		t.Fatalf("quiet LogLevel = %q, want table", opts.LogLevel)
+	}
+}
+
+func TestMigrateOptionsFromCmdRejectsQuietWithExplicitLogLevel(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("log-format", "text", "")
+	cmd.Flags().String("log-level", "verbose", "")
+	cmd.Flags().BoolP("quiet", "q", false, "")
+
+	if err := cmd.Flags().Set("log-level", "schema"); err != nil {
+		t.Fatalf("set log-level: %v", err)
+	}
+	if err := cmd.Flags().Set("quiet", "true"); err != nil {
+		t.Fatalf("set quiet: %v", err)
+	}
+
+	_, err := migrateOptionsFromCmd(cmd)
+	if err == nil {
+		t.Fatal("expected error for --quiet with explicit --log-level")
+	}
+	if !strings.Contains(err.Error(), "cannot combine --quiet with --log-level") {
+		t.Fatalf("error = %q, want quiet/log-level conflict", err.Error())
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
@@ -59,12 +58,14 @@ func migrateOptionsFromCmd(cmd *cobra.Command) (MigrateOptions, error) {
 	if err != nil {
 		return MigrateOptions{}, err
 	}
-	if v, ok := commandFlagString(cmd, "quiet"); ok {
-		quiet, err := strconv.ParseBool(v)
+	if quiet, ok, err := commandFlagBool(cmd, "quiet"); ok {
 		if err != nil {
 			return MigrateOptions{}, err
 		}
 		if quiet {
+			if commandFlagChanged(cmd, "log-level") {
+				return MigrateOptions{}, fmt.Errorf("cannot combine --quiet with --log-level")
+			}
 			ll = migrateLogLevelTable
 		}
 	}
@@ -81,6 +82,33 @@ func commandFlagString(cmd *cobra.Command, name string) (string, bool) {
 		return "", false
 	}
 	return flag.Value.String(), true
+}
+
+func commandFlagBool(cmd *cobra.Command, name string) (bool, bool, error) {
+	if cmd == nil {
+		return false, false, nil
+	}
+	switch {
+	case cmd.Flags().Lookup(name) != nil:
+		v, err := cmd.Flags().GetBool(name)
+		return v, true, err
+	case cmd.PersistentFlags().Lookup(name) != nil:
+		v, err := cmd.PersistentFlags().GetBool(name)
+		return v, true, err
+	case cmd.InheritedFlags().Lookup(name) != nil:
+		v, err := cmd.InheritedFlags().GetBool(name)
+		return v, true, err
+	default:
+		return false, false, nil
+	}
+}
+
+func commandFlagChanged(cmd *cobra.Command, name string) bool {
+	if cmd == nil {
+		return false
+	}
+	flag := cmd.Flag(name)
+	return flag != nil && flag.Changed
 }
 
 func parseMigrateLogFormat(s string) (string, error) {

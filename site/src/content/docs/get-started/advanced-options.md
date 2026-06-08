@@ -155,7 +155,7 @@ pgferry migrate migration.toml --quiet
 pgferry migrate migration.toml --log-level table
 ```
 
-`--log-level verbose` keeps the default per-chunk progress. `--log-level table` logs one row-copy start/done pair per table. `--log-level schema` suppresses row-copy detail while leaving warnings, errors, and stage-level messages visible.
+`--log-level verbose` keeps the default per-chunk progress. `--log-level table` logs one row-copy start/done pair per table. `--log-level schema` suppresses row-copy detail while leaving warnings, errors, and stage-level messages visible. Do not combine `--quiet` with an explicit `--log-level`; choose one form.
 
 ## Config path inspection
 
