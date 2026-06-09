@@ -37,6 +37,18 @@ go test -tags integration -run TestIntegration_MSSQL -count=1 -v ./...
 
 **Code changes must be reflected in the site.** The site source lives in `site/src/content/docs/`. When you add, remove, or change CLI flags, config options, behavior, or supported types, update the relevant docs pages — especially `reference/configuration.md`, `reference/type-mapping.md`, and any affected guides or examples.
 
+## Site package management
+
+The documentation site uses Bun for package management. Work from `site/`.
+
+```bash
+cd site
+bun install                  # Install dependencies
+bun run dev                  # Start the docs dev server via portless
+bun run build                # Build the docs site
+bun run check-routes         # Verify generated routes after a build
+```
+
 ## Key references
 
 - Operator tuning guide: <https://www.pgferry.com/operations/operator-tuning/>
