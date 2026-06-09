@@ -10,11 +10,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	migrateLogLevelVerbose = "verbose"
+	migrateLogLevelTable   = "table"
+	migrateLogLevelSchema  = "schema"
+)
+
 // MigrateOptions configures migrate execution (CLI passes flags; wizard uses zero value).
 type MigrateOptions struct {
 	// LogFormat is "text" (default) or "json". When "json", a single JSON summary
 	// line is written to stdout at the end; human diagnostics remain on stderr.
 	LogFormat string
+	// LogLevel controls row-copy progress detail: verbose logs per-chunk progress,
+	// table logs one row-copy start/done pair per table, and schema suppresses row-copy detail.
+	LogLevel string
 }
 
 // migrateJSONSummary is the machine-readable migrate run outcome (stdout when --log-format json).
@@ -29,22 +38,77 @@ type migrateJSONSummary struct {
 	TablesMigrated int    `json:"tables_migrated,omitempty"`
 }
 
-// migrateOptionsFromCmd reads --log-format (default text). cmd may be nil (tests).
-// If the flag is not registered on cmd (e.g. bare cobra.Command in tests), text is used.
+// migrateOptionsFromCmd reads migrate flags. cmd may be nil (tests).
+// If flags are not registered on cmd (e.g. bare cobra.Command in tests), defaults are used.
 func migrateOptionsFromCmd(cmd *cobra.Command) (MigrateOptions, error) {
-	s := "text"
-	if cmd != nil && cmd.Flags().Lookup("log-format") != nil {
-		v, err := cmd.Flags().GetString("log-format")
-		if err != nil {
-			return MigrateOptions{}, err
-		}
-		s = v
+	logFormat := "text"
+	if v, ok := commandFlagString(cmd, "log-format"); ok {
+		logFormat = v
 	}
-	lf, err := parseMigrateLogFormat(s)
+	lf, err := parseMigrateLogFormat(logFormat)
 	if err != nil {
 		return MigrateOptions{}, err
 	}
-	return MigrateOptions{LogFormat: lf}, nil
+
+	logLevel := migrateLogLevelVerbose
+	if v, ok := commandFlagString(cmd, "log-level"); ok {
+		logLevel = v
+	}
+	ll, err := parseMigrateLogLevel(logLevel)
+	if err != nil {
+		return MigrateOptions{}, err
+	}
+	if quiet, ok, err := commandFlagBool(cmd, "quiet"); ok {
+		if err != nil {
+			return MigrateOptions{}, err
+		}
+		if quiet {
+			if commandFlagChanged(cmd, "log-level") {
+				return MigrateOptions{}, fmt.Errorf("cannot combine --quiet with --log-level")
+			}
+			ll = migrateLogLevelTable
+		}
+	}
+
+	return MigrateOptions{LogFormat: lf, LogLevel: ll}, nil
+}
+
+func commandFlagString(cmd *cobra.Command, name string) (string, bool) {
+	if cmd == nil {
+		return "", false
+	}
+	flag := cmd.Flag(name)
+	if flag == nil {
+		return "", false
+	}
+	return flag.Value.String(), true
+}
+
+func commandFlagBool(cmd *cobra.Command, name string) (bool, bool, error) {
+	if cmd == nil {
+		return false, false, nil
+	}
+	switch {
+	case cmd.Flags().Lookup(name) != nil:
+		v, err := cmd.Flags().GetBool(name)
+		return v, true, err
+	case cmd.PersistentFlags().Lookup(name) != nil:
+		v, err := cmd.PersistentFlags().GetBool(name)
+		return v, true, err
+	case cmd.InheritedFlags().Lookup(name) != nil:
+		v, err := cmd.InheritedFlags().GetBool(name)
+		return v, true, err
+	default:
+		return false, false, nil
+	}
+}
+
+func commandFlagChanged(cmd *cobra.Command, name string) bool {
+	if cmd == nil {
+		return false
+	}
+	flag := cmd.Flag(name)
+	return flag != nil && flag.Changed
 }
 
 func parseMigrateLogFormat(s string) (string, error) {
@@ -59,6 +123,19 @@ func parseMigrateLogFormat(s string) (string, error) {
 		return "json", nil
 	default:
 		return "", fmt.Errorf("--log-format must be text or json")
+	}
+}
+
+func parseMigrateLogLevel(s string) (string, error) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	if v == "" {
+		return migrateLogLevelVerbose, nil
+	}
+	switch v {
+	case migrateLogLevelVerbose, migrateLogLevelTable, migrateLogLevelSchema:
+		return v, nil
+	default:
+		return "", fmt.Errorf("--log-level must be verbose, table, or schema")
 	}
 }
 

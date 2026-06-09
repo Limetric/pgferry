@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"reflect"
 	"slices"
 	"strings"
@@ -32,6 +34,130 @@ func TestShouldSampleProgressLogTime(t *testing.T) {
 	}
 }
 
+func TestLogChunkProgressHonorsLogLevel(t *testing.T) {
+	var buf bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() {
+		log.SetOutput(orig)
+	})
+
+	logChunkProgress(migrateLogLevelVerbose, "users", 7, "starting", 0)
+	logChunkProgress(migrateLogLevelTable, "users", 8, "starting", 0)
+	logChunkProgress(migrateLogLevelSchema, "users", 9, "done", 12)
+
+	got := buf.String()
+	if !strings.Contains(got, "[users] chunk 7 starting") {
+		t.Fatalf("verbose chunk log missing from %q", got)
+	}
+	if strings.Contains(got, "chunk 8") || strings.Contains(got, "chunk 9") {
+		t.Fatalf("non-verbose chunk log was emitted: %q", got)
+	}
+}
+
+func TestShouldLogRowCopyProgressOnlyInVerboseMode(t *testing.T) {
+	tests := []struct {
+		logLevel string
+		want     bool
+	}{
+		{"", true},
+		{migrateLogLevelVerbose, true},
+		{migrateLogLevelTable, false},
+		{migrateLogLevelSchema, false},
+	}
+	for _, tt := range tests {
+		if got := shouldLogRowCopyProgress(tt.logLevel); got != tt.want {
+			t.Fatalf("shouldLogRowCopyProgress(%q) = %v, want %v", tt.logLevel, got, tt.want)
+		}
+	}
+}
+
+func TestShouldLogTableRowCopySuppressesSchemaMode(t *testing.T) {
+	tests := []struct {
+		logLevel string
+		want     bool
+	}{
+		{"", true},
+		{migrateLogLevelVerbose, true},
+		{migrateLogLevelTable, true},
+		{migrateLogLevelSchema, false},
+	}
+	for _, tt := range tests {
+		if got := shouldLogTableRowCopy(tt.logLevel); got != tt.want {
+			t.Fatalf("shouldLogTableRowCopy(%q) = %v, want %v", tt.logLevel, got, tt.want)
+		}
+	}
+}
+
+func TestMigrationProgressLoggerTableLevelLogsOnceAndDoneAfterLastChunk(t *testing.T) {
+	var buf bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() {
+		log.SetOutput(orig)
+	})
+
+	progress := newMigrationProgressLogger(migrateLogLevelTable, []migrationWorkItem{
+		{Table: Table{SourceName: "multi"}, ChunkKey: &ChunkKey{SourceColumn: "id"}, Chunk: Chunk{Index: 0}},
+		{Table: Table{SourceName: "multi"}, ChunkKey: &ChunkKey{SourceColumn: "id"}, Chunk: Chunk{Index: 1}},
+		{Table: Table{SourceName: "single"}, ChunkKey: &ChunkKey{SourceColumn: "id"}, Chunk: Chunk{Index: 0}},
+	})
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			progress.StartChunkedTable("multi")
+		}()
+	}
+	wg.Wait()
+	if got := strings.Count(buf.String(), "[multi] starting row copy"); got != 1 {
+		t.Fatalf("multi start log count = %d, want 1; logs: %q", got, buf.String())
+	}
+
+	progress.FinishChunk("multi", 3)
+	if strings.Contains(buf.String(), "[multi] done") {
+		t.Fatalf("multi done logged before last chunk: %q", buf.String())
+	}
+
+	progress.FinishChunk("single", 5)
+	if !strings.Contains(buf.String(), "[single] done (5 rows copied)") {
+		t.Fatalf("single chunk done log missing: %q", buf.String())
+	}
+
+	progress.FinishChunk("multi", 7)
+	if got := strings.Count(buf.String(), "[multi] done (10 rows copied)"); got != 1 {
+		t.Fatalf("multi done log count = %d, want 1; logs: %q", got, buf.String())
+	}
+}
+
+func TestPendingChunksSkipsCompletedChunks(t *testing.T) {
+	mgr := &fakeMigrationCheckpointManager{
+		doneChunks: map[string]map[int]bool{
+			"users": {
+				0: true,
+				1: true,
+			},
+		},
+	}
+	chunks := []Chunk{
+		{Index: 0},
+		{Index: 1},
+		{Index: 2},
+	}
+
+	got := pendingChunks("users", chunks, mgr)
+	if len(got) != 1 || got[0].Index != 2 {
+		t.Fatalf("pendingChunks = %+v, want only chunk 2", got)
+	}
+
+	mgr.doneChunks["users"][2] = true
+	if got := pendingChunks("users", chunks, mgr); len(got) != 0 {
+		t.Fatalf("pendingChunks with all chunks complete = %+v, want none", got)
+	}
+}
+
 func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 	table := Table{
 		SourceName: "users",
@@ -42,7 +168,7 @@ func TestNewRowSourcePreallocatesBuffers(t *testing.T) {
 		},
 	}
 
-	rs := newRowSource(nil, table, &sqliteSourceDB{}, defaultTypeMappingConfig())
+	rs := newRowSource(nil, table, &sqliteSourceDB{}, defaultTypeMappingConfig(), migrateLogLevelVerbose)
 
 	if len(rs.scanDest) != len(table.Columns) {
 		t.Fatalf("scanDest len = %d, want %d", len(rs.scanDest), len(table.Columns))
@@ -359,7 +485,7 @@ func TestBuildChunkPlansWithDeps_UsesBoundedConcurrencyAndPreservesTableOrder(t 
 	)
 	done := make(chan struct{})
 	go func() {
-		plans, err = buildChunkPlansWithDeps(context.Background(), src, schema, 100, defaultTypeMappingConfig(), 2, deps)
+		plans, err = buildChunkPlansWithDeps(context.Background(), src, schema, 100, defaultTypeMappingConfig(), 2, migrateLogLevelVerbose, deps)
 		close(done)
 	}()
 
@@ -418,6 +544,7 @@ func TestBuildChunkPlansWithDeps_CancelsSiblingQueriesAfterFirstError(t *testing
 		100,
 		defaultTypeMappingConfig(),
 		2,
+		migrateLogLevelVerbose,
 		chunkPlanningDeps{
 			openSource: func() (migrationWorkerSource, error) {
 				return &fakeMigrationWorkerSource{id: 1, closeMu: &sync.Mutex{}, closeCounts: map[int]int{}}, nil
@@ -465,6 +592,7 @@ func TestBuildChunkPlansWithDeps_OpenSourceErrorIncludesTableName(t *testing.T) 
 		100,
 		defaultTypeMappingConfig(),
 		1,
+		migrateLogLevelVerbose,
 		chunkPlanningDeps{
 			openSource: func() (migrationWorkerSource, error) {
 				return nil, errors.New("dial tcp timeout")

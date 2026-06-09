@@ -20,6 +20,16 @@ Shorthand: `pgferry run` is the same as `migrate`, and `generate` / `init` are a
 
 The wizard keeps the default path short, then offers an optional advanced section for `validation`, `resume`, `chunk_size`, and `index_workers`. If you skip that section, the generated TOML stays on the minimal safe/default path.
 
+## CLI logging flags
+
+These are command-line flags, not TOML keys:
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--log-format` | `text` | Values: `text`, `json`. `json` writes one machine-readable summary object to stdout when `migrate` finishes. Human progress and errors stay on stderr. |
+| `--log-level` | `verbose` | Values: `verbose`, `table`, `schema`. Controls row-copy progress detail. `verbose` includes per-chunk start/done logs. `table` emits one row-copy start/done pair per table. `schema` suppresses row-copy detail. |
+| `--quiet`, `-q` | `false` | Shorthand for `--log-level table`. Cannot be combined with an explicit `--log-level`. |
+
 ## Minimal config
 
 ```toml

@@ -148,6 +148,15 @@ pgferry migrate migration.toml --log-format json | jq '.success'
 
 The JSON fields: `version`, `duration_ms`, `mode`, `validation`, `success`, `error` and `stage` (on failure), `tables_migrated` (omitted when zero).
 
+For large chunked tables, default progress includes each chunk start and finish. Use table-level logging when you want a readable operator stream without external filters:
+
+```bash
+pgferry migrate migration.toml --quiet
+pgferry migrate migration.toml --log-level table
+```
+
+`--log-level verbose` keeps the default per-chunk progress. `--log-level table` logs one row-copy start/done pair per table. `--log-level schema` suppresses row-copy detail while leaving warnings, errors, and stage-level messages visible. Do not combine `--quiet` with an explicit `--log-level`; choose one form.
+
 ## Config path inspection
 
 Hooks and checkpoints live relative to your config file, which can get confusing when scripts move things around. `pgferry config paths` shows you exactly where pgferry will look — including whether each hook file actually exists on disk.

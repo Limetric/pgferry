@@ -33,7 +33,7 @@ func TestNewRowSourcePrecomputesTransformers(t *testing.T) {
 		},
 	}
 
-	rs := newRowSource(nil, table, &sqliteSourceDB{}, defaultTypeMappingConfig())
+	rs := newRowSource(nil, table, &sqliteSourceDB{}, defaultTypeMappingConfig(), migrateLogLevelVerbose)
 
 	if len(rs.transformers) != len(table.Columns) {
 		t.Fatalf("transformers len = %d, want %d", len(rs.transformers), len(table.Columns))
