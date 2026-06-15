@@ -26,6 +26,8 @@ Examples:
 
 PostgreSQL SQL is emitted as `"app"."users"` rather than `app.users` under all three modes.
 
+PostgreSQL compares only the first 63 bytes of an identifier. pgferry checks generated names using that effective PostgreSQL limit and reports collisions before running target DDL. If two source column names still collide after the selected `identifier_case` mode, use `[column_renames]` to choose explicit target names for those source columns.
+
 ## Auto-increment and sequences
 
 MySQL and MariaDB `auto_increment`, SQLite integer primary key auto-increment behavior, and MSSQL `IDENTITY` columns are recreated as PostgreSQL sequences after data load.

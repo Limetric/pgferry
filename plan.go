@@ -506,6 +506,11 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	if hasColumnFilters(cfg) {
 		logColumnFilterReport(columnFilterReport)
 	}
+	renamedSchema, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("apply column renames: %w", err)
+	}
+	schema = renamedSchema
 
 	sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName)
 	if err != nil {

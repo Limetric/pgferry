@@ -140,7 +140,11 @@ func loadValidateSchema(ctx context.Context, src SourceDB, pgPool *pgxpool.Pool,
 	if hasColumnFilters(cfg) {
 		logColumnFilterReport(columnFilterReport)
 	}
-	return filteredSchema, nil
+	renamedSchema, err := applyColumnRenames(filteredSchema, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("apply column renames: %w", err)
+	}
+	return renamedSchema, nil
 }
 
 func logStandaloneValidationPlan(mode string) {

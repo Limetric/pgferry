@@ -36,6 +36,9 @@ before_data = ["pre.sql"]
 after_data = []
 before_fk = ["cleanup.sql"]
 after_all = ["post.sql"]
+
+[column_renames]
+"Orders.RowVersion" = "row_version_target"
 `
 	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -84,6 +87,9 @@ after_all = ["post.sql"]
 	}
 	if len(cfg.Hooks.BeforeFk) != 1 || cfg.Hooks.BeforeFk[0] != "cleanup.sql" {
 		t.Errorf("Hooks.BeforeFk = %v", cfg.Hooks.BeforeFk)
+	}
+	if cfg.ColumnRenames["Orders.RowVersion"] != "row_version_target" {
+		t.Errorf("ColumnRenames = %v", cfg.ColumnRenames)
 	}
 	if cfg.configDir != dir {
 		t.Errorf("configDir = %q, want %q", cfg.configDir, dir)

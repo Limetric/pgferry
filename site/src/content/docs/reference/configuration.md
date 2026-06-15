@@ -115,6 +115,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Entries are exact names by default, or glob patterns when `table_filter_mode = "glob"`. |
 | `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied after `include_tables`, so excludes win when both match the same table. |
 | `exclude_columns` | array of strings | `[]` | Source columns to skip. Use `ColumnName` to skip matching columns in any table, or `TableName.ColumnName` to scope a rule to one source table. Entries are exact by default, or glob patterns in either the table or column part when `column_filter_mode = "glob"`. |
+| `[column_renames]` | table of strings | `{}` | Explicit target column names keyed by source `TableName.ColumnName`. Values are final PostgreSQL column names and are applied after table and column filters. |
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then advance existing sequences with `setval`. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
@@ -139,7 +140,15 @@ Table filters always match source table names, not the transformed PostgreSQL na
 
 Column filters also match source names, not transformed PostgreSQL names. When a column is excluded, pgferry omits it from `CREATE TABLE`, source `SELECT`, and target `COPY`. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately. If a filter entry matches no source column in the migrated schema, pgferry fails early.
 
-Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, or `exclude_columns` can change the selected migration scope. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
+Column renames override the target PostgreSQL name for a source column without changing source reads. Keys must be source-qualified as `TableName.ColumnName`, matched case-insensitively after table and column filters. Values are not passed through `identifier_case`; they are used as the final quoted PostgreSQL names. Primary keys, plain-column indexes, and foreign keys are updated to reference the renamed target columns.
+
+```toml
+[column_renames]
+"KP_SUMINA.% ставка резерва по категории качества" = "reserve_rate_quality"
+"KP_SUMINA.% ставка резерва по категории качества КД" = "reserve_rate_quality_kd"
+```
+
+Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, `exclude_columns`, or `column_renames` can change the selected migration scope or target schema. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
 
 `truncate_before_copy` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ... CASCADE` statement, though PostgreSQL can still truncate dependent tables through `CASCADE`.
 
