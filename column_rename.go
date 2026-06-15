@@ -12,7 +12,7 @@ func hasColumnRenames(cfg *MigrationConfig) bool {
 
 func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	if schema == nil {
-		return &Schema{}, nil
+		return nil, nil
 	}
 	if !hasColumnRenames(cfg) {
 		return schema, nil
@@ -37,28 +37,32 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 
 	renamesByTable := make(map[int]map[string]string)
 	seenSourceColumns := make(map[string]string, len(entries))
-	var missing []string
+	var missingTables []string
+	var missingColumns []string
 
 	for _, entry := range entries {
 		targetName := strings.TrimSpace(cfg.ColumnRenames[entry])
 		if targetName == "" {
 			return nil, fmt.Errorf("column_renames entry %q has an empty target column name", entry)
 		}
+		if len(targetName) > postgresMaxIdentifierBytes {
+			return nil, fmt.Errorf("column_renames entry %q: target name %q exceeds PostgreSQL's %d-byte identifier limit", entry, targetName, postgresMaxIdentifierBytes)
+		}
 
-		tableName, columnName, qualified := splitColumnFilterEntry(entry)
-		if !qualified || strings.TrimSpace(tableName) == "" || strings.TrimSpace(columnName) == "" {
+		tableName, columnName, err := splitColumnRenameEntry(entry)
+		if err != nil {
 			return nil, fmt.Errorf("column_renames entry %q must be qualified as TableName.ColumnName", entry)
 		}
 
 		tableIdx, ok := tableIndexes[normalizeTableFilterKey(tableName)]
 		if !ok {
-			missing = append(missing, entry)
+			missingTables = append(missingTables, entry)
 			continue
 		}
 
 		colIdx := findSourceColumnIndex(renamed.Tables[tableIdx], columnName)
 		if colIdx < 0 {
-			missing = append(missing, entry)
+			missingColumns = append(missingColumns, entry)
 			continue
 		}
 
@@ -76,9 +80,13 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 		renamesByTable[tableIdx][normalizeTableFilterKey(oldPGName)] = targetName
 	}
 
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		return nil, fmt.Errorf("column_renames entries did not match any source column in the migrated schema (table may have been excluded by table filters): %s", strings.Join(missing, ", "))
+	if len(missingTables) > 0 {
+		sort.Strings(missingTables)
+		return nil, fmt.Errorf("column_renames entries did not match any source table in the migrated schema (table may have been excluded by table filters): %s", strings.Join(missingTables, ", "))
+	}
+	if len(missingColumns) > 0 {
+		sort.Strings(missingColumns)
+		return nil, fmt.Errorf("column_renames entries did not match any source column on matched source tables: %s", strings.Join(missingColumns, ", "))
 	}
 
 	for i := range renamed.Tables {
@@ -86,6 +94,20 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	}
 
 	return renamed, nil
+}
+
+func splitColumnRenameEntry(entry string) (string, string, error) {
+	entry = strings.TrimSpace(entry)
+	if strings.Count(entry, ".") != 1 {
+		return "", "", fmt.Errorf("invalid column rename entry")
+	}
+	tableName, columnName, _ := strings.Cut(entry, ".")
+	tableName = strings.TrimSpace(tableName)
+	columnName = strings.TrimSpace(columnName)
+	if tableName == "" || columnName == "" {
+		return "", "", fmt.Errorf("invalid column rename entry")
+	}
+	return tableName, columnName, nil
 }
 
 func findSourceColumnIndex(table Table, sourceName string) int {

@@ -69,6 +69,9 @@ func TestValidateGeneratedIdentifiers_ColumnCollisionAfterPostgresTruncation(t *
 	if !strings.Contains(err.Error(), `column names on table "KP_SUMINA": final name "% ставка резерва по категории каче"`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if !strings.Contains(err.Error(), "[column_renames]") {
+		t.Fatalf("error should mention column_renames remediation: %v", err)
+	}
 }
 
 func TestValidateGeneratedIdentifiers_AllowsSameColumnNameAcrossTables(t *testing.T) {

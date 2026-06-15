@@ -124,7 +124,32 @@ func TestApplyColumnRenames_RejectsUnknownColumn(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "column_renames entries did not match any source column") {
+	if !strings.Contains(err.Error(), "column_renames entries did not match any source column on matched source tables: Orders.Missing") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_RejectsUnknownTable(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"Customers.ID": "customer_id",
+		},
+	}
+
+	_, err := applyColumnRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "column_renames entries did not match any source table in the migrated schema") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -151,5 +176,173 @@ func TestApplyColumnRenames_RejectsUnqualifiedEntry(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `column_renames entry "ID" must be qualified as TableName.ColumnName`) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_RejectsSchemaQualifiedEntry(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"dbo.Orders.ID": "id_target",
+		},
+	}
+
+	_, err := applyColumnRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `column_renames entry "dbo.Orders.ID" must be qualified as TableName.ColumnName`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_RejectsEmptyTargetName(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"Orders.ID": "   ",
+		},
+	}
+
+	_, err := applyColumnRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `column_renames entry "Orders.ID" has an empty target column name`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_RejectsTargetNameOverPostgresLimit(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"Orders.ID": strings.Repeat("x", postgresMaxIdentifierBytes+1),
+		},
+	}
+
+	_, err := applyColumnRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exceeds PostgreSQL's 63-byte identifier limit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_RejectsDuplicateSourceColumnMapping(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"Orders.ID": "id_target",
+			"orders.id": "id_target_again",
+		},
+	}
+
+	_, err := applyColumnRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `both target source column orders.id`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_MatchesSourceNamesCaseInsensitively(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"orders.id": "order_id",
+		},
+	}
+
+	renamed, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		t.Fatalf("applyColumnRenames() error: %v", err)
+	}
+	if got := renamed.Tables[0].Columns[0].PGName; got != "order_id" {
+		t.Fatalf("column PGName = %q, want order_id", got)
+	}
+}
+
+func TestApplyColumnRenames_RejectsAmbiguousTableNames(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Orders",
+				PGName:     "orders",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+			{
+				SourceName: "orders",
+				PGName:     "orders_lower",
+				Columns:    []Column{{SourceName: "ID", PGName: "id"}},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnRenames: map[string]string{
+			"Orders.ID": "order_id",
+		},
+	}
+
+	_, err := applyColumnRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "source schema contains ambiguous table names") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_NilSchemaReturnsNil(t *testing.T) {
+	renamed, err := applyColumnRenames(nil, &MigrationConfig{
+		ColumnRenames: map[string]string{"Orders.ID": "order_id"},
+	})
+	if err != nil {
+		t.Fatalf("applyColumnRenames() error: %v", err)
+	}
+	if renamed != nil {
+		t.Fatalf("renamed schema = %#v, want nil", renamed)
 	}
 }

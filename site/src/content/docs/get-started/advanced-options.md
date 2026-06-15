@@ -108,7 +108,7 @@ To keep a source column but choose its target PostgreSQL name explicitly, use `c
 "KP_SUMINA.% ставка резерва по категории качества КД" = "reserve_rate_quality_kd"
 ```
 
-Rename keys use source `TableName.ColumnName` values after table and column filters. Rename values are final PostgreSQL column names, so pgferry does not apply `identifier_case` to them. This is useful when two long source column names would otherwise collide after PostgreSQL's 63-byte identifier limit.
+Rename keys use source `TableName.ColumnName` values after table and column filters. Rename values are final PostgreSQL column names, so pgferry does not apply `identifier_case` to them, and they must fit PostgreSQL's 63-byte identifier limit. This is useful when two long source column names would otherwise collide after PostgreSQL's identifier limit.
 
 - [How to read plan output](/operations/how-to-read-plan-output/)
 
