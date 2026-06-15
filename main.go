@@ -32,7 +32,7 @@ const migrateLogLevelFlagDesc = `Use --log-level=table, or --quiet, to suppress 
 var rootCmd = &cobra.Command{
 	Use:   "pgferry",
 	Short: "Source database to PostgreSQL migration tool",
-	Args:  cobra.NoArgs,
+	Args:  rootNoArgs,
 	RunE:  runRoot,
 }
 
@@ -101,13 +101,20 @@ func main() {
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	if len(args) > 0 || strings.TrimSpace(configPath) != "" {
+	if strings.TrimSpace(configPath) != "" {
 		return missingMigrationConfigError()
 	}
 	if rootWizardModeChecker(cmd) {
 		return rootWizardRunner(cmd, args)
 	}
 	return missingMigrationConfigError()
+}
+
+func rootNoArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return missingMigrationConfigError()
+	}
+	return nil
 }
 
 func runMigration(cmd *cobra.Command, args []string) error {

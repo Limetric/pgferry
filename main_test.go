@@ -32,27 +32,28 @@ func TestRunRoot_NoArgsInteractiveLaunchesWizard(t *testing.T) {
 	}
 }
 
-func TestRunRoot_WithConfigReturnsConfigError(t *testing.T) {
-	prevWizardRunner := rootWizardRunner
-	prevWizardModeChecker := rootWizardModeChecker
-	rootWizardRunner = func(cmd *cobra.Command, args []string) error {
-		t.Fatal("wizard runner should not be called")
-		return nil
-	}
-	rootWizardModeChecker = func(cmd *cobra.Command) bool { return true }
+func TestRootCommand_WithConfigArgShowsMigrateGuidance(t *testing.T) {
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+	rootCmd.SetArgs([]string{"migration.toml"})
 	t.Cleanup(func() {
-		rootWizardRunner = prevWizardRunner
-		rootWizardModeChecker = prevWizardModeChecker
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
 		configPath = ""
 	})
 
-	err := runRoot(&cobra.Command{}, []string{"migration.toml"})
+	err := rootCmd.Execute()
 	if err == nil {
-		t.Fatal("runRoot() error = nil, want error")
+		t.Fatal("rootCmd.Execute() error = nil, want error")
 	}
 	want := "config file required: pgferry migrate <migration.toml> or pgferry wizard"
-	if err.Error() != want {
-		t.Fatalf("runRoot() error = %q, want %q", err.Error(), want)
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("rootCmd.Execute() error = %q, want to contain %q", err.Error(), want)
+	}
+	if !strings.Contains(buf.String(), want) {
+		t.Fatalf("rootCmd output = %q, want to contain %q", buf.String(), want)
 	}
 }
 
