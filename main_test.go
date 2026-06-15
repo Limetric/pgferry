@@ -15,19 +15,13 @@ import (
 
 func TestRunRoot_NoArgsInteractiveLaunchesWizard(t *testing.T) {
 	prevWizardRunner := rootWizardRunner
-	prevMigrationRunner := rootMigrationRunner
 	prevWizardModeChecker := rootWizardModeChecker
 	rootWizardRunner = func(cmd *cobra.Command, args []string) error {
 		return errors.New("wizard called")
 	}
-	rootMigrationRunner = func(cmd *cobra.Command, args []string) error {
-		t.Fatal("migration runner should not be called")
-		return nil
-	}
 	rootWizardModeChecker = func(cmd *cobra.Command) bool { return true }
 	t.Cleanup(func() {
 		rootWizardRunner = prevWizardRunner
-		rootMigrationRunner = prevMigrationRunner
 		rootWizardModeChecker = prevWizardModeChecker
 		configPath = ""
 	})
@@ -38,31 +32,54 @@ func TestRunRoot_NoArgsInteractiveLaunchesWizard(t *testing.T) {
 	}
 }
 
-func TestRunRoot_WithConfigRunsMigration(t *testing.T) {
+func TestRootCommand_WithConfigArgShowsMigrateGuidance(t *testing.T) {
+	var buf bytes.Buffer
+	rootCmd.SetOut(&buf)
+	rootCmd.SetErr(&buf)
+	rootCmd.SetArgs([]string{"migration.toml"})
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+		configPath = ""
+	})
+
+	err := rootCmd.Execute()
+	if err == nil {
+		t.Fatal("rootCmd.Execute() error = nil, want error")
+	}
+	want := "use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("rootCmd.Execute() error = %q, want to contain %q", err.Error(), want)
+	}
+	if !strings.Contains(buf.String(), want) {
+		t.Fatalf("rootCmd output = %q, want to contain %q", buf.String(), want)
+	}
+}
+
+func TestRunRoot_WithConfigFlagReturnsConfigError(t *testing.T) {
+	prev := configPath
 	prevWizardRunner := rootWizardRunner
-	prevMigrationRunner := rootMigrationRunner
 	prevWizardModeChecker := rootWizardModeChecker
+	configPath = "migration.toml"
 	rootWizardRunner = func(cmd *cobra.Command, args []string) error {
 		t.Fatal("wizard runner should not be called")
 		return nil
 	}
-	rootMigrationRunner = func(cmd *cobra.Command, args []string) error {
-		if len(args) != 1 || args[0] != "migration.toml" {
-			t.Fatalf("args = %v, want [migration.toml]", args)
-		}
-		return errors.New("migration called")
-	}
 	rootWizardModeChecker = func(cmd *cobra.Command) bool { return true }
 	t.Cleanup(func() {
+		configPath = prev
 		rootWizardRunner = prevWizardRunner
-		rootMigrationRunner = prevMigrationRunner
 		rootWizardModeChecker = prevWizardModeChecker
-		configPath = ""
 	})
 
-	err := runRoot(&cobra.Command{}, []string{"migration.toml"})
-	if err == nil || err.Error() != "migration called" {
-		t.Fatalf("runRoot() error = %v, want migration called", err)
+	err := runRoot(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("runRoot() error = nil, want error")
+	}
+	want := "use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
+	if err.Error() != want {
+		t.Fatalf("runRoot() error = %q, want %q", err.Error(), want)
 	}
 }
 
@@ -78,9 +95,26 @@ func TestRunRoot_NoArgsNonInteractiveReturnsConfigError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runRoot() error = nil, want error")
 	}
-	want := "config file required: pgferry <migration.toml>, pgferry migrate <migration.toml>, or pgferry wizard"
+	want := "use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
 	if err.Error() != want {
 		t.Fatalf("runRoot() error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRunMigration_NoConfigReturnsConfigRequiredError(t *testing.T) {
+	prev := configPath
+	configPath = ""
+	t.Cleanup(func() {
+		configPath = prev
+	})
+
+	err := runMigration(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("runMigration() error = nil, want error")
+	}
+	want := "config file required: pgferry migrate <migration.toml> or pgferry migrate --config <migration.toml>"
+	if err.Error() != want {
+		t.Fatalf("runMigration() error = %q, want %q", err.Error(), want)
 	}
 }
 
@@ -91,9 +125,12 @@ func TestRunMigration_UsesConfigFlag(t *testing.T) {
 		configPath = prev
 	})
 
-	got := resolveMigrationConfigPath(nil)
+	got, err := resolveOptionalConfigPath(configPath, nil)
+	if err != nil {
+		t.Fatalf("resolveOptionalConfigPath() error = %v", err)
+	}
 	if got != "migration.toml" {
-		t.Fatalf("resolveMigrationConfigPath(nil) = %q, want migration.toml", got)
+		t.Fatalf("resolveOptionalConfigPath(configPath, nil) = %q, want migration.toml", got)
 	}
 }
 

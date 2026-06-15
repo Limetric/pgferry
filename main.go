@@ -30,9 +30,9 @@ const migrateLogFormatFlagDesc = `With json, one JSON object is written to stdou
 const migrateLogLevelFlagDesc = `Use --log-level=table, or --quiet, to suppress per-chunk row-copy progress and keep one row-copy start/done pair per table. Use --log-level=schema to suppress row-copy progress detail.`
 
 var rootCmd = &cobra.Command{
-	Use:   "pgferry [migration.toml]",
+	Use:   "pgferry",
 	Short: "Source database to PostgreSQL migration tool",
-	Args:  cobra.MaximumNArgs(1),
+	Args:  rejectRootArgs,
 	RunE:  runRoot,
 }
 
@@ -69,7 +69,6 @@ var generateCmd = &cobra.Command{
 	RunE:    runGenerateWizard,
 }
 
-var rootMigrationRunner = runMigration
 var rootWizardRunner = runGenerateWizard
 var rootWizardModeChecker = canLaunchWizardInteractively
 
@@ -102,13 +101,20 @@ func main() {
 }
 
 func runRoot(cmd *cobra.Command, args []string) error {
-	if resolveMigrationConfigPath(args) != "" {
-		return rootMigrationRunner(cmd, args)
+	if strings.TrimSpace(configPath) != "" {
+		return rootMigrationCommandRequiredError()
 	}
 	if rootWizardModeChecker(cmd) {
 		return rootWizardRunner(cmd, args)
 	}
-	return missingMigrationConfigError()
+	return rootMigrationCommandRequiredError()
+}
+
+func rejectRootArgs(cmd *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return rootMigrationCommandRequiredError()
+	}
+	return nil
 }
 
 func runMigration(cmd *cobra.Command, args []string) error {
@@ -132,16 +138,12 @@ func runMigration(cmd *cobra.Command, args []string) error {
 	return runMigrationWithConfig(cfg, opts)
 }
 
-func resolveMigrationConfigPath(args []string) string {
-	cfgPath, err := resolveOptionalConfigPath(configPath, args)
-	if err != nil {
-		return ""
-	}
-	return cfgPath
+func missingMigrationConfigError() error {
+	return fmt.Errorf("config file required: pgferry migrate <migration.toml> or pgferry migrate --config <migration.toml>")
 }
 
-func missingMigrationConfigError() error {
-	return fmt.Errorf("config file required: pgferry <migration.toml>, pgferry migrate <migration.toml>, or pgferry wizard")
+func rootMigrationCommandRequiredError() error {
+	return fmt.Errorf("use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard")
 }
 
 func canLaunchWizardInteractively(cmd *cobra.Command) bool {
