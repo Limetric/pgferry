@@ -139,7 +139,7 @@ func runMigration(cmd *cobra.Command, args []string) error {
 }
 
 func missingMigrationConfigError() error {
-	return fmt.Errorf("config file required: pgferry migrate <migration.toml> or pgferry wizard")
+	return fmt.Errorf("config file required: pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard")
 }
 
 func canLaunchWizardInteractively(cmd *cobra.Command) bool {
