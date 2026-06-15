@@ -50,6 +50,7 @@ func (c *identifierCollector) add(scopeKey, label, name, origin, key, class stri
 	} else if ns.label != label || ns.options != opts {
 		panic(fmt.Sprintf("identifier namespace %q registered with inconsistent metadata", scopeKey))
 	}
+	name = postgresIdentifierKey(name)
 	ns.entries[name] = append(ns.entries[name], identifierEntry{
 		origin: origin,
 		key:    key,
