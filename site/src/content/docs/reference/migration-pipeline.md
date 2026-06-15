@@ -76,7 +76,7 @@ Operational note: before COPY starts, pgferry verifies that the target role can 
 
 This matters because `data_only` loads into a schema where foreign keys and other triggers may already exist. pgferry temporarily disables those triggers during the load so parallel COPY can proceed without immediate FK enforcement.
 
-When an external schema migrator also inserts seed or reference rows, set `truncate_before_copy = true` in the data-only config. pgferry will run one `TRUNCATE TABLE ... CASCADE` statement for the selected target tables after `before_data` hooks and before COPY, so duplicate source rows do not collide with pre-seeded target rows.
+When an external schema migrator also inserts seed or reference rows, set `truncate_before_copy = true` in the data-only config. pgferry will run one `TRUNCATE TABLE ...` statement for the selected target tables after `before_data` hooks and before COPY, so duplicate source rows do not collide with pre-seeded target rows. pgferry does not add `CASCADE`; if non-selected tables still reference the selected tables, PostgreSQL will reject the truncate instead of deleting out-of-scope rows.
 
 After COPY, pgferry advances existing auto-increment sequences with `setval`. It does not create sequences or change column defaults in `data_only`; the pre-existing schema is expected to own that DDL.
 

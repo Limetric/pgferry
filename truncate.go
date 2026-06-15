@@ -17,7 +17,7 @@ func truncateTargetTablesBeforeCopy(ctx context.Context, exec statementExecutor,
 		targets[i] = fmt.Sprintf("%s.%s", pgIdent(pgSchema), pgIdent(t.PGName))
 	}
 
-	q := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", strings.Join(targets, ", "))
-	log.Printf("truncating target tables before COPY (CASCADE may affect dependent tables outside migration scope): %s", strings.Join(targets, ", "))
+	q := fmt.Sprintf("TRUNCATE TABLE %s", strings.Join(targets, ", "))
+	log.Printf("truncating target tables before COPY without CASCADE: %s", strings.Join(targets, ", "))
 	return execSQL(ctx, exec, "truncate target tables before copy", q)
 }

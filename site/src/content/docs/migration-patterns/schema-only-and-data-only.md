@@ -17,7 +17,7 @@ Use this when the target schema already exists and you only need to stream data 
 
 If that preflight fails, pgferry aborts before COPY starts so operators are not left guessing whether any data moved or whether trigger state changed permanently.
 
-If your own schema migrator creates the target tables and inserts seed/reference data, use `truncate_before_copy = true` in the data-only config when those rows should be replaced by the source data. pgferry runs `TRUNCATE TABLE ... CASCADE` on the selected target tables after `before_data` hooks and before COPY.
+If your own schema migrator creates the target tables and inserts seed/reference data, use `truncate_before_copy = true` in the data-only config when those rows should be replaced by the source data. pgferry runs `TRUNCATE TABLE ...` on the selected target tables after `before_data` hooks and before COPY. It does not add `CASCADE`, so PostgreSQL will fail rather than silently truncating dependent tables outside the selected scope.
 
 After COPY, pgferry uses `setval` for auto-increment columns. It does not create sequences or change column defaults in `data_only`; keep that DDL in the external schema migrator or the earlier `schema_only` run.
 
