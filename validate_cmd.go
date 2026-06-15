@@ -79,6 +79,9 @@ func runValidateWithConfig(cfg *MigrationConfig) error {
 	}
 
 	typeMap := effectiveTypeMapping(cfg)
+	if err := validateGeneratedIdentifiers(schema, cfg, typeMap); err != nil {
+		return err
+	}
 	logStandaloneValidationPlan(mode)
 	log.Printf("running standalone validation (mode=%s)...", mode)
 	if _, err := validateMigration(ctx, src, cfg.Source.DSN, pgPool, schema, cfg.Schema, mode, cfg.Workers, typeMap); err != nil {
@@ -140,7 +143,11 @@ func loadValidateSchema(ctx context.Context, src SourceDB, pgPool *pgxpool.Pool,
 	if hasColumnFilters(cfg) {
 		logColumnFilterReport(columnFilterReport)
 	}
-	return filteredSchema, nil
+	renamedSchema, err := applyColumnRenames(filteredSchema, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("apply column renames: %w", err)
+	}
+	return renamedSchema, nil
 }
 
 func logStandaloneValidationPlan(mode string) {

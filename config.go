@@ -29,6 +29,7 @@ type MigrationConfig struct {
 	IncludeTables                     []string          `toml:"include_tables"`
 	ExcludeTables                     []string          `toml:"exclude_tables"`
 	ExcludeColumns                    []string          `toml:"exclude_columns"`
+	ColumnRenames                     map[string]string `toml:"column_renames"`
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
 	DataOnly                          bool              `toml:"data_only"`

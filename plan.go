@@ -506,6 +506,16 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	if hasColumnFilters(cfg) {
 		logColumnFilterReport(columnFilterReport)
 	}
+	renamedSchema, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("apply column renames: %w", err)
+	}
+	schema = renamedSchema
+
+	typeMap := effectiveTypeMapping(cfg)
+	if err := validateGeneratedIdentifiers(schema, cfg, typeMap); err != nil {
+		return err
+	}
 
 	sourceObjects, err := src.IntrospectSourceObjects(sourceDB, dbName)
 	if err != nil {
@@ -515,7 +525,6 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 		sourceObjects.Triggers = filterTriggersBySelectedTables(sourceObjects.Triggers, schema)
 	}
 
-	typeMap := effectiveTypeMapping(cfg)
 	semanticWarnings, err := introspectSourceSchemaSemanticWarnings(sourceDB, src, dbName)
 	if err != nil {
 		return fmt.Errorf("introspect schema semantics: %w", err)

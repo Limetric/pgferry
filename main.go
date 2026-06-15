@@ -284,6 +284,14 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 			log.Printf("column filter: resume enabled; changing column_filter_mode/exclude_columns between runs can invalidate the checkpoint")
 		}
 	}
+	renamedSchema, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		return fmt.Errorf("apply column renames: %w", err)
+	}
+	schema = renamedSchema
+	if hasColumnRenames(cfg) && cfg.Resume {
+		log.Printf("column renames: resume enabled; changing column_renames between runs can invalidate the checkpoint")
+	}
 	log.Printf("found %d tables", len(schema.Tables))
 	for _, t := range schema.Tables {
 		log.Printf("  %s → %s (%d cols, %d indexes, %d fks)",

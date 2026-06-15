@@ -48,6 +48,32 @@ func TestValidateGeneratedIdentifiers_ColumnCollisionWithinTable(t *testing.T) {
 	}
 }
 
+func TestValidateGeneratedIdentifiers_ColumnCollisionAfterPostgresTruncation(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "KP_SUMINA",
+				PGName:     "KP_SUMINA",
+				Columns: []Column{
+					{SourceName: "% ставка резерва по категории качества", PGName: "% ставка резерва по категории качества"},
+					{SourceName: "% ставка резерва по категории качества КД", PGName: "% ставка резерва по категории качества КД"},
+				},
+			},
+		},
+	}
+
+	err := validateGeneratedIdentifiers(schema, &MigrationConfig{}, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), `column names on table "KP_SUMINA": final name "% ставка резерва по категории каче"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "[column_renames]") {
+		t.Fatalf("error should mention column_renames remediation: %v", err)
+	}
+}
+
 func TestValidateGeneratedIdentifiers_AllowsSameColumnNameAcrossTables(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{
