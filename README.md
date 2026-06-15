@@ -1,6 +1,6 @@
 # pgferry
 
-**[pgferry.com](https://www.pgferry.com)** — Migrate MySQL, MariaDB, SQLite, or MSSQL databases to PostgreSQL with one config file and one binary.
+**[pgferry.com](https://www.pgferry.com)** — Migrate MySQL, MariaDB, SQLite, or MSSQL databases to PostgreSQL with a plan-first workflow, copy-pasteable configs, and explicit handling for the messy parts.
 
 Introspects your source schema, creates matching PostgreSQL tables, streams data with `COPY`, then adds keys, indexes, foreign keys, sequences, and triggers after the load. When things get messy, you still get hooks, type mapping, checkpoints, validation, and post-load cleanup.
 
