@@ -119,7 +119,7 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then advance existing sequences with `setval`. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
-| `truncate_before_copy` | bool | `false` | Run `TRUNCATE TABLE ... CASCADE` on the selected target tables after `before_data` hooks and before COPY. Useful with `data_only` when an external schema migrator pre-seeds reference rows that should be replaced by source data. In full migrations, target tables are normally freshly created, so this is usually a no-op. |
+| `truncate_before_copy` | bool | `false` | Run `TRUNCATE TABLE ...` on the selected target tables after `before_data` hooks and before COPY. Useful with `data_only` when an external schema migrator pre-seeds reference rows that should be replaced by source data. pgferry does not add `CASCADE`, so PostgreSQL rejects the truncate if non-selected tables still reference the selected tables. In full migrations, target tables are normally freshly created, so this is usually a no-op. |
 | `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
 | `identifier_case` | string | `"snake"` | How source identifiers map to PostgreSQL names. `"snake"` converts `OrderItems` → `order_items`. `"lower"` lowercases only (`OrderItems` → `orderitems`). `"preserve"` keeps the source casing unchanged (`OrderItems` → `OrderItems`); PostgreSQL DDL is always quoted so mixed-case names are safe. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
@@ -150,7 +150,7 @@ Column renames override the target PostgreSQL name for a source column without c
 
 Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, `exclude_columns`, or `column_renames` can change the selected migration scope or target schema. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
 
-`truncate_before_copy` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ... CASCADE` statement, though PostgreSQL can still truncate dependent tables through `CASCADE`.
+`truncate_before_copy` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ...` statement. pgferry intentionally omits `CASCADE` so PostgreSQL will fail rather than silently truncating dependent tables outside the selected scope.
 
 ### `[source]`
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestTruncateTargetTablesBeforeCopy_GeneratesSingleCascadeStatement(t *testing.T) {
+func TestTruncateTargetTablesBeforeCopy_GeneratesSingleNonCascadeStatement(t *testing.T) {
 	exec := &recordingStatementExecutor{}
 	schema := &Schema{Tables: []Table{
 		{PGName: "users"},
@@ -20,13 +20,13 @@ func TestTruncateTargetTablesBeforeCopy_GeneratesSingleCascadeStatement(t *testi
 		t.Fatalf("truncateTargetTablesBeforeCopy() error: %v", err)
 	}
 
-	want := `TRUNCATE TABLE "app"."users", "app"."order""items" CASCADE`
+	want := `TRUNCATE TABLE "app"."users", "app"."order""items"`
 	if len(exec.calls) != 1 || exec.calls[0] != want {
 		t.Fatalf("exec calls = %v, want [%q]", exec.calls, want)
 	}
 }
 
-func TestTruncateTargetTablesBeforeCopy_LogsCascadeScope(t *testing.T) {
+func TestTruncateTargetTablesBeforeCopy_LogsNonCascadeScope(t *testing.T) {
 	var buf bytes.Buffer
 	prev := log.Writer()
 	log.SetOutput(&buf)
@@ -42,7 +42,7 @@ func TestTruncateTargetTablesBeforeCopy_LogsCascadeScope(t *testing.T) {
 		t.Fatalf("truncateTargetTablesBeforeCopy() error: %v", err)
 	}
 
-	want := `truncating target tables before COPY (CASCADE may affect dependent tables outside migration scope): "app"."orders", "app"."order_items"`
+	want := `truncating target tables before COPY without CASCADE: "app"."orders", "app"."order_items"`
 	if !strings.Contains(buf.String(), want) {
 		t.Fatalf("log output = %q, want %q", buf.String(), want)
 	}
@@ -60,7 +60,7 @@ func TestTruncateTargetTablesBeforeCopy_SkipsEmptySchema(t *testing.T) {
 }
 
 func TestTruncateTargetTablesBeforeCopy_WrapsExecError(t *testing.T) {
-	truncateSQL := `TRUNCATE TABLE "app"."users" CASCADE`
+	truncateSQL := `TRUNCATE TABLE "app"."users"`
 	execErr := errors.New("permission denied")
 	exec := &recordingStatementExecutor{
 		errByQuery: map[string]error{truncateSQL: execErr},
