@@ -48,7 +48,7 @@ func TestRootCommand_WithConfigArgShowsMigrateGuidance(t *testing.T) {
 	if err == nil {
 		t.Fatal("rootCmd.Execute() error = nil, want error")
 	}
-	want := "config file required: pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
+	want := "use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
 	if !strings.Contains(err.Error(), want) {
 		t.Fatalf("rootCmd.Execute() error = %q, want to contain %q", err.Error(), want)
 	}
@@ -77,7 +77,7 @@ func TestRunRoot_WithConfigFlagReturnsConfigError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runRoot() error = nil, want error")
 	}
-	want := "config file required: pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
+	want := "use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
 	if err.Error() != want {
 		t.Fatalf("runRoot() error = %q, want %q", err.Error(), want)
 	}
@@ -95,9 +95,26 @@ func TestRunRoot_NoArgsNonInteractiveReturnsConfigError(t *testing.T) {
 	if err == nil {
 		t.Fatal("runRoot() error = nil, want error")
 	}
-	want := "config file required: pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
+	want := "use pgferry migrate <migration.toml>, pgferry migrate --config <migration.toml>, or pgferry wizard"
 	if err.Error() != want {
 		t.Fatalf("runRoot() error = %q, want %q", err.Error(), want)
+	}
+}
+
+func TestRunMigration_NoConfigReturnsConfigRequiredError(t *testing.T) {
+	prev := configPath
+	configPath = ""
+	t.Cleanup(func() {
+		configPath = prev
+	})
+
+	err := runMigration(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("runMigration() error = nil, want error")
+	}
+	want := "config file required: pgferry migrate <migration.toml> or pgferry migrate --config <migration.toml>"
+	if err.Error() != want {
+		t.Fatalf("runMigration() error = %q, want %q", err.Error(), want)
 	}
 }
 
