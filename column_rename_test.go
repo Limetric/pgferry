@@ -73,6 +73,12 @@ func TestApplyColumnRenames_UpdatesColumnsIndexesAndForeignKeys(t *testing.T) {
 	if got := schema.Tables[0].Columns[0].PGName; got != "code" {
 		t.Fatalf("original schema mutated: parent column PGName = %q", got)
 	}
+	if got := schema.Tables[1].ForeignKeys[0].Columns[0]; got != "parent_code" {
+		t.Fatalf("original schema mutated: child foreign key column = %q", got)
+	}
+	if got := schema.Tables[1].ForeignKeys[0].RefColumns[0]; got != "code" {
+		t.Fatalf("original schema mutated: child foreign key ref column = %q", got)
+	}
 }
 
 func TestApplyColumnRenames_ResolvesPostgresTruncationCollision(t *testing.T) {
@@ -275,7 +281,7 @@ func TestApplyColumnRenames_RejectsDuplicateSourceColumnMapping(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), `both target source column orders.id`) {
+	if !strings.Contains(err.Error(), `both map to source column orders.id`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

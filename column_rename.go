@@ -68,7 +68,7 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 
 		sourceKey := fmt.Sprintf("%s.%s", normalizeTableFilterKey(renamed.Tables[tableIdx].SourceName), normalizeTableFilterKey(renamed.Tables[tableIdx].Columns[colIdx].SourceName))
 		if prev, ok := seenSourceColumns[sourceKey]; ok {
-			return nil, fmt.Errorf("column_renames entries %q and %q both target source column %s", prev, entry, sourceKey)
+			return nil, fmt.Errorf("column_renames entries %q and %q both map to source column %s", prev, entry, sourceKey)
 		}
 		seenSourceColumns[sourceKey] = entry
 
