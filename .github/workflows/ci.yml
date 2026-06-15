@@ -61,9 +61,7 @@ jobs:
             postgres: "latest"
           - mysql: "8.0"
             postgres: "latest"
-          - mysql: "lts"
-            postgres: "latest"
-          - mysql: "innovation"
+          - mysql: "latest"
             postgres: "latest"
     services:
       mysql:
