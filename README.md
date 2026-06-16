@@ -69,8 +69,6 @@ pgferry migrate migration.toml
 
 Non-empty `PGFERRY_SOURCE_DSN` and `PGFERRY_TARGET_DSN` override `source.dsn` and `target.dsn`.
 
-`pgferry migration.toml` remains supported as a shorthand for `pgferry migrate migration.toml`.
-
 ## Examples
 
 Use the docs site for copy-pasteable example configs and walkthroughs:
