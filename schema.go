@@ -41,7 +41,14 @@ func pgIdent(name string) string {
 }
 
 func postgresIdentifierKey(name string) string {
-	if len(name) <= postgresMaxIdentifierBytes {
+	return truncateIdentifierBytes(name, postgresMaxIdentifierBytes)
+}
+
+func truncateIdentifierBytes(name string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(name) <= maxBytes {
 		return name
 	}
 
@@ -51,7 +58,7 @@ func postgresIdentifierKey(name string) string {
 		if r == utf8.RuneError {
 			_, width = utf8.DecodeRuneInString(name[i:])
 		}
-		if i+width > postgresMaxIdentifierBytes {
+		if i+width > maxBytes {
 			break
 		}
 		end = i + width

@@ -110,6 +110,127 @@ func TestApplyColumnRenames_ResolvesPostgresTruncationCollision(t *testing.T) {
 	}
 }
 
+func TestApplyColumnRenames_AutoResolvesPostgresTruncationCollision(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "KP_SUMINA",
+				PGName:     "KP_SUMINA",
+				Columns: []Column{
+					{SourceName: "% ставка резерва по категории качества", PGName: "% ставка резерва по категории качества"},
+					{SourceName: "% ставка резерва по категории качества КД", PGName: "% ставка резерва по категории качества КД"},
+				},
+				PrimaryKey: &Index{Name: "pk_kp_sumina", Columns: []string{"% ставка резерва по категории качества"}},
+				Indexes: []Index{
+					{Name: "idx_kp_sumina_rate_kd", Columns: []string{"% ставка резерва по категории качества КД"}},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{ColumnCollisionMode: "auto"}
+
+	renamed, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		t.Fatalf("applyColumnRenames() error: %v", err)
+	}
+	if err := validateGeneratedIdentifiers(renamed, &MigrationConfig{}, defaultTypeMappingConfig()); err != nil {
+		t.Fatalf("validateGeneratedIdentifiers() error: %v", err)
+	}
+
+	first := renamed.Tables[0].Columns[0].PGName
+	second := renamed.Tables[0].Columns[1].PGName
+	if first == "% ставка резерва по категории качества" {
+		t.Fatalf("first colliding column was not renamed")
+	}
+	if second == "% ставка резерва по категории качества КД" {
+		t.Fatalf("second colliding column was not renamed")
+	}
+	if len(first) > postgresMaxIdentifierBytes {
+		t.Fatalf("first auto-renamed column length = %d, want <= %d", len(first), postgresMaxIdentifierBytes)
+	}
+	if len(second) > postgresMaxIdentifierBytes {
+		t.Fatalf("second auto-renamed column length = %d, want <= %d", len(second), postgresMaxIdentifierBytes)
+	}
+	if postgresIdentifierKey(first) == postgresIdentifierKey(second) {
+		t.Fatalf("auto-renamed columns still collide: %q and %q", first, second)
+	}
+	if got := renamed.Tables[0].PrimaryKey.Columns[0]; got != first {
+		t.Fatalf("primary key column = %q, want %q", got, first)
+	}
+	if got := renamed.Tables[0].Indexes[0].Columns[0]; got != second {
+		t.Fatalf("index column = %q, want %q", got, second)
+	}
+	if got := schema.Tables[0].Columns[0].PGName; got != "% ставка резерва по категории качества" {
+		t.Fatalf("original schema mutated: first column PGName = %q", got)
+	}
+}
+
+func TestApplyColumnRenames_AutoKeepsExplicitRename(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "KP_SUMINA",
+				PGName:     "KP_SUMINA",
+				Columns: []Column{
+					{SourceName: "% ставка резерва по категории качества", PGName: "% ставка резерва по категории качества"},
+					{SourceName: "% ставка резерва по категории качества КД", PGName: "% ставка резерва по категории качества КД"},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{
+		ColumnCollisionMode: "auto",
+		ColumnRenames: map[string]string{
+			"KP_SUMINA.% ставка резерва по категории качества": "reserve_rate_quality",
+		},
+	}
+
+	renamed, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		t.Fatalf("applyColumnRenames() error: %v", err)
+	}
+	if got := renamed.Tables[0].Columns[0].PGName; got != "reserve_rate_quality" {
+		t.Fatalf("explicitly renamed column PGName = %q, want reserve_rate_quality", got)
+	}
+	if got := renamed.Tables[0].Columns[1].PGName; got != "% ставка резерва по категории качества КД" {
+		t.Fatalf("non-conflicting column PGName = %q, want original name", got)
+	}
+	if err := validateGeneratedIdentifiers(renamed, &MigrationConfig{}, defaultTypeMappingConfig()); err != nil {
+		t.Fatalf("validateGeneratedIdentifiers() error: %v", err)
+	}
+}
+
+func TestApplyColumnRenames_AutoDoesNotGuessExactGeneratedNameCollision(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{
+				SourceName: "Accounts",
+				PGName:     "accounts",
+				Columns: []Column{
+					{SourceName: "Email", PGName: "email"},
+					{SourceName: "email", PGName: "email"},
+				},
+				Indexes: []Index{
+					{Name: "idx_accounts_email", Columns: []string{"email"}},
+				},
+			},
+		},
+	}
+	cfg := &MigrationConfig{ColumnCollisionMode: "auto"}
+
+	renamed, err := applyColumnRenames(schema, cfg)
+	if err != nil {
+		t.Fatalf("applyColumnRenames() error: %v", err)
+	}
+	err = validateGeneratedIdentifiers(renamed, &MigrationConfig{}, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected exact generated-name collision to remain an error")
+	}
+	if !strings.Contains(err.Error(), `column names on table "accounts": final name "email"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestApplyColumnRenames_RejectsUnknownColumn(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

@@ -175,22 +175,23 @@ type PlanTableFilterReport struct {
 
 // PlanSummary is a high-level snapshot of the planned migration (config echo + table counts).
 type PlanSummary struct {
-	SourceType         string `json:"source_type"`
-	SourceDatabase     string `json:"source_database"`
-	TargetSchema       string `json:"target_schema"`
-	TableCount         int    `json:"table_count"`
-	TotalEstimatedRows int64  `json:"total_estimated_rows,omitempty"`
-	Workers            int    `json:"workers"`
-	IndexWorkers       int    `json:"index_workers"`
-	ChunkSize          int64  `json:"chunk_size"`
-	UnloggedTables     bool   `json:"unlogged_tables"`
-	Resume             bool   `json:"resume"`
-	Validation         string `json:"validation"`
-	SnapshotMode       string `json:"source_snapshot_mode"`
-	CopyRiskAnalysis   bool   `json:"copy_risk_analysis"`
-	PreserveDefaults   bool   `json:"preserve_defaults"`
-	CleanOrphans       bool   `json:"clean_orphans"`
-	IdentifierCase     string `json:"identifier_case"`
+	SourceType          string `json:"source_type"`
+	SourceDatabase      string `json:"source_database"`
+	TargetSchema        string `json:"target_schema"`
+	TableCount          int    `json:"table_count"`
+	TotalEstimatedRows  int64  `json:"total_estimated_rows,omitempty"`
+	Workers             int    `json:"workers"`
+	IndexWorkers        int    `json:"index_workers"`
+	ChunkSize           int64  `json:"chunk_size"`
+	UnloggedTables      bool   `json:"unlogged_tables"`
+	Resume              bool   `json:"resume"`
+	Validation          string `json:"validation"`
+	SnapshotMode        string `json:"source_snapshot_mode"`
+	CopyRiskAnalysis    bool   `json:"copy_risk_analysis"`
+	PreserveDefaults    bool   `json:"preserve_defaults"`
+	CleanOrphans        bool   `json:"clean_orphans"`
+	IdentifierCase      string `json:"identifier_case"`
+	ColumnCollisionMode string `json:"column_collision_mode"`
 }
 
 // PlanReport holds all findings from the plan analysis.
@@ -640,20 +641,21 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 		return PlanSummary{}
 	}
 	s := PlanSummary{
-		SourceType:       cfg.Source.Type,
-		SourceDatabase:   dbName,
-		TargetSchema:     cfg.Schema,
-		Workers:          cfg.Workers,
-		IndexWorkers:     cfg.IndexWorkers,
-		ChunkSize:        cfg.ChunkSize,
-		UnloggedTables:   cfg.UnloggedTables,
-		Resume:           cfg.Resume,
-		Validation:       cfg.Validation,
-		SnapshotMode:     cfg.SourceSnapshotMode,
-		CopyRiskAnalysis: cfg.CopyRiskAnalysis,
-		PreserveDefaults: cfg.PreserveDefaults,
-		CleanOrphans:     cfg.CleanOrphans,
-		IdentifierCase:   cfg.IdentifierCase,
+		SourceType:          cfg.Source.Type,
+		SourceDatabase:      dbName,
+		TargetSchema:        cfg.Schema,
+		Workers:             cfg.Workers,
+		IndexWorkers:        cfg.IndexWorkers,
+		ChunkSize:           cfg.ChunkSize,
+		UnloggedTables:      cfg.UnloggedTables,
+		Resume:              cfg.Resume,
+		Validation:          cfg.Validation,
+		SnapshotMode:        cfg.SourceSnapshotMode,
+		CopyRiskAnalysis:    cfg.CopyRiskAnalysis,
+		PreserveDefaults:    cfg.PreserveDefaults,
+		CleanOrphans:        cfg.CleanOrphans,
+		IdentifierCase:      cfg.IdentifierCase,
+		ColumnCollisionMode: cfg.ColumnCollisionMode,
 	}
 	if schema != nil {
 		s.TableCount = len(schema.Tables)
@@ -715,6 +717,13 @@ func sumCopyRiskEstimatedRowsByTable(findings []PlanCopyRiskFinding) int64 {
 // struct; SourceType stays empty so we skip printing an empty Summary section.
 func planSummaryHasData(s PlanSummary) bool {
 	return s.SourceType != ""
+}
+
+func planColumnCollisionMode(s PlanSummary) string {
+	if s.ColumnCollisionMode != "" {
+		return s.ColumnCollisionMode
+	}
+	return "error"
 }
 
 func formatInt64Thousands(n int64) string {
@@ -969,8 +978,8 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		}
 		fmt.Fprintf(w, "Config: workers=%d index_workers=%d chunk_size=%d resume=%t validation=%s\n",
 			s.Workers, s.IndexWorkers, s.ChunkSize, s.Resume, s.Validation)
-		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t identifier_case=%s\n",
-			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase)
+		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t identifier_case=%s column_collision_mode=%s\n",
+			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, planColumnCollisionMode(s))
 		fmt.Fprintln(w)
 		writePlanETAText(w, report.ETA)
 	}

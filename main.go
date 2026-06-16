@@ -198,7 +198,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		mode = "data_only"
 	}
 	log.Printf(
-		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d identifier_case=%s replicate_on_update_current_timestamp=%t truncate_before_copy=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
+		"config: mode=%s workers=%d index_workers=%d schema=%s on_schema_exists=%s source_snapshot_mode=%s unlogged_tables=%t preserve_defaults=%t add_unsigned_checks=%t clean_orphans=%t clean_orphans_mode=%s clean_orphans_max_rows=%d identifier_case=%s column_collision_mode=%s replicate_on_update_current_timestamp=%t truncate_before_copy=%t chunk_size=%d copy_risk_analysis=%t resume=%t validation=%s",
 		mode,
 		cfg.Workers,
 		cfg.IndexWorkers,
@@ -212,6 +212,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 		cfg.CleanOrphansMode,
 		cfg.CleanOrphansMaxRows,
 		cfg.IdentifierCase,
+		cfg.ColumnCollisionMode,
 		cfg.ReplicateOnUpdateCurrentTimestamp,
 		cfg.TruncateBeforeCopy,
 		cfg.ChunkSize,
