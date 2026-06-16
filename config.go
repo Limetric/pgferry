@@ -18,40 +18,79 @@ const (
 	targetDSNEnvVar = "PGFERRY_TARGET_DSN"
 )
 
+type truncateBeforeCopyMode string
+
+const (
+	truncateBeforeCopyOff    truncateBeforeCopyMode = "false"
+	truncateBeforeCopyPerRun truncateBeforeCopyMode = "true"
+	truncateBeforeCopyOnce   truncateBeforeCopyMode = "once"
+)
+
+func (m truncateBeforeCopyMode) Enabled() bool {
+	return m == truncateBeforeCopyPerRun || m == truncateBeforeCopyOnce
+}
+
+func (m *truncateBeforeCopyMode) UnmarshalTOML(v any) error {
+	switch value := v.(type) {
+	case bool:
+		if value {
+			*m = truncateBeforeCopyPerRun
+		} else {
+			*m = truncateBeforeCopyOff
+		}
+		return nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "", "false":
+			*m = truncateBeforeCopyOff
+		case "true":
+			*m = truncateBeforeCopyPerRun
+		case string(truncateBeforeCopyOnce):
+			*m = truncateBeforeCopyOnce
+		default:
+			return fmt.Errorf("truncate_before_copy must be false, true, or %q", truncateBeforeCopyOnce)
+		}
+		return nil
+	default:
+		return fmt.Errorf("truncate_before_copy must be a boolean or one of: false, true, %q", truncateBeforeCopyOnce)
+	}
+}
+
 // MigrationConfig holds the full TOML-driven migration configuration.
 type MigrationConfig struct {
-	Source                            SourceConfig      `toml:"source"`
-	Target                            TargetConfig      `toml:"target"`
-	PostGIS                           PostGISConfig     `toml:"postgis"`
-	Schema                            string            `toml:"schema"`
-	TableFilterMode                   string            `toml:"table_filter_mode"`  // exact|glob
-	ColumnFilterMode                  string            `toml:"column_filter_mode"` // exact|glob
-	IncludeTables                     []string          `toml:"include_tables"`
-	ExcludeTables                     []string          `toml:"exclude_tables"`
-	ExcludeColumns                    []string          `toml:"exclude_columns"`
-	ColumnRenames                     map[string]string `toml:"column_renames"`
-	ColumnCollisionMode               string            `toml:"column_collision_mode"` // error|auto
-	OnSchemaExists                    string            `toml:"on_schema_exists"`
-	SchemaOnly                        bool              `toml:"schema_only"`
-	DataOnly                          bool              `toml:"data_only"`
-	TruncateBeforeCopy                bool              `toml:"truncate_before_copy"`
-	SourceSnapshotMode                string            `toml:"source_snapshot_mode"` // none|single_tx
-	UnloggedTables                    bool              `toml:"unlogged_tables"`
-	PreserveDefaults                  bool              `toml:"preserve_defaults"`
-	AddUnsignedChecks                 bool              `toml:"add_unsigned_checks"`
-	CleanOrphans                      bool              `toml:"clean_orphans"`
-	CleanOrphansMode                  string            `toml:"clean_orphans_mode"`     // apply|report
-	CleanOrphansMaxRows               int64             `toml:"clean_orphans_max_rows"` // 0 disables threshold
-	IdentifierCase                    string            `toml:"identifier_case"`        // snake|lower|preserve
-	ReplicateOnUpdateCurrentTimestamp bool              `toml:"replicate_on_update_current_timestamp"`
-	Workers                           int               `toml:"workers"`
-	IndexWorkers                      int               `toml:"index_workers"`
-	ChunkSize                         int64             `toml:"chunk_size"`
-	CopyRiskAnalysis                  bool              `toml:"copy_risk_analysis"`
-	Resume                            bool              `toml:"resume"`
-	Validation                        string            `toml:"validation"` // none|row_count|sampled_hash
-	Hooks                             HooksConfig       `toml:"hooks"`
-	TypeMapping                       TypeMappingConfig `toml:"type_mapping"`
+	Source                            SourceConfig           `toml:"source"`
+	Target                            TargetConfig           `toml:"target"`
+	PostGIS                           PostGISConfig          `toml:"postgis"`
+	Schema                            string                 `toml:"schema"`
+	TableFilterMode                   string                 `toml:"table_filter_mode"`  // exact|glob
+	ColumnFilterMode                  string                 `toml:"column_filter_mode"` // exact|glob
+	IncludeTables                     []string               `toml:"include_tables"`
+	ExcludeTables                     []string               `toml:"exclude_tables"`
+	ExcludeColumns                    []string               `toml:"exclude_columns"`
+	ColumnRenames                     map[string]string      `toml:"column_renames"`
+	ColumnCollisionMode               string                 `toml:"column_collision_mode"` // error|auto
+	OnSchemaExists                    string                 `toml:"on_schema_exists"`
+	SchemaOnly                        bool                   `toml:"schema_only"`
+	DataOnly                          bool                   `toml:"data_only"`
+	TruncateBeforeCopy                truncateBeforeCopyMode `toml:"truncate_before_copy"`
+	TruncateBeforeCopySchemas         []string               `toml:"truncate_before_copy_schemas"`
+	SourceSnapshotMode                string                 `toml:"source_snapshot_mode"` // none|single_tx
+	UnloggedTables                    bool                   `toml:"unlogged_tables"`
+	PreserveDefaults                  bool                   `toml:"preserve_defaults"`
+	AddUnsignedChecks                 bool                   `toml:"add_unsigned_checks"`
+	CleanOrphans                      bool                   `toml:"clean_orphans"`
+	CleanOrphansMode                  string                 `toml:"clean_orphans_mode"`     // apply|report
+	CleanOrphansMaxRows               int64                  `toml:"clean_orphans_max_rows"` // 0 disables threshold
+	IdentifierCase                    string                 `toml:"identifier_case"`        // snake|lower|preserve
+	ReplicateOnUpdateCurrentTimestamp bool                   `toml:"replicate_on_update_current_timestamp"`
+	Workers                           int                    `toml:"workers"`
+	IndexWorkers                      int                    `toml:"index_workers"`
+	ChunkSize                         int64                  `toml:"chunk_size"`
+	CopyRiskAnalysis                  bool                   `toml:"copy_risk_analysis"`
+	Resume                            bool                   `toml:"resume"`
+	Validation                        string                 `toml:"validation"` // none|row_count|sampled_hash
+	Hooks                             HooksConfig            `toml:"hooks"`
+	TypeMapping                       TypeMappingConfig      `toml:"type_mapping"`
 
 	// configDir is the directory containing the TOML file, used to resolve relative SQL paths.
 	configDir string
@@ -158,13 +197,14 @@ func defaultMigrationConfig() MigrationConfig {
 		OnSchemaExists:      "error",
 		TableFilterMode:     "exact",
 		ColumnFilterMode:    "exact",
+		ColumnCollisionMode: "error",
+		TruncateBeforeCopy:  truncateBeforeCopyOff,
 		SourceSnapshotMode:  "none",
 		UnloggedTables:      true,
 		PreserveDefaults:    true,
 		CleanOrphans:        true,
 		CleanOrphansMode:    "apply",
 		IdentifierCase:      "snake",
-		ColumnCollisionMode: "error",
 		CopyRiskAnalysis:    true,
 		TypeMapping:         defaultTypeMappingConfig(),
 	}
@@ -253,6 +293,23 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 		return err
 	}
 	cfg.ExcludeColumns = excludeColumns
+
+	if cfg.TruncateBeforeCopy == "" {
+		cfg.TruncateBeforeCopy = truncateBeforeCopyOff
+	}
+	switch cfg.TruncateBeforeCopy {
+	case truncateBeforeCopyOff, truncateBeforeCopyPerRun, truncateBeforeCopyOnce:
+	default:
+		return fmt.Errorf("truncate_before_copy must be false, true, or %q", truncateBeforeCopyOnce)
+	}
+	truncateSchemas, err := normalizeSchemaList("truncate_before_copy_schemas", cfg.TruncateBeforeCopySchemas)
+	if err != nil {
+		return err
+	}
+	cfg.TruncateBeforeCopySchemas = truncateSchemas
+	if len(cfg.TruncateBeforeCopySchemas) == 0 {
+		cfg.TruncateBeforeCopySchemas = []string{cfg.Schema}
+	}
 
 	if cfg.OnSchemaExists == "" {
 		cfg.OnSchemaExists = "error"
@@ -343,7 +400,7 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.SchemaOnly && cfg.DataOnly {
 		return fmt.Errorf("schema_only and data_only are mutually exclusive")
 	}
-	if cfg.SchemaOnly && cfg.TruncateBeforeCopy {
+	if cfg.SchemaOnly && cfg.TruncateBeforeCopy.Enabled() {
 		return fmt.Errorf("truncate_before_copy is incompatible with schema_only (no data phase runs)")
 	}
 	if cfg.Resume && cfg.OnSchemaExists == "recreate" {
@@ -355,8 +412,8 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	if cfg.Resume && cfg.SchemaOnly {
 		return fmt.Errorf("resume is incompatible with schema_only (no data to resume)")
 	}
-	if cfg.Resume && cfg.TruncateBeforeCopy {
-		return fmt.Errorf("resume is incompatible with truncate_before_copy=true (a resumed run would truncate rows that the checkpoint may skip)")
+	if cfg.Resume && cfg.TruncateBeforeCopy.Enabled() {
+		return fmt.Errorf("resume is incompatible with truncate_before_copy=%s (a resumed run would truncate rows that the checkpoint may skip)", cfg.TruncateBeforeCopy)
 	}
 	if cfg.Resume && cfg.UnloggedTables {
 		return fmt.Errorf("resume is incompatible with unlogged_tables=true (checkpointed progress can outlive crash-truncated UNLOGGED tables)")
@@ -489,6 +546,26 @@ func effectiveTypeMapping(cfg *MigrationConfig) TypeMappingConfig {
 	tm := effectiveTypeMappingForSource(cfg.TypeMapping, cfg.Source.Type)
 	tm.UsePostGIS = cfg.PostGIS.Enabled
 	return tm
+}
+
+func normalizeSchemaList(field string, schemas []string) ([]string, error) {
+	if len(schemas) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(schemas))
+	seen := make(map[string]bool, len(schemas))
+	for _, schema := range schemas {
+		schema = strings.TrimSpace(schema)
+		if schema == "" {
+			return nil, fmt.Errorf("%s entries must not be empty", field)
+		}
+		if seen[schema] {
+			continue
+		}
+		seen[schema] = true
+		out = append(out, schema)
+	}
+	return out, nil
 }
 
 func normalizeTableFilterEntries(field, mode string, entries []string) ([]string, error) {

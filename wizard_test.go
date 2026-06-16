@@ -779,12 +779,32 @@ func TestRenderConfigTOMLIncludesTruncateBeforeCopy(t *testing.T) {
 	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
 	cfg.Schema = "sakila"
 	cfg.DataOnly = true
-	cfg.TruncateBeforeCopy = true
+	cfg.TruncateBeforeCopy = truncateBeforeCopyPerRun
 
 	rendered := renderConfigTOML(&cfg)
 
 	if !strings.Contains(rendered, "truncate_before_copy = true") {
 		t.Fatalf("expected truncate_before_copy in rendered config, got:\n%s", rendered)
+	}
+}
+
+func TestRenderConfigTOMLIncludesTruncateBeforeCopyOnceSchemas(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "root:root@tcp(127.0.0.1:3306)/sakila"
+	cfg.Target.DSN = "postgres://postgres:postgres@127.0.0.1:5432/target?sslmode=disable"
+	cfg.Schema = "schema_a"
+	cfg.DataOnly = true
+	cfg.TruncateBeforeCopy = truncateBeforeCopyOnce
+	cfg.TruncateBeforeCopySchemas = []string{"schema_a", "schema_b"}
+
+	rendered := renderConfigTOML(&cfg)
+
+	if !strings.Contains(rendered, `truncate_before_copy = "once"`) {
+		t.Fatalf("expected truncate_before_copy once in rendered config, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, `truncate_before_copy_schemas = ["schema_a", "schema_b"]`) {
+		t.Fatalf("expected truncate_before_copy_schemas in rendered config, got:\n%s", rendered)
 	}
 }
 

@@ -78,6 +78,8 @@ This matters because `data_only` loads into a schema where foreign keys and othe
 
 When an external schema migrator also inserts seed or reference rows, set `truncate_before_copy = true` in the data-only config. pgferry will run one `TRUNCATE TABLE ...` statement for the selected target tables after `before_data` hooks and before COPY, so duplicate source rows do not collide with pre-seeded target rows. pgferry does not add `CASCADE`; if non-selected tables still reference the selected tables, PostgreSQL will reject the truncate instead of deleting out-of-scope rows.
 
+For multi-schema data-only batches with cross-schema foreign keys, set `truncate_before_copy = "once"` only on the first schema config and set `truncate_before_copy_schemas` to every target schema in the batch. pgferry discovers tables in those schemas and runs one `TRUNCATE TABLE ... CASCADE` before COPY, avoiding later per-schema cascades into already-loaded schemas.
+
 After COPY, pgferry advances existing auto-increment sequences with `setval`. It does not create sequences or change column defaults in `data_only`; the pre-existing schema is expected to own that DDL.
 
 ## Two-phase workflow
