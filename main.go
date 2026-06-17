@@ -436,14 +436,7 @@ func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err erro
 				return loadAndExecSQLFiles(ctx, pgPool, cfg, cfg.Hooks.BeforeData, "before_data")
 			},
 			func() error {
-				switch cfg.TruncateBeforeCopy {
-				case truncateBeforeCopyOff:
-					return nil
-				case truncateBeforeCopyOnce:
-					return truncateTargetTablesOnceBeforeCopy(ctx, pgPool, cfg.TruncateBeforeCopySchemas)
-				default:
-					return truncateTargetTablesBeforeCopy(ctx, pgPool, schema, cfg.Schema)
-				}
+				return runTruncateBeforeCopy(ctx, pgPool, cfg, schema)
 			},
 			func() error {
 				if cfg.SourceSnapshotMode == "single_tx" {

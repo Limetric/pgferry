@@ -294,20 +294,26 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	}
 	cfg.ExcludeColumns = excludeColumns
 
+	explicitTruncateSchemas := len(cfg.TruncateBeforeCopySchemas) > 0
 	if cfg.TruncateBeforeCopy == "" {
 		cfg.TruncateBeforeCopy = truncateBeforeCopyOff
 	}
+	// Keep this validation even though TOML decoding rejects invalid strings:
+	// tests and wizard paths may construct MigrationConfig values directly.
 	switch cfg.TruncateBeforeCopy {
 	case truncateBeforeCopyOff, truncateBeforeCopyPerRun, truncateBeforeCopyOnce:
 	default:
 		return fmt.Errorf("truncate_before_copy must be false, true, or %q", truncateBeforeCopyOnce)
+	}
+	if explicitTruncateSchemas && cfg.TruncateBeforeCopy != truncateBeforeCopyOnce {
+		return fmt.Errorf(`truncate_before_copy_schemas has no effect unless truncate_before_copy = "once"`)
 	}
 	truncateSchemas, err := normalizeSchemaList("truncate_before_copy_schemas", cfg.TruncateBeforeCopySchemas)
 	if err != nil {
 		return err
 	}
 	cfg.TruncateBeforeCopySchemas = truncateSchemas
-	if len(cfg.TruncateBeforeCopySchemas) == 0 {
+	if cfg.TruncateBeforeCopy == truncateBeforeCopyOnce && len(cfg.TruncateBeforeCopySchemas) == 0 {
 		cfg.TruncateBeforeCopySchemas = []string{cfg.Schema}
 	}
 

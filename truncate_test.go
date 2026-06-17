@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"strings"
@@ -83,7 +84,10 @@ func TestTruncateTargetTablesBeforeCopy_WrapsExecError(t *testing.T) {
 func TestTruncateTargetTablesOnceBeforeCopy_DiscoversConfiguredSchemasAndCascades(t *testing.T) {
 	exec := &recordingQueryExecutor{
 		scalarsByQuery: map[string]any{
-			discoverTargetTablesForTruncateSQL: []string{`"schema_a"."accounts"`, `"schema_b"."orders"`},
+			discoverTargetTablesForTruncateSQL: []truncateTargetSchemaTables{
+				{Schema: "schema_a", Exists: true, Tables: []string{`"schema_a"."accounts"`}},
+				{Schema: "schema_b", Exists: true, Tables: []string{`"schema_b"."orders"`}},
+			},
 		},
 	}
 
@@ -108,15 +112,21 @@ func TestTruncateTargetTablesOnceBeforeCopy_DiscoversConfiguredSchemasAndCascade
 	}
 }
 
-func TestTruncateTargetTablesOnceBeforeCopy_SkipsWhenNoTablesMatch(t *testing.T) {
+func TestTruncateTargetTablesOnceBeforeCopy_RejectsConfiguredSchemaWithNoTables(t *testing.T) {
 	exec := &recordingQueryExecutor{
 		scalarsByQuery: map[string]any{
-			discoverTargetTablesForTruncateSQL: []string{},
+			discoverTargetTablesForTruncateSQL: []truncateTargetSchemaTables{
+				{Schema: "empty", Exists: true, Tables: nil},
+			},
 		},
 	}
 
-	if err := truncateTargetTablesOnceBeforeCopy(context.Background(), exec, []string{"empty"}); err != nil {
-		t.Fatalf("truncateTargetTablesOnceBeforeCopy() error: %v", err)
+	err := truncateTargetTablesOnceBeforeCopy(context.Background(), exec, []string{"empty"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `schema "empty" has no target tables to truncate`) {
+		t.Fatalf("error = %v, want empty schema detail", err)
 	}
 	if len(exec.calls) != 0 {
 		t.Fatalf("exec calls = %v, want none", exec.calls)
@@ -138,6 +148,44 @@ func TestTruncateTargetTablesOnceBeforeCopy_WrapsDiscoveryError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "discover target tables to truncate") {
 		t.Fatalf("error = %v, want discovery context", err)
+	}
+}
+
+func TestTruncateTargetTablesOnceBeforeCopy_RejectsMissingConfiguredSchema(t *testing.T) {
+	exec := &recordingQueryExecutor{
+		scalarsByQuery: map[string]any{
+			discoverTargetTablesForTruncateSQL: []truncateTargetSchemaTables{
+				{Schema: "schema_a", Exists: true, Tables: []string{`"schema_a"."accounts"`}},
+				{Schema: "schema_b", Exists: false, Tables: nil},
+			},
+		},
+	}
+
+	err := truncateTargetTablesOnceBeforeCopy(context.Background(), exec, []string{"schema_a", "schema_b"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `schema "schema_b" was not found`) {
+		t.Fatalf("error = %v, want missing schema detail", err)
+	}
+	if len(exec.calls) != 0 {
+		t.Fatalf("exec calls = %v, want none", exec.calls)
+	}
+}
+
+func TestRunTruncateBeforeCopyRejectsUnhandledMode(t *testing.T) {
+	exec := &recordingQueryExecutor{}
+	cfg := &MigrationConfig{TruncateBeforeCopy: truncateBeforeCopyMode("future")}
+
+	err := runTruncateBeforeCopy(context.Background(), exec, cfg, &Schema{Tables: []Table{{PGName: "users"}}})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `internal: unhandled truncate_before_copy mode "future"`) {
+		t.Fatalf("error = %v, want unhandled mode detail", err)
+	}
+	if len(exec.calls) != 0 {
+		t.Fatalf("exec calls = %v, want none", exec.calls)
 	}
 }
 
@@ -169,12 +217,21 @@ func (r fakeRow) Scan(dest ...any) error {
 		return errors.New("fakeRow expects one destination")
 	}
 	switch d := dest[0].(type) {
-	case *[]string:
+	case *string:
 		if r.value == nil {
-			*d = nil
+			*d = "[]"
 			return nil
 		}
-		*d = append((*d)[:0], r.value.([]string)...)
+		switch value := r.value.(type) {
+		case string:
+			*d = value
+		default:
+			data, err := json.Marshal(value)
+			if err != nil {
+				return err
+			}
+			*d = string(data)
+		}
 		return nil
 	default:
 		return errors.New("unsupported fakeRow destination")
