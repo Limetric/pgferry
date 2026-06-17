@@ -24,6 +24,7 @@ add_unsigned_checks = true
 replicate_on_update_current_timestamp = true
 workers = 8
 truncate_before_copy = true
+table_collision_mode = "auto"
 column_collision_mode = "auto"
 
 [source]
@@ -38,6 +39,9 @@ before_data = ["pre.sql"]
 after_data = []
 before_fk = ["cleanup.sql"]
 after_all = ["post.sql"]
+
+[table_renames]
+Orders = "order_records"
 
 [column_renames]
 "Orders.RowVersion" = "row_version_target"
@@ -87,6 +91,9 @@ after_all = ["post.sql"]
 	if cfg.TruncateBeforeCopy != truncateBeforeCopyPerRun {
 		t.Errorf("TruncateBeforeCopy = %s, want %s", cfg.TruncateBeforeCopy, truncateBeforeCopyPerRun)
 	}
+	if cfg.TableCollisionMode != "auto" {
+		t.Errorf("TableCollisionMode = %q, want auto", cfg.TableCollisionMode)
+	}
 	if cfg.ColumnCollisionMode != "auto" {
 		t.Errorf("ColumnCollisionMode = %q, want auto", cfg.ColumnCollisionMode)
 	}
@@ -95,6 +102,9 @@ after_all = ["post.sql"]
 	}
 	if cfg.ColumnRenames["Orders.RowVersion"] != "row_version_target" {
 		t.Errorf("ColumnRenames = %v", cfg.ColumnRenames)
+	}
+	if cfg.TableRenames["Orders"] != "order_records" {
+		t.Errorf("TableRenames = %v", cfg.TableRenames)
 	}
 	if cfg.configDir != dir {
 		t.Errorf("configDir = %q, want %q", cfg.configDir, dir)
@@ -160,6 +170,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.IdentifierCase != "snake" {
 		t.Errorf("default IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
+	}
+	if cfg.TableCollisionMode != "error" {
+		t.Errorf("default TableCollisionMode = %q, want %q", cfg.TableCollisionMode, "error")
 	}
 	if cfg.ColumnCollisionMode != "error" {
 		t.Errorf("default ColumnCollisionMode = %q, want %q", cfg.ColumnCollisionMode, "error")
@@ -2543,6 +2556,26 @@ func TestColumnCollisionMode_RejectsInvalid(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "column_collision_mode must be one of") {
 		t.Fatalf("error = %q, want column_collision_mode validation message", err.Error())
+	}
+	if !strings.Contains(err.Error(), "auto") {
+		t.Fatalf("error = %q, want it to list auto as a valid value", err.Error())
+	}
+}
+
+func TestTableCollisionMode_RejectsInvalid(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "user:pass@tcp(127.0.0.1:3306)/db"
+	cfg.Target.DSN = "postgres://u:p@127.0.0.1/db?sslmode=disable"
+	cfg.Schema = "public"
+	cfg.TableCollisionMode = "rename"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for table_collision_mode = rename")
+	}
+	if !strings.Contains(err.Error(), "table_collision_mode must be one of") {
+		t.Fatalf("error = %q, want table_collision_mode validation message", err.Error())
 	}
 	if !strings.Contains(err.Error(), "auto") {
 		t.Fatalf("error = %q, want it to list auto as a valid value", err.Error())

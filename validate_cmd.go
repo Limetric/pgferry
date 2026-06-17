@@ -143,9 +143,9 @@ func loadValidateSchema(ctx context.Context, src SourceDB, pgPool *pgxpool.Pool,
 	if hasColumnFilters(cfg) {
 		logColumnFilterReport(columnFilterReport)
 	}
-	renamedSchema, err := applyColumnRenames(filteredSchema, cfg)
+	renamedSchema, err := applySchemaRenames(filteredSchema, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("apply column renames: %w", err)
+		return nil, err
 	}
 	return renamedSchema, nil
 }
