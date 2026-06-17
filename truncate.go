@@ -79,10 +79,6 @@ func truncateTargetTablesOnceBeforeCopy(ctx context.Context, exec queryExecutor,
 		}
 		targets = append(targets, schema.Tables...)
 	}
-	if len(targets) == 0 {
-		log.Printf("truncate_before_copy=once: no target tables found in schemas: %s", strings.Join(quoteSchemaNamesForLog(schemas), ", "))
-		return nil
-	}
 
 	q := fmt.Sprintf("TRUNCATE TABLE %s CASCADE", strings.Join(targets, ", "))
 	log.Printf("truncate_before_copy=once: truncating target tables with CASCADE: %s", strings.Join(targets, ", "))

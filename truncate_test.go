@@ -85,8 +85,8 @@ func TestTruncateTargetTablesOnceBeforeCopy_DiscoversConfiguredSchemasAndCascade
 	exec := &recordingQueryExecutor{
 		scalarsByQuery: map[string]any{
 			discoverTargetTablesForTruncateSQL: []truncateTargetSchemaTables{
-				{Schema: "schema_a", Exists: true, Tables: []string{`"schema_a"."accounts"`}},
 				{Schema: "schema_b", Exists: true, Tables: []string{`"schema_b"."orders"`}},
+				{Schema: "schema_a", Exists: true, Tables: []string{`"schema_a"."accounts"`}},
 			},
 		},
 	}
@@ -106,7 +106,7 @@ func TestTruncateTargetTablesOnceBeforeCopy_DiscoversConfiguredSchemasAndCascade
 		t.Fatalf("discovery schemas = %v, want configured order", gotSchemas)
 	}
 
-	want := `TRUNCATE TABLE "schema_a"."accounts", "schema_b"."orders" CASCADE`
+	want := `TRUNCATE TABLE "schema_b"."orders", "schema_a"."accounts" CASCADE`
 	if len(exec.calls) != 1 || exec.calls[0] != want {
 		t.Fatalf("exec calls = %v, want [%q]", exec.calls, want)
 	}

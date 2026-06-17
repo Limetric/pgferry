@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -227,13 +228,22 @@ dsn = "postgres://u:p@h:5432/db"
 }
 
 func TestLoadConfig_ResumeRejectsTruncateBeforeCopy(t *testing.T) {
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "resume-truncate.toml")
+	for _, tc := range []struct {
+		name         string
+		truncateMode string
+		wantError    string
+	}{
+		{name: "true", truncateMode: "true", wantError: "resume is incompatible with truncate_before_copy=true"},
+		{name: "once", truncateMode: `"once"`, wantError: "resume is incompatible with truncate_before_copy=once"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgFile := filepath.Join(dir, "resume-truncate.toml")
 
-	content := `
+			content := fmt.Sprintf(`
 schema = "target"
 resume = true
-truncate_before_copy = true
+truncate_before_copy = %s
 
 [source]
 type = "mysql"
@@ -241,28 +251,38 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [target]
 dsn = "postgres://u:p@h:5432/db"
-`
-	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
+`, tc.truncateMode)
+			if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
 
-	_, err := loadConfig(cfgFile)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "resume is incompatible with truncate_before_copy=true") {
-		t.Fatalf("error = %v, want resume/truncate incompatibility", err)
+			_, err := loadConfig(cfgFile)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("error = %v, want resume/truncate incompatibility", err)
+			}
+		})
 	}
 }
 
 func TestLoadConfig_SchemaOnlyRejectsTruncateBeforeCopy(t *testing.T) {
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "schema-only-truncate.toml")
+	for _, tc := range []struct {
+		name         string
+		truncateMode string
+	}{
+		{name: "true", truncateMode: "true"},
+		{name: "once", truncateMode: `"once"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgFile := filepath.Join(dir, "schema-only-truncate.toml")
 
-	content := `
+			content := fmt.Sprintf(`
 schema = "target"
 schema_only = true
-truncate_before_copy = true
+truncate_before_copy = %s
 
 [source]
 type = "mysql"
@@ -270,17 +290,19 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [target]
 dsn = "postgres://u:p@h:5432/db"
-`
-	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
+`, tc.truncateMode)
+			if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
 
-	_, err := loadConfig(cfgFile)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "truncate_before_copy is incompatible with schema_only") {
-		t.Fatalf("error = %v, want schema_only/truncate incompatibility", err)
+			_, err := loadConfig(cfgFile)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "truncate_before_copy is incompatible with schema_only") {
+				t.Fatalf("error = %v, want schema_only/truncate incompatibility", err)
+			}
+		})
 	}
 }
 
