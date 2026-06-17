@@ -273,6 +273,9 @@ func canAutoRenameTableCollision(schema *Schema, group []int) bool {
 	hasOverLimitName := false
 	for _, tableIdx := range group {
 		table := schema.Tables[tableIdx]
+		// Keep both checks: identical generated names are exact collisions, while
+		// normalized remap keys catch case-only differences that PostgreSQL also
+		// treats as the same effective identifier.
 		if _, ok := seenPGNames[table.PGName]; ok {
 			return false
 		}

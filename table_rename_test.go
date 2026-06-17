@@ -154,6 +154,30 @@ func TestApplyTableRenames_AutoKeepsExplicitRename(t *testing.T) {
 	}
 }
 
+func TestApplyTableRenames_ExplicitRenameCollisionIsValidated(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "Orders", PGName: "orders"},
+			{SourceName: "Customers", PGName: "customer_records"},
+		},
+	}
+	cfg := &MigrationConfig{
+		TableRenames: map[string]string{"Orders": "customer_records"},
+	}
+
+	renamed, err := applyTableRenames(schema, cfg)
+	if err != nil {
+		t.Fatalf("applyTableRenames() error: %v", err)
+	}
+	err = validateGeneratedIdentifiers(renamed, &MigrationConfig{}, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected explicit rename collision to be rejected by identifier validation")
+	}
+	if !strings.Contains(err.Error(), `schema relation names: final name "customer_records"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestApplyTableRenames_AutoDoesNotGuessExactGeneratedNameCollision(t *testing.T) {
 	schema := &Schema{
 		Tables: []Table{

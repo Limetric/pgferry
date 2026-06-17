@@ -144,7 +144,7 @@ Table filters always match source table names, not the transformed PostgreSQL na
 
 Column filters also match source names, not transformed PostgreSQL names. When a column is excluded, pgferry omits it from `CREATE TABLE`, source `SELECT`, and target `COPY`. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately. If a filter entry matches no source column in the migrated schema, pgferry fails early.
 
-Table renames override the target PostgreSQL name for a source table without changing source reads. Keys are source table names matched case-insensitively after table filters. Values are not passed through `identifier_case`; they are used as the final quoted PostgreSQL names and must fit PostgreSQL's 63-byte identifier limit. Foreign keys are updated to reference renamed target tables.
+Table renames override the target PostgreSQL name for a source table without changing source reads. Keys are source table names matched case-insensitively after table filters; schema-qualified keys such as `dbo.Orders` are not supported. Values are not passed through `identifier_case`; they are used as the final quoted PostgreSQL names and must fit PostgreSQL's 63-byte identifier limit. Foreign keys are updated to reference renamed target tables.
 
 ```toml
 [table_renames]
