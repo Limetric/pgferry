@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -83,8 +84,8 @@ after_all = ["post.sql"]
 	if !cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("ReplicateOnUpdateCurrentTimestamp = %t, want true", cfg.ReplicateOnUpdateCurrentTimestamp)
 	}
-	if !cfg.TruncateBeforeCopy {
-		t.Errorf("TruncateBeforeCopy = %t, want true", cfg.TruncateBeforeCopy)
+	if cfg.TruncateBeforeCopy != truncateBeforeCopyPerRun {
+		t.Errorf("TruncateBeforeCopy = %s, want %s", cfg.TruncateBeforeCopy, truncateBeforeCopyPerRun)
 	}
 	if cfg.ColumnCollisionMode != "auto" {
 		t.Errorf("ColumnCollisionMode = %q, want auto", cfg.ColumnCollisionMode)
@@ -145,8 +146,8 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		t.Errorf("default ReplicateOnUpdateCurrentTimestamp = %t, want false", cfg.ReplicateOnUpdateCurrentTimestamp)
 	}
-	if cfg.TruncateBeforeCopy {
-		t.Errorf("default TruncateBeforeCopy = %t, want false", cfg.TruncateBeforeCopy)
+	if cfg.TruncateBeforeCopy != truncateBeforeCopyOff {
+		t.Errorf("default TruncateBeforeCopy = %s, want %s", cfg.TruncateBeforeCopy, truncateBeforeCopyOff)
 	}
 	if !cfg.CleanOrphans {
 		t.Errorf("default CleanOrphans = %t, want true", cfg.CleanOrphans)
@@ -227,13 +228,22 @@ dsn = "postgres://u:p@h:5432/db"
 }
 
 func TestLoadConfig_ResumeRejectsTruncateBeforeCopy(t *testing.T) {
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "resume-truncate.toml")
+	for _, tc := range []struct {
+		name         string
+		truncateMode string
+		wantError    string
+	}{
+		{name: "true", truncateMode: "true", wantError: "resume is incompatible with truncate_before_copy=true"},
+		{name: "once", truncateMode: `"once"`, wantError: "resume is incompatible with truncate_before_copy=once"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgFile := filepath.Join(dir, "resume-truncate.toml")
 
-	content := `
+			content := fmt.Sprintf(`
 schema = "target"
 resume = true
-truncate_before_copy = true
+truncate_before_copy = %s
 
 [source]
 type = "mysql"
@@ -241,28 +251,38 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [target]
 dsn = "postgres://u:p@h:5432/db"
-`
-	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
+`, tc.truncateMode)
+			if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
 
-	_, err := loadConfig(cfgFile)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "resume is incompatible with truncate_before_copy=true") {
-		t.Fatalf("error = %v, want resume/truncate incompatibility", err)
+			_, err := loadConfig(cfgFile)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("error = %v, want resume/truncate incompatibility", err)
+			}
+		})
 	}
 }
 
 func TestLoadConfig_SchemaOnlyRejectsTruncateBeforeCopy(t *testing.T) {
-	dir := t.TempDir()
-	cfgFile := filepath.Join(dir, "schema-only-truncate.toml")
+	for _, tc := range []struct {
+		name         string
+		truncateMode string
+	}{
+		{name: "true", truncateMode: "true"},
+		{name: "once", truncateMode: `"once"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgFile := filepath.Join(dir, "schema-only-truncate.toml")
 
-	content := `
+			content := fmt.Sprintf(`
 schema = "target"
 schema_only = true
-truncate_before_copy = true
+truncate_before_copy = %s
 
 [source]
 type = "mysql"
@@ -270,17 +290,19 @@ dsn = "root:root@tcp(127.0.0.1:3306)/db"
 
 [target]
 dsn = "postgres://u:p@h:5432/db"
-`
-	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
+`, tc.truncateMode)
+			if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+				t.Fatal(err)
+			}
 
-	_, err := loadConfig(cfgFile)
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "truncate_before_copy is incompatible with schema_only") {
-		t.Fatalf("error = %v, want schema_only/truncate incompatibility", err)
+			_, err := loadConfig(cfgFile)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), "truncate_before_copy is incompatible with schema_only") {
+				t.Fatalf("error = %v, want schema_only/truncate incompatibility", err)
+			}
+		})
 	}
 }
 
@@ -2319,6 +2341,98 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.IndexWorkers != 2 {
 		t.Errorf("IndexWorkers = %d, want 2", cfg.IndexWorkers)
+	}
+}
+
+func TestLoadConfig_TruncateBeforeCopyOnce(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "truncate_once.toml")
+
+	content := `
+schema = "schema_a"
+data_only = true
+truncate_before_copy = "once"
+truncate_before_copy_schemas = ["schema_a", "schema_b"]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if cfg.TruncateBeforeCopy != truncateBeforeCopyOnce {
+		t.Fatalf("TruncateBeforeCopy = %s, want %s", cfg.TruncateBeforeCopy, truncateBeforeCopyOnce)
+	}
+	if strings.Join(cfg.TruncateBeforeCopySchemas, ",") != "schema_a,schema_b" {
+		t.Fatalf("TruncateBeforeCopySchemas = %v, want [schema_a schema_b]", cfg.TruncateBeforeCopySchemas)
+	}
+}
+
+func TestLoadConfig_TruncateBeforeCopyOnceDefaultsSchemasToTargetSchema(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "truncate_once_default_schemas.toml")
+
+	content := `
+schema = "schema_a"
+data_only = true
+truncate_before_copy = "once"
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgFile)
+	if err != nil {
+		t.Fatalf("loadConfig() error: %v", err)
+	}
+	if strings.Join(cfg.TruncateBeforeCopySchemas, ",") != "schema_a" {
+		t.Fatalf("TruncateBeforeCopySchemas = %v, want [schema_a]", cfg.TruncateBeforeCopySchemas)
+	}
+}
+
+func TestLoadConfig_TruncateBeforeCopySchemasRequiresOnceMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgFile := filepath.Join(dir, "truncate_schemas_without_once.toml")
+
+	content := `
+schema = "schema_a"
+data_only = true
+truncate_before_copy = true
+truncate_before_copy_schemas = ["schema_a", "schema_b"]
+
+[source]
+type = "mysql"
+dsn = "root:root@tcp(127.0.0.1:3306)/db"
+
+[target]
+dsn = "postgres://u:p@h:5432/db"
+`
+	if err := os.WriteFile(cfgFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := loadConfig(cfgFile)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), `truncate_before_copy_schemas has no effect unless truncate_before_copy = "once"`) {
+		t.Fatalf("error = %v, want truncate_before_copy_schemas guidance", err)
 	}
 }
 

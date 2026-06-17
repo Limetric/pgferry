@@ -630,8 +630,13 @@ func renderConfigTOML(cfg *MigrationConfig) string {
 	if cfg.ReplicateOnUpdateCurrentTimestamp {
 		writeLine("replicate_on_update_current_timestamp = true")
 	}
-	if cfg.TruncateBeforeCopy {
+	if cfg.TruncateBeforeCopy == truncateBeforeCopyPerRun {
 		writeLine("truncate_before_copy = true")
+	} else if cfg.TruncateBeforeCopy == truncateBeforeCopyOnce {
+		writeLine("truncate_before_copy = %s", strconv.Quote(string(truncateBeforeCopyOnce)))
+		if len(cfg.TruncateBeforeCopySchemas) > 0 {
+			writeLine("truncate_before_copy_schemas = %s", tomlStringArray(cfg.TruncateBeforeCopySchemas))
+		}
 	}
 	if cfg.Workers != effectiveDefaultWorkers(cfg.Source.Type) {
 		writeLine("workers = %d", cfg.Workers)

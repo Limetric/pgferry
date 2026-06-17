@@ -120,7 +120,8 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
 | `schema_only` | bool | `false` | Create schema objects only. Skip data COPY. |
 | `data_only` | bool | `false` | Load data into an existing schema, then advance existing sequences with `setval`. Requires the target role to disable and re-enable triggers on the selected target tables during the load. |
-| `truncate_before_copy` | bool | `false` | Run `TRUNCATE TABLE ...` on the selected target tables after `before_data` hooks and before COPY. Useful with `data_only` when an external schema migrator pre-seeds reference rows that should be replaced by source data. pgferry does not add `CASCADE`, so PostgreSQL rejects the truncate if non-selected tables still reference the selected tables. In full migrations, target tables are normally freshly created, so this is usually a no-op. |
+| `truncate_before_copy` | bool or string | `false` | `true` runs `TRUNCATE TABLE ...` on the selected target tables after `before_data` hooks and before COPY. `"once"` discovers all target tables in `truncate_before_copy_schemas` and runs one `TRUNCATE TABLE ... CASCADE` statement, which is useful before a multi-schema `data_only` batch with cross-schema foreign keys. In full migrations, target tables are normally freshly created, so this is usually a no-op. |
+| `truncate_before_copy_schemas` | array of strings | `[schema]` when `"once"` | Target PostgreSQL schemas used only when `truncate_before_copy = "once"`. Set this to every schema in the multi-schema batch, and enable `"once"` only for the first pgferry config in that batch. Each listed schema must exist and contain at least one ordinary target table. |
 | `source_snapshot_mode` | string | `"none"` | `"none"` is fastest. `"single_tx"` gives one consistent source snapshot on MySQL, MariaDB, and MSSQL. |
 | `identifier_case` | string | `"snake"` | How source identifiers map to PostgreSQL names. `"snake"` converts `OrderItems` → `order_items`. `"lower"` lowercases only (`OrderItems` → `orderitems`). `"preserve"` keeps the source casing unchanged (`OrderItems` → `OrderItems`); PostgreSQL DDL is always quoted so mixed-case names are safe. |
 | `unlogged_tables` | bool | `true` | Use `UNLOGGED` tables during full loads, then `SET LOGGED` later. |
@@ -159,7 +160,9 @@ Automatic collision renames are applied after explicit `[column_renames]`, so ex
 
 Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, `exclude_columns`, `column_renames`, or `column_collision_mode` can change the selected migration scope or target schema. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
 
-`truncate_before_copy` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ...` statement. pgferry intentionally omits `CASCADE` so PostgreSQL will fail rather than silently truncating dependent tables outside the selected scope.
+`truncate_before_copy = true` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ...` statement. pgferry intentionally omits `CASCADE` so PostgreSQL will fail rather than silently truncating dependent tables outside the selected scope.
+
+Use `truncate_before_copy = "once"` for multi-schema `data_only` cutovers where cross-schema foreign keys make per-schema `TRUNCATE` fail. Configure `truncate_before_copy_schemas` with every target schema in the batch, enable `"once"` only on the first schema config, and leave later schema configs at `false`. pgferry discovers ordinary target tables in those schemas and runs a single `TRUNCATE TABLE ... CASCADE` before COPY, so the cascade is resolved while all configured schemas are still empty. `truncate_before_copy_schemas` is rejected with `false` or `true` modes to catch stale or misplaced config.
 
 ### `[source]`
 
@@ -277,10 +280,10 @@ The `database` parameter is required because pgferry extracts the DB name for in
 | `resume = true` + `on_schema_exists = "recreate"` | Invalid because the target schema would be dropped. |
 | `resume = true` + `on_schema_exists = "use"` | Invalid because a resumed run would re-enter a now non-empty schema. |
 | `resume = true` + `schema_only = true` | Invalid because there is no data stage to resume. |
-| `resume = true` + `truncate_before_copy = true` | Invalid because a resumed run would truncate rows that the checkpoint may skip. |
+| `resume = true` + `truncate_before_copy = true` or `"once"` | Invalid because a resumed run would truncate rows that the checkpoint may skip. |
 | `resume = true` + `unlogged_tables = true` | Invalid because checkpointed progress could outlive crash-truncated tables. |
 | `schema_only = true` + `data_only = true` | Invalid. Choose one or neither. |
-| `schema_only = true` + `truncate_before_copy = true` | Invalid because no data phase runs. |
+| `schema_only = true` + `truncate_before_copy = true` or `"once"` | Invalid because no data phase runs. |
 | SQLite + `source_snapshot_mode = "single_tx"` | Invalid. SQLite only supports `none`. |
 | MariaDB + `[postgis]` | Invalid. Use `type_mapping.spatial_mode` fallback modes instead. |
 
@@ -294,5 +297,6 @@ The `database` parameter is required because pgferry extracts the DB name for in
 - Keep `on_schema_exists = "error"` for the first production dry runs so you do not destroy previous target state by mistake.
 - Use `on_schema_exists = "use"` only when infrastructure or policy pre-creates the schema shell and you want pgferry to own everything inside it from empty.
 - Use `truncate_before_copy = true` with `data_only` when the target schema was created by another migrator and contains seed rows that should be replaced before COPY.
+- Use `truncate_before_copy = "once"` on only the first config in a multi-schema `data_only` batch when cross-schema foreign keys require one pre-copy `TRUNCATE ... CASCADE` across all batch schemas.
 - Expect `data_only` to fail early on PostgreSQL roles that cannot run `ALTER TABLE ... DISABLE/ENABLE TRIGGER ALL`; rehearse that path with the real target role before cutover.
 - Prefer hooks for views, routines, cleanup SQL, or post-load validation queries that are specific to your application.

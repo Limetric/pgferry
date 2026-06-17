@@ -19,6 +19,8 @@ If that preflight fails, pgferry aborts before COPY starts so operators are not 
 
 If your own schema migrator creates the target tables and inserts seed/reference data, use `truncate_before_copy = true` in the data-only config when those rows should be replaced by the source data. pgferry runs `TRUNCATE TABLE ...` on the selected target tables after `before_data` hooks and before COPY. It does not add `CASCADE`, so PostgreSQL will fail rather than silently truncating dependent tables outside the selected scope.
 
+For a multi-schema cutover with cross-schema foreign keys, use `truncate_before_copy = "once"` only on the first schema config and set `truncate_before_copy_schemas` to the full batch, for example `["schema_a", "schema_b", "schema_c"]`. That makes pgferry run one pre-copy `TRUNCATE TABLE ... CASCADE` across all listed target schemas, then later per-schema configs should leave `truncate_before_copy = false`. pgferry fails before truncating if a listed schema is missing or has no ordinary target tables, which helps catch typos in the batch list.
+
 After COPY, pgferry uses `setval` for auto-increment columns. It does not create sequences or change column defaults in `data_only`; keep that DDL in the external schema migrator or the earlier `schema_only` run.
 
 ## Tradeoff
@@ -27,7 +29,7 @@ This is slower than the default full pipeline because data loads into a schema t
 
 It is also more privilege-sensitive than the full pipeline, especially on managed PostgreSQL services or environments with restricted application roles.
 
-`truncate_before_copy = true` is incompatible with `resume = true`, because a resumed retry would truncate rows that the checkpoint may skip.
+`truncate_before_copy = true` and `truncate_before_copy = "once"` are incompatible with `resume = true`, because a resumed retry would truncate rows that the checkpoint may skip.
 
 ## Start from these examples
 
