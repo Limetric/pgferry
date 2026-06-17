@@ -85,14 +85,6 @@ func truncateTargetTablesOnceBeforeCopy(ctx context.Context, exec queryExecutor,
 	return execSQL(ctx, exec, "truncate target tables before copy once", q)
 }
 
-func quoteSchemaNamesForLog(schemas []string) []string {
-	quoted := make([]string, len(schemas))
-	for i, schema := range schemas {
-		quoted[i] = pgIdent(schema)
-	}
-	return quoted
-}
-
 func runTruncateBeforeCopy(ctx context.Context, exec queryExecutor, cfg *MigrationConfig, schema *Schema) error {
 	switch cfg.TruncateBeforeCopy {
 	case truncateBeforeCopyOff:
