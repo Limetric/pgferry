@@ -258,7 +258,7 @@ func TestApplyTableRenames_RejectsDuplicateSourceTableMapping(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), `both map to source table orders`) {
+	if !strings.Contains(err.Error(), `both map to source table "orders"`) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

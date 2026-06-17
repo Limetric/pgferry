@@ -84,7 +84,7 @@ func applyTableRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 
 		sourceKey := normalizeTableFilterKey(renamed.Tables[tableIdx].SourceName)
 		if prev, ok := seenSourceTables[sourceKey]; ok {
-			return nil, fmt.Errorf("table_renames entries %q and %q both map to source table %s", prev, entry, sourceKey)
+			return nil, fmt.Errorf("table_renames entries %q and %q both map to source table %q", prev, entry, sourceKey)
 		}
 		seenSourceTables[sourceKey] = entry
 
