@@ -67,6 +67,8 @@ type MigrationConfig struct {
 	IncludeTables                     []string               `toml:"include_tables"`
 	ExcludeTables                     []string               `toml:"exclude_tables"`
 	ExcludeColumns                    []string               `toml:"exclude_columns"`
+	TableRenames                      map[string]string      `toml:"table_renames"`
+	TableCollisionMode                string                 `toml:"table_collision_mode"` // error|auto
 	ColumnRenames                     map[string]string      `toml:"column_renames"`
 	ColumnCollisionMode               string                 `toml:"column_collision_mode"` // error|auto
 	OnSchemaExists                    string                 `toml:"on_schema_exists"`
@@ -197,6 +199,7 @@ func defaultMigrationConfig() MigrationConfig {
 		OnSchemaExists:      "error",
 		TableFilterMode:     "exact",
 		ColumnFilterMode:    "exact",
+		TableCollisionMode:  "error",
 		ColumnCollisionMode: "error",
 		TruncateBeforeCopy:  truncateBeforeCopyOff,
 		SourceSnapshotMode:  "none",
@@ -268,6 +271,15 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	case "snake", "lower", "preserve":
 	default:
 		return fmt.Errorf("identifier_case must be one of: snake, lower, preserve")
+	}
+	cfg.TableCollisionMode = strings.ToLower(strings.TrimSpace(cfg.TableCollisionMode))
+	if cfg.TableCollisionMode == "" {
+		cfg.TableCollisionMode = "error"
+	}
+	switch cfg.TableCollisionMode {
+	case "error", "auto":
+	default:
+		return fmt.Errorf("table_collision_mode must be one of: error, auto")
 	}
 	cfg.ColumnCollisionMode = strings.ToLower(strings.TrimSpace(cfg.ColumnCollisionMode))
 	if cfg.ColumnCollisionMode == "" {

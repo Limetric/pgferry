@@ -115,6 +115,8 @@ Why: this is the fastest full-load path when the target schema can be dropped an
 | `include_tables` | array of strings | `[]` | If non-empty, only migrate these source tables. Entries are exact names by default, or glob patterns when `table_filter_mode = "glob"`. |
 | `exclude_tables` | array of strings | `[]` | Source tables to skip. Applied after `include_tables`, so excludes win when both match the same table. |
 | `exclude_columns` | array of strings | `[]` | Source columns to skip. Use `ColumnName` to skip matching columns in any table, or `TableName.ColumnName` to scope a rule to one source table. Entries are exact by default, or glob patterns in either the table or column part when `column_filter_mode = "glob"`. |
+| `[table_renames]` | table of strings | `{}` | Explicit target table names keyed by source table name. Values are final PostgreSQL table names and are applied after table filters. |
+| `table_collision_mode` | string | `"error"` | `"error"` reports generated PostgreSQL identifier collisions. `"auto"` automatically renames truncation-only table collisions within the target schema using deterministic hashed names. |
 | `[column_renames]` | table of strings | `{}` | Explicit target column names keyed by source `TableName.ColumnName`. Values are final PostgreSQL column names and are applied after table and column filters. |
 | `column_collision_mode` | string | `"error"` | `"error"` reports generated PostgreSQL identifier collisions. `"auto"` automatically renames truncation-only column collisions within a table using deterministic hashed names. |
 | `on_schema_exists` | string | `"error"` | `"error"` aborts if the schema exists. `"recreate"` drops and recreates it. `"use"` requires the schema to already exist and be empty, then pgferry creates objects inside it. |
@@ -142,6 +144,13 @@ Table filters always match source table names, not the transformed PostgreSQL na
 
 Column filters also match source names, not transformed PostgreSQL names. When a column is excluded, pgferry omits it from `CREATE TABLE`, source `SELECT`, and target `COPY`. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately. If a filter entry matches no source column in the migrated schema, pgferry fails early.
 
+Table renames override the target PostgreSQL name for a source table without changing source reads. Keys are source table names matched case-insensitively after table filters; schema-qualified keys such as `dbo.Orders` are not supported. Values are not passed through `identifier_case`; they are used as the final quoted PostgreSQL names and must fit PostgreSQL's 63-byte identifier limit. Foreign keys are updated to reference renamed target tables.
+
+```toml
+[table_renames]
+KP_SUMINA = "reserve_summary"
+```
+
 Column renames override the target PostgreSQL name for a source column without changing source reads. Keys must be source-qualified as `TableName.ColumnName`, matched case-insensitively after table and column filters; schema-qualified keys such as `dbo.Table.Column` are not supported. Values are not passed through `identifier_case`; they are used as the final quoted PostgreSQL names and must fit PostgreSQL's 63-byte identifier limit. Primary keys, plain-column indexes, and foreign keys are updated to reference the renamed target columns.
 
 ```toml
@@ -150,15 +159,16 @@ Column renames override the target PostgreSQL name for a source column without c
 "KP_SUMINA.% ставка резерва по категории качества КД" = "reserve_rate_quality_kd"
 ```
 
-For large schemas with many long source column names, `column_collision_mode = "auto"` can resolve PostgreSQL truncation collisions without listing every column manually:
+For large schemas with many long source table or column names, the automatic collision modes can resolve PostgreSQL truncation collisions without listing every object manually:
 
 ```toml
+table_collision_mode = "auto"
 column_collision_mode = "auto"
 ```
 
-Automatic collision renames are applied after explicit `[column_renames]`, so explicit mappings take precedence. pgferry only auto-renames column groups whose generated names are distinct before PostgreSQL's 63-byte truncation but collide after that limit. Exact generated-name collisions, table/index/constraint/type collisions, and ambiguous column references still fail and require explicit renames or manual handling. Each generated target name uses a UTF-8-safe prefix plus a stable hash and is logged during planning, validation, and migration.
+Automatic collision renames are applied after explicit `[table_renames]` and `[column_renames]`, so explicit mappings take precedence. pgferry only auto-renames table groups or column groups whose generated names are distinct before PostgreSQL's 63-byte truncation but collide after that limit. Exact generated-name collisions, index/constraint/type collisions, and ambiguous references still fail and require explicit renames or manual handling. Each generated target name uses a UTF-8-safe prefix plus a stable hash and is logged during planning, validation, and migration.
 
-Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `column_filter_mode`, `exclude_columns`, `column_renames`, or `column_collision_mode` can change the selected migration scope or target schema. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
+Changing `table_filter_mode`, `include_tables`, `exclude_tables`, `table_renames`, `table_collision_mode`, `column_filter_mode`, `exclude_columns`, `column_renames`, or `column_collision_mode` can change the selected migration scope or target schema. When `resume = true`, that can invalidate the checkpoint fingerprint and force a fresh run.
 
 `truncate_before_copy = true` follows the selected table scope after filters. Excluded tables are not named in pgferry's generated `TRUNCATE TABLE ...` statement. pgferry intentionally omits `CASCADE` so PostgreSQL will fail rather than silently truncating dependent tables outside the selected scope.
 

@@ -349,7 +349,7 @@ func validateGeneratedIdentifiers(schema *Schema, cfg *MigrationConfig, typeMap 
 		b.WriteString(strings.Join(collision.origins, "; "))
 		b.WriteByte('\n')
 	}
-	b.WriteString("Hint: use [column_renames] to choose explicit target names for conflicting source columns, rename the conflicting source objects, set identifier_case = \"preserve\" to keep original casing (PostgreSQL will quote them), fall back to identifier_case = \"lower\" if normalization caused the collision, or migrate the conflicting objects manually with hooks.")
+	b.WriteString("Hint: use [table_renames] or [column_renames] to choose explicit target names for conflicting source objects, rename the conflicting source objects, set identifier_case = \"preserve\" to keep original casing (PostgreSQL will quote them), fall back to identifier_case = \"lower\" if normalization caused the collision, or migrate the conflicting objects manually with hooks.")
 
 	return errors.New(b.String())
 }

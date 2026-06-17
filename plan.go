@@ -191,6 +191,7 @@ type PlanSummary struct {
 	PreserveDefaults    bool   `json:"preserve_defaults"`
 	CleanOrphans        bool   `json:"clean_orphans"`
 	IdentifierCase      string `json:"identifier_case"`
+	TableCollisionMode  string `json:"table_collision_mode"`
 	ColumnCollisionMode string `json:"column_collision_mode"`
 }
 
@@ -507,9 +508,9 @@ func runPlanWithConfig(cfg *MigrationConfig, out io.Writer, opts PlanOptions) er
 	if hasColumnFilters(cfg) {
 		logColumnFilterReport(columnFilterReport)
 	}
-	renamedSchema, err := applyColumnRenames(schema, cfg)
+	renamedSchema, err := applySchemaRenames(schema, cfg)
 	if err != nil {
-		return fmt.Errorf("apply column renames: %w", err)
+		return err
 	}
 	schema = renamedSchema
 
@@ -655,7 +656,8 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 		PreserveDefaults:    cfg.PreserveDefaults,
 		CleanOrphans:        cfg.CleanOrphans,
 		IdentifierCase:      cfg.IdentifierCase,
-		ColumnCollisionMode: columnCollisionModeOrDefault(cfg.ColumnCollisionMode),
+		TableCollisionMode:  collisionModeOrDefault(cfg.TableCollisionMode),
+		ColumnCollisionMode: collisionModeOrDefault(cfg.ColumnCollisionMode),
 	}
 	if schema != nil {
 		s.TableCount = len(schema.Tables)
@@ -719,7 +721,7 @@ func planSummaryHasData(s PlanSummary) bool {
 	return s.SourceType != ""
 }
 
-func columnCollisionModeOrDefault(mode string) string {
+func collisionModeOrDefault(mode string) string {
 	if mode != "" {
 		return mode
 	}
@@ -978,8 +980,8 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		}
 		fmt.Fprintf(w, "Config: workers=%d index_workers=%d chunk_size=%d resume=%t validation=%s\n",
 			s.Workers, s.IndexWorkers, s.ChunkSize, s.Resume, s.Validation)
-		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t identifier_case=%s column_collision_mode=%s\n",
-			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, columnCollisionModeOrDefault(s.ColumnCollisionMode))
+		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t identifier_case=%s table_collision_mode=%s column_collision_mode=%s\n",
+			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, collisionModeOrDefault(s.TableCollisionMode), collisionModeOrDefault(s.ColumnCollisionMode))
 		fmt.Fprintln(w)
 		writePlanETAText(w, report.ETA)
 	}

@@ -60,6 +60,9 @@ func TestBuildPlanSummary_TotalEstimatedRows(t *testing.T) {
 	if got := summary.ColumnCollisionMode; got != "error" {
 		t.Fatalf("ColumnCollisionMode = %q, want error", got)
 	}
+	if got := summary.TableCollisionMode; got != "error" {
+		t.Fatalf("TableCollisionMode = %q, want error", got)
+	}
 	if got := buildPlanSummary(schema, cfg, "main", risks, nil, true).TotalEstimatedRows; got != 1_000_000 {
 		t.Fatalf("copy risk enabled: TotalEstimatedRows = %d, want 1000000", got)
 	}

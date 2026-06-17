@@ -26,9 +26,9 @@ Examples:
 
 PostgreSQL SQL is emitted as `"app"."users"` rather than `app.users` under all three modes.
 
-PostgreSQL compares only the first 63 bytes of an identifier. pgferry checks generated names using that effective PostgreSQL limit and reports collisions before running target DDL. If two source column names still collide after the selected `identifier_case` mode, use `[column_renames]` to choose explicit target names for those source columns.
+PostgreSQL compares only the first 63 bytes of an identifier. pgferry checks generated names using that effective PostgreSQL limit and reports collisions before running target DDL. If source table or column names still collide after the selected `identifier_case` mode, use `[table_renames]` or `[column_renames]` to choose explicit target names.
 
-For bulk cases where distinct long column names collide only after PostgreSQL truncation, set `column_collision_mode = "auto"` to let pgferry generate deterministic hashed target names. This mode is intentionally narrow: exact generated-name collisions and non-column object collisions still require explicit renames or manual handling.
+For bulk cases where distinct long table or column names collide only after PostgreSQL truncation, set `table_collision_mode = "auto"` or `column_collision_mode = "auto"` to let pgferry generate deterministic hashed target names. These modes are intentionally narrow: exact generated-name collisions and other object collisions still require explicit renames or manual handling.
 
 ## Auto-increment and sequences
 

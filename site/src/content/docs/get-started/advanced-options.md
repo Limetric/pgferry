@@ -100,23 +100,27 @@ exclude_columns = ["RowVersion", "audit_*.sys_*"]
 
 When a column is excluded, pgferry omits it from schema creation and data COPY. Primary keys, plain-column indexes, and foreign keys that reference excluded columns are skipped. pgferry cannot inspect arbitrary expression index definitions for excluded column references; expression indexes are already reported as unsupported and skipped separately.
 
-To keep a source column but choose its target PostgreSQL name explicitly, use `column_renames`:
+To keep source objects but choose their target PostgreSQL names explicitly, use `table_renames` and `column_renames`:
 
 ```toml
+[table_renames]
+KP_SUMINA = "reserve_summary"
+
 [column_renames]
 "KP_SUMINA.% ставка резерва по категории качества" = "reserve_rate_quality"
 "KP_SUMINA.% ставка резерва по категории качества КД" = "reserve_rate_quality_kd"
 ```
 
-Rename keys use source `TableName.ColumnName` values after table and column filters. Rename values are final PostgreSQL column names, so pgferry does not apply `identifier_case` to them, and they must fit PostgreSQL's 63-byte identifier limit. This is useful when two long source column names would otherwise collide after PostgreSQL's identifier limit.
+Rename keys use source table names and source `TableName.ColumnName` values after table and column filters. Rename values are final PostgreSQL table or column names, so pgferry does not apply `identifier_case` to them, and they must fit PostgreSQL's 63-byte identifier limit. This is useful when long source object names would otherwise collide after PostgreSQL's identifier limit.
 
-If many long columns collide only because PostgreSQL truncates identifiers to 63 bytes, opt into deterministic automatic names:
+If many long tables or columns collide only because PostgreSQL truncates identifiers to 63 bytes, opt into deterministic automatic names:
 
 ```toml
+table_collision_mode = "auto"
 column_collision_mode = "auto"
 ```
 
-Explicit `column_renames` still take precedence. Automatic renames are limited to truncation-only column collisions within a table; exact generated-name collisions and non-column object collisions still stop with an error so you can choose the target names deliberately.
+Explicit `table_renames` and `column_renames` still take precedence. Automatic renames are limited to truncation-only table collisions within the target schema and truncation-only column collisions within a table; exact generated-name collisions and other object collisions still stop with an error so you can choose the target names deliberately.
 
 - [How to read plan output](/operations/how-to-read-plan-output/)
 
