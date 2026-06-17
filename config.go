@@ -30,6 +30,7 @@ type MigrationConfig struct {
 	ExcludeTables                     []string          `toml:"exclude_tables"`
 	ExcludeColumns                    []string          `toml:"exclude_columns"`
 	ColumnRenames                     map[string]string `toml:"column_renames"`
+	ColumnCollisionMode               string            `toml:"column_collision_mode"` // error|auto
 	OnSchemaExists                    string            `toml:"on_schema_exists"`
 	SchemaOnly                        bool              `toml:"schema_only"`
 	DataOnly                          bool              `toml:"data_only"`
@@ -154,17 +155,18 @@ func applyConfigEnvOverrides(cfg *MigrationConfig) {
 
 func defaultMigrationConfig() MigrationConfig {
 	return MigrationConfig{
-		OnSchemaExists:     "error",
-		TableFilterMode:    "exact",
-		ColumnFilterMode:   "exact",
-		SourceSnapshotMode: "none",
-		UnloggedTables:     true,
-		PreserveDefaults:   true,
-		CleanOrphans:       true,
-		CleanOrphansMode:   "apply",
-		IdentifierCase:     "snake",
-		CopyRiskAnalysis:   true,
-		TypeMapping:        defaultTypeMappingConfig(),
+		OnSchemaExists:      "error",
+		TableFilterMode:     "exact",
+		ColumnFilterMode:    "exact",
+		SourceSnapshotMode:  "none",
+		UnloggedTables:      true,
+		PreserveDefaults:    true,
+		CleanOrphans:        true,
+		CleanOrphansMode:    "apply",
+		IdentifierCase:      "snake",
+		ColumnCollisionMode: "error",
+		CopyRiskAnalysis:    true,
+		TypeMapping:         defaultTypeMappingConfig(),
 	}
 }
 
@@ -226,6 +228,15 @@ func finalizeConfig(cfg *MigrationConfig, configDir string) error {
 	case "snake", "lower", "preserve":
 	default:
 		return fmt.Errorf("identifier_case must be one of: snake, lower, preserve")
+	}
+	cfg.ColumnCollisionMode = strings.ToLower(strings.TrimSpace(cfg.ColumnCollisionMode))
+	if cfg.ColumnCollisionMode == "" {
+		cfg.ColumnCollisionMode = "error"
+	}
+	switch cfg.ColumnCollisionMode {
+	case "error", "auto":
+	default:
+		return fmt.Errorf("column_collision_mode must be one of: error, auto")
 	}
 	includeTables, err := normalizeTableFilterEntries("include_tables", cfg.TableFilterMode, cfg.IncludeTables)
 	if err != nil {

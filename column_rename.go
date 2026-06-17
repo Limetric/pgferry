@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 )
@@ -10,11 +13,15 @@ func hasColumnRenames(cfg *MigrationConfig) bool {
 	return cfg != nil && len(cfg.ColumnRenames) > 0
 }
 
+func hasAutoColumnCollisionRenames(cfg *MigrationConfig) bool {
+	return cfg != nil && cfg.ColumnCollisionMode == "auto"
+}
+
 func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	if schema == nil {
 		return nil, nil
 	}
-	if !hasColumnRenames(cfg) {
+	if !hasColumnRenames(cfg) && !hasAutoColumnCollisionRenames(cfg) {
 		return schema, nil
 	}
 
@@ -36,6 +43,7 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	sort.Strings(entries)
 
 	renamesByTable := make(map[int]map[string]string)
+	explicitRenamesByTable := make(map[int]map[int]struct{})
 	seenSourceColumns := make(map[string]string, len(entries))
 	var missingTables []string
 	var missingColumns []string
@@ -78,6 +86,10 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 			renamesByTable[tableIdx] = make(map[string]string)
 		}
 		renamesByTable[tableIdx][normalizeTableFilterKey(oldPGName)] = targetName
+		if explicitRenamesByTable[tableIdx] == nil {
+			explicitRenamesByTable[tableIdx] = make(map[int]struct{})
+		}
+		explicitRenamesByTable[tableIdx][colIdx] = struct{}{}
 	}
 
 	if len(missingTables) > 0 {
@@ -87,6 +99,10 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	if len(missingColumns) > 0 {
 		sort.Strings(missingColumns)
 		return nil, fmt.Errorf("column_renames entries did not match any source column on matched source tables: %s", strings.Join(missingColumns, ", "))
+	}
+
+	if hasAutoColumnCollisionRenames(cfg) {
+		applyAutoColumnCollisionRenames(renamed, renamesByTable, explicitRenamesByTable)
 	}
 
 	for i := range renamed.Tables {
@@ -143,4 +159,114 @@ func remapColumnNames(columns []string, renames map[string]string) {
 			columns[i] = target
 		}
 	}
+}
+
+func applyAutoColumnCollisionRenames(schema *Schema, renamesByTable map[int]map[string]string, explicitRenamesByTable map[int]map[int]struct{}) {
+	for tableIdx := range schema.Tables {
+		table := &schema.Tables[tableIdx]
+		groups := columnPostgresKeyGroups(*table)
+		autoIndexes := make(map[int]struct{})
+		for _, group := range groups {
+			if !canAutoRenameColumnCollision(*table, group) {
+				continue
+			}
+			for _, colIdx := range group {
+				if _, explicit := explicitRenamesByTable[tableIdx][colIdx]; explicit {
+					continue
+				}
+				autoIndexes[colIdx] = struct{}{}
+			}
+		}
+		if len(autoIndexes) == 0 {
+			continue
+		}
+
+		usedKeys := make(map[string]struct{}, len(table.Columns))
+		for colIdx, col := range table.Columns {
+			if _, auto := autoIndexes[colIdx]; auto {
+				continue
+			}
+			usedKeys[postgresIdentifierKey(col.PGName)] = struct{}{}
+		}
+
+		for colIdx := range table.Columns {
+			if _, auto := autoIndexes[colIdx]; !auto {
+				continue
+			}
+			oldPGName := table.Columns[colIdx].PGName
+			newPGName := autoColumnCollisionName(*table, table.Columns[colIdx], usedKeys)
+			table.Columns[colIdx].PGName = newPGName
+			usedKeys[postgresIdentifierKey(newPGName)] = struct{}{}
+			if renamesByTable[tableIdx] == nil {
+				renamesByTable[tableIdx] = make(map[string]string)
+			}
+			renamesByTable[tableIdx][normalizeTableFilterKey(oldPGName)] = newPGName
+			log.Printf("column collision auto-rename: %s.%s -> %s", table.SourceName, table.Columns[colIdx].SourceName, newPGName)
+		}
+	}
+}
+
+func columnPostgresKeyGroups(table Table) map[string][]int {
+	groups := make(map[string][]int, len(table.Columns))
+	for i, col := range table.Columns {
+		key := postgresIdentifierKey(col.PGName)
+		groups[key] = append(groups[key], i)
+	}
+	for key, group := range groups {
+		if len(group) < 2 {
+			delete(groups, key)
+		}
+	}
+	return groups
+}
+
+func canAutoRenameColumnCollision(table Table, group []int) bool {
+	seenPGNames := make(map[string]struct{}, len(group))
+	seenRemapKeys := make(map[string]struct{}, len(group))
+	hasOverLimitName := false
+	for _, colIdx := range group {
+		col := table.Columns[colIdx]
+		if _, ok := seenPGNames[col.PGName]; ok {
+			return false
+		}
+		seenPGNames[col.PGName] = struct{}{}
+		remapKey := normalizeTableFilterKey(col.PGName)
+		if _, ok := seenRemapKeys[remapKey]; ok {
+			return false
+		}
+		seenRemapKeys[remapKey] = struct{}{}
+		if len(col.PGName) > postgresMaxIdentifierBytes {
+			hasOverLimitName = true
+		}
+	}
+	return hasOverLimitName
+}
+
+func autoColumnCollisionName(table Table, col Column, usedKeys map[string]struct{}) string {
+	sum := sha256.Sum256([]byte(table.SourceName + "\x00" + table.PGName + "\x00" + col.SourceName + "\x00" + col.PGName))
+	hash := hex.EncodeToString(sum[:])
+	for suffixLen := 8; suffixLen <= 16; suffixLen += 2 {
+		candidate := autoColumnCollisionNameWithSuffix(col.PGName, hash[:suffixLen])
+		if _, exists := usedKeys[postgresIdentifierKey(candidate)]; !exists {
+			return candidate
+		}
+	}
+	for counter := 2; ; counter++ {
+		// There are finite columns in a table and a fresh suffix each iteration,
+		// so a free PostgreSQL identifier key is eventually found.
+		suffix := fmt.Sprintf("%s_%d", hash[:8], counter)
+		candidate := autoColumnCollisionNameWithSuffix(col.PGName, suffix)
+		if _, exists := usedKeys[postgresIdentifierKey(candidate)]; !exists {
+			return candidate
+		}
+	}
+}
+
+func autoColumnCollisionNameWithSuffix(pgName, suffix string) string {
+	prefixBytes := postgresMaxIdentifierBytes - len(suffix) - 1
+	prefix := strings.TrimRight(truncateIdentifierBytes(pgName, prefixBytes), "_")
+	if prefix == "" {
+		prefix = "col"
+	}
+	return prefix + "_" + suffix
 }

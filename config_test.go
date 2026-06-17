@@ -23,6 +23,7 @@ add_unsigned_checks = true
 replicate_on_update_current_timestamp = true
 workers = 8
 truncate_before_copy = true
+column_collision_mode = "auto"
 
 [source]
 type = "mysql"
@@ -84,6 +85,9 @@ after_all = ["post.sql"]
 	}
 	if !cfg.TruncateBeforeCopy {
 		t.Errorf("TruncateBeforeCopy = %t, want true", cfg.TruncateBeforeCopy)
+	}
+	if cfg.ColumnCollisionMode != "auto" {
+		t.Errorf("ColumnCollisionMode = %q, want auto", cfg.ColumnCollisionMode)
 	}
 	if len(cfg.Hooks.BeforeFk) != 1 || cfg.Hooks.BeforeFk[0] != "cleanup.sql" {
 		t.Errorf("Hooks.BeforeFk = %v", cfg.Hooks.BeforeFk)
@@ -155,6 +159,9 @@ dsn = "postgres://u:p@h:5432/db"
 	}
 	if cfg.IdentifierCase != "snake" {
 		t.Errorf("default IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
+	}
+	if cfg.ColumnCollisionMode != "error" {
+		t.Errorf("default ColumnCollisionMode = %q, want %q", cfg.ColumnCollisionMode, "error")
 	}
 	wantWorkers := runtime.NumCPU()
 	if wantWorkers < 1 {
@@ -2405,5 +2412,25 @@ func TestIdentifierCase_RejectsInvalid(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "preserve") {
 		t.Fatalf("error = %q, want it to list preserve as a valid value", err.Error())
+	}
+}
+
+func TestColumnCollisionMode_RejectsInvalid(t *testing.T) {
+	cfg := defaultMigrationConfig()
+	cfg.Source.Type = "mysql"
+	cfg.Source.DSN = "user:pass@tcp(127.0.0.1:3306)/db"
+	cfg.Target.DSN = "postgres://u:p@127.0.0.1/db?sslmode=disable"
+	cfg.Schema = "public"
+	cfg.ColumnCollisionMode = "rename"
+
+	err := finalizeConfig(&cfg, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for column_collision_mode = rename")
+	}
+	if !strings.Contains(err.Error(), "column_collision_mode must be one of") {
+		t.Fatalf("error = %q, want column_collision_mode validation message", err.Error())
+	}
+	if !strings.Contains(err.Error(), "auto") {
+		t.Fatalf("error = %q, want it to list auto as a valid value", err.Error())
 	}
 }

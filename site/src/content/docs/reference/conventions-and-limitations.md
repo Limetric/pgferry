@@ -28,6 +28,8 @@ PostgreSQL SQL is emitted as `"app"."users"` rather than `app.users` under all t
 
 PostgreSQL compares only the first 63 bytes of an identifier. pgferry checks generated names using that effective PostgreSQL limit and reports collisions before running target DDL. If two source column names still collide after the selected `identifier_case` mode, use `[column_renames]` to choose explicit target names for those source columns.
 
+For bulk cases where distinct long column names collide only after PostgreSQL truncation, set `column_collision_mode = "auto"` to let pgferry generate deterministic hashed target names. This mode is intentionally narrow: exact generated-name collisions and non-column object collisions still require explicit renames or manual handling.
+
 ## Auto-increment and sequences
 
 MySQL and MariaDB `auto_increment`, SQLite integer primary key auto-increment behavior, and MSSQL `IDENTITY` columns are recreated as PostgreSQL sequences after data load.

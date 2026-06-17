@@ -110,6 +110,14 @@ To keep a source column but choose its target PostgreSQL name explicitly, use `c
 
 Rename keys use source `TableName.ColumnName` values after table and column filters. Rename values are final PostgreSQL column names, so pgferry does not apply `identifier_case` to them, and they must fit PostgreSQL's 63-byte identifier limit. This is useful when two long source column names would otherwise collide after PostgreSQL's identifier limit.
 
+If many long columns collide only because PostgreSQL truncates identifiers to 63 bytes, opt into deterministic automatic names:
+
+```toml
+column_collision_mode = "auto"
+```
+
+Explicit `column_renames` still take precedence. Automatic renames are limited to truncation-only column collisions within a table; exact generated-name collisions and non-column object collisions still stop with an error so you can choose the target names deliberately.
+
 - [How to read plan output](/operations/how-to-read-plan-output/)
 
 ## Hooks

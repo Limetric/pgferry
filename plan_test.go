@@ -53,8 +53,12 @@ func TestBuildPlanSummary_TotalEstimatedRows(t *testing.T) {
 		CopyRiskAnalysis: false,
 	}
 	risks := []PlanCopyRiskFinding{{Table: "t", EstimatedRows: 1_000_000}}
-	if got := buildPlanSummary(schema, cfg, "main", risks, nil, false).TotalEstimatedRows; got != 0 {
+	summary := buildPlanSummary(schema, cfg, "main", risks, nil, false)
+	if got := summary.TotalEstimatedRows; got != 0 {
 		t.Fatalf("copy risk disabled: TotalEstimatedRows = %d, want 0", got)
+	}
+	if got := summary.ColumnCollisionMode; got != "error" {
+		t.Fatalf("ColumnCollisionMode = %q, want error", got)
 	}
 	if got := buildPlanSummary(schema, cfg, "main", risks, nil, true).TotalEstimatedRows; got != 1_000_000 {
 		t.Fatalf("copy risk enabled: TotalEstimatedRows = %d, want 1000000", got)
