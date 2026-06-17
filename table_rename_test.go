@@ -154,6 +154,28 @@ func TestApplyTableRenames_AutoKeepsExplicitRename(t *testing.T) {
 	}
 }
 
+func TestApplyTableRenames_AutoDoesNotGuessExactGeneratedNameCollision(t *testing.T) {
+	schema := &Schema{
+		Tables: []Table{
+			{SourceName: "TableA", PGName: "same_name"},
+			{SourceName: "TableB", PGName: "same_name"},
+		},
+	}
+	cfg := &MigrationConfig{TableCollisionMode: "auto"}
+
+	renamed, err := applyTableRenames(schema, cfg)
+	if err != nil {
+		t.Fatalf("applyTableRenames() error: %v", err)
+	}
+	err = validateGeneratedIdentifiers(renamed, &MigrationConfig{}, defaultTypeMappingConfig())
+	if err == nil {
+		t.Fatal("expected exact generated-name collision to remain an error in auto mode")
+	}
+	if !strings.Contains(err.Error(), `schema relation names: final name "same_name"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestApplyTableRenames_RejectsUnknownTable(t *testing.T) {
 	schema := &Schema{Tables: []Table{{SourceName: "Orders", PGName: "orders"}}}
 	cfg := &MigrationConfig{

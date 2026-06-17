@@ -657,7 +657,7 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 		CleanOrphans:        cfg.CleanOrphans,
 		IdentifierCase:      cfg.IdentifierCase,
 		TableCollisionMode:  collisionModeOrDefault(cfg.TableCollisionMode),
-		ColumnCollisionMode: columnCollisionModeOrDefault(cfg.ColumnCollisionMode),
+		ColumnCollisionMode: collisionModeOrDefault(cfg.ColumnCollisionMode),
 	}
 	if schema != nil {
 		s.TableCount = len(schema.Tables)
@@ -719,10 +719,6 @@ func sumCopyRiskEstimatedRowsByTable(findings []PlanCopyRiskFinding) int64 {
 // struct; SourceType stays empty so we skip printing an empty Summary section.
 func planSummaryHasData(s PlanSummary) bool {
 	return s.SourceType != ""
-}
-
-func columnCollisionModeOrDefault(mode string) string {
-	return collisionModeOrDefault(mode)
 }
 
 func collisionModeOrDefault(mode string) string {
@@ -985,7 +981,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		fmt.Fprintf(w, "Config: workers=%d index_workers=%d chunk_size=%d resume=%t validation=%s\n",
 			s.Workers, s.IndexWorkers, s.ChunkSize, s.Resume, s.Validation)
 		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t identifier_case=%s table_collision_mode=%s column_collision_mode=%s\n",
-			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, collisionModeOrDefault(s.TableCollisionMode), columnCollisionModeOrDefault(s.ColumnCollisionMode))
+			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, collisionModeOrDefault(s.TableCollisionMode), collisionModeOrDefault(s.ColumnCollisionMode))
 		fmt.Fprintln(w)
 		writePlanETAText(w, report.ETA)
 	}
