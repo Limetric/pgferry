@@ -655,7 +655,7 @@ func buildPlanSummary(schema *Schema, cfg *MigrationConfig, dbName string, copyR
 		PreserveDefaults:    cfg.PreserveDefaults,
 		CleanOrphans:        cfg.CleanOrphans,
 		IdentifierCase:      cfg.IdentifierCase,
-		ColumnCollisionMode: cfg.ColumnCollisionMode,
+		ColumnCollisionMode: columnCollisionModeOrDefault(cfg.ColumnCollisionMode),
 	}
 	if schema != nil {
 		s.TableCount = len(schema.Tables)
@@ -719,9 +719,9 @@ func planSummaryHasData(s PlanSummary) bool {
 	return s.SourceType != ""
 }
 
-func planColumnCollisionMode(s PlanSummary) string {
-	if s.ColumnCollisionMode != "" {
-		return s.ColumnCollisionMode
+func columnCollisionModeOrDefault(mode string) string {
+	if mode != "" {
+		return mode
 	}
 	return "error"
 }
@@ -979,7 +979,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 		fmt.Fprintf(w, "Config: workers=%d index_workers=%d chunk_size=%d resume=%t validation=%s\n",
 			s.Workers, s.IndexWorkers, s.ChunkSize, s.Resume, s.Validation)
 		fmt.Fprintf(w, "        source_snapshot_mode=%s copy_risk_analysis=%t unlogged_tables=%t preserve_defaults=%t clean_orphans=%t identifier_case=%s column_collision_mode=%s\n",
-			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, planColumnCollisionMode(s))
+			s.SnapshotMode, s.CopyRiskAnalysis, s.UnloggedTables, s.PreserveDefaults, s.CleanOrphans, s.IdentifierCase, columnCollisionModeOrDefault(s.ColumnCollisionMode))
 		fmt.Fprintln(w)
 		writePlanETAText(w, report.ETA)
 	}

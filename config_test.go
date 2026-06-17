@@ -160,6 +160,9 @@ dsn = "postgres://u:p@h:5432/db"
 	if cfg.IdentifierCase != "snake" {
 		t.Errorf("default IdentifierCase = %q, want %q", cfg.IdentifierCase, "snake")
 	}
+	if cfg.ColumnCollisionMode != "error" {
+		t.Errorf("default ColumnCollisionMode = %q, want %q", cfg.ColumnCollisionMode, "error")
+	}
 	wantWorkers := runtime.NumCPU()
 	if wantWorkers < 1 {
 		wantWorkers = 1

@@ -43,6 +43,7 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	sort.Strings(entries)
 
 	renamesByTable := make(map[int]map[string]string)
+	explicitRenamesByTable := make(map[int]map[int]struct{})
 	seenSourceColumns := make(map[string]string, len(entries))
 	var missingTables []string
 	var missingColumns []string
@@ -85,6 +86,10 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 			renamesByTable[tableIdx] = make(map[string]string)
 		}
 		renamesByTable[tableIdx][normalizeTableFilterKey(oldPGName)] = targetName
+		if explicitRenamesByTable[tableIdx] == nil {
+			explicitRenamesByTable[tableIdx] = make(map[int]struct{})
+		}
+		explicitRenamesByTable[tableIdx][colIdx] = struct{}{}
 	}
 
 	if len(missingTables) > 0 {
@@ -97,7 +102,7 @@ func applyColumnRenames(schema *Schema, cfg *MigrationConfig) (*Schema, error) {
 	}
 
 	if hasAutoColumnCollisionRenames(cfg) {
-		applyAutoColumnCollisionRenames(renamed, renamesByTable)
+		applyAutoColumnCollisionRenames(renamed, renamesByTable, explicitRenamesByTable)
 	}
 
 	for i := range renamed.Tables {
@@ -156,7 +161,7 @@ func remapColumnNames(columns []string, renames map[string]string) {
 	}
 }
 
-func applyAutoColumnCollisionRenames(schema *Schema, renamesByTable map[int]map[string]string) {
+func applyAutoColumnCollisionRenames(schema *Schema, renamesByTable map[int]map[string]string, explicitRenamesByTable map[int]map[int]struct{}) {
 	for tableIdx := range schema.Tables {
 		table := &schema.Tables[tableIdx]
 		groups := columnPostgresKeyGroups(*table)
@@ -166,6 +171,9 @@ func applyAutoColumnCollisionRenames(schema *Schema, renamesByTable map[int]map[
 				continue
 			}
 			for _, colIdx := range group {
+				if _, explicit := explicitRenamesByTable[tableIdx][colIdx]; explicit {
+					continue
+				}
 				autoIndexes[colIdx] = struct{}{}
 			}
 		}
@@ -244,6 +252,8 @@ func autoColumnCollisionName(table Table, col Column, usedKeys map[string]struct
 		}
 	}
 	for counter := 2; ; counter++ {
+		// There are finite columns in a table and a fresh suffix each iteration,
+		// so a free PostgreSQL identifier key is eventually found.
 		suffix := fmt.Sprintf("%s_%d", hash[:8], counter)
 		candidate := autoColumnCollisionNameWithSuffix(col.PGName, suffix)
 		if _, exists := usedKeys[postgresIdentifierKey(candidate)]; !exists {
