@@ -1,28 +1,14 @@
 {
-	"permissions": {
-		"allow": [
-			"Edit",
-			"Write",
-			"WebFetch",
-			"Bash(ls:*)",
-			"Bash(cat:*)",
-			"Bash(grep:*)",
-			"Bash(chmod:*)",
-			"Bash(tail:*)",
-			"Bash(tree:*)",
-			"Bash(head:*)",
-			"Bash(git:*)",
-			"Bash(jq:*)",
-			"Bash(rg:*)",
-			"Bash(find:*)",
-			"Bash(gh:*)",
-			"Bash(go test:*)",
-			"Bash(go build:*)",
-			"Bash(go vet:*)",
-			"mcp__context7__*",
-			"mcp__exa__*"
-		]
-	},
-	"enabledMcpjsonServers": ["context7", "exa"],
-	"enableAllProjectMcpServers": true
+  "permissions": {
+    "allow": [
+      "Edit",
+      "Write",
+      "WebFetch",
+      "Bash(*)",
+      "mcp__context7__*",
+      "mcp__exa__*"
+    ]
+  },
+  "enabledMcpjsonServers": ["context7", "exa"],
+  "enableAllProjectMcpServers": true
 }
