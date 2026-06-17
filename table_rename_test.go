@@ -206,6 +206,21 @@ func TestApplyTableRenames_RejectsEmptyTargetName(t *testing.T) {
 	}
 }
 
+func TestApplyTableRenames_RejectsTargetNameOverPostgresLimit(t *testing.T) {
+	schema := &Schema{Tables: []Table{{SourceName: "Orders", PGName: "orders"}}}
+	cfg := &MigrationConfig{
+		TableRenames: map[string]string{"Orders": strings.Repeat("x", postgresMaxIdentifierBytes+1)},
+	}
+
+	_, err := applyTableRenames(schema, cfg)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "exceeds PostgreSQL's 63-byte identifier limit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestApplyTableRenames_RejectsDuplicateSourceTableMapping(t *testing.T) {
 	schema := &Schema{Tables: []Table{{SourceName: "Orders", PGName: "orders"}}}
 	cfg := &MigrationConfig{
