@@ -1,6 +1,6 @@
 ---
 title: AWS RDS MySQL to Supabase
-description: An AWS RDS MySQL to Supabase migration playbook — move RDS (or Aurora) MySQL into Supabase Postgres with pgferry, covering security groups, RDS CA TLS, read replicas, and MySQL type handling.
+description: AWS RDS MySQL to Supabase migration playbook — pgferry moves RDS or Aurora MySQL to Supabase Postgres via security groups, RDS CA TLS, and the session pooler.
 ---
 
 This is an operator's playbook for an **AWS RDS MySQL to Supabase** migration. It covers the RDS side — security-group access, the Amazon RDS certificate authority, and reading from a replica — together with the Supabase connection and timeout setup you need to move [Amazon RDS for MySQL](https://aws.amazon.com/rds/mysql/) (or Aurora MySQL) into [Supabase](https://supabase.com/) PostgreSQL.

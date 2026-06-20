@@ -1,6 +1,6 @@
 ---
 title: Minimal-safe
-description: Conservative MySQL-to-PostgreSQL example for first production rehearsals.
+description: Conservative MySQL-to-PostgreSQL rehearsal config that never drops the target, keeps tables logged, and leaves orphan cleanup explicit.
 ---
 
 ## When to use it

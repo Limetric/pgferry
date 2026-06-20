@@ -1,6 +1,6 @@
 ---
 title: MySQL to Railway Postgres
-description: A MySQL to Railway Postgres migration playbook — move MySQL to a Railway PostgreSQL service with pgferry, covering the public TCP proxy, self-signed TLS, private networking, and egress.
+description: MySQL to Railway Postgres playbook — pgferry moves MySQL to a Railway PostgreSQL service via the public TCP proxy, self-signed TLS, and private networking.
 ---
 
 This is an operator's playbook for a **MySQL to Railway Postgres** migration. It covers the Railway-specific connection details — the public TCP proxy, self-signed TLS, and private networking — that you need to move MySQL into a [Railway](https://railway.com/) PostgreSQL service.

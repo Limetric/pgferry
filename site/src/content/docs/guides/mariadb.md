@@ -1,6 +1,6 @@
 ---
 title: MariaDB To PostgreSQL
-description: MariaDB-specific pgferry behavior, MySQL-family knobs, and the places where MariaDB differs from MySQL.
+description: Migrate MariaDB to PostgreSQL with pgferry as a first-class source — native UUID and JSON handling, MySQL-family knobs, and where MariaDB differs.
 ---
 
 MariaDB is a first-class pgferry source type. It shares most MySQL-family behavior, but pgferry treats it separately so config validation, examples, and type handling can be explicit about MariaDB-specific behavior.

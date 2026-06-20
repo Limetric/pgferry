@@ -1,6 +1,6 @@
 ---
 title: MSSQL to PlanetScale Postgres
-description: An MSSQL to PlanetScale Postgres migration playbook — migrate SQL Server into PlanetScale for Postgres with pgferry, covering the direct port, verify-full TLS, and SQL Server type caveats.
+description: MSSQL to PlanetScale Postgres playbook — pgferry moves SQL Server to PlanetScale for Postgres via the direct port 5432, verify-full TLS, and sys.* conversions.
 ---
 
 This is an operator's playbook for an **MSSQL to PlanetScale Postgres** migration — moving a Microsoft SQL Server database into **PlanetScale for Postgres**, PlanetScale's PostgreSQL product (GA since September 2025), **not** PlanetScale's legacy MySQL/Vitess platform.

@@ -1,6 +1,6 @@
 ---
 title: MSSQL Examples
-description: MSSQL-to-PostgreSQL example playbooks for conservative and fast rebuild-oriented migrations.
+description: MSSQL-to-PostgreSQL examples covering safe and fast-rebuild templates, dbo schema defaults, money-to-numeric, and uniqueidentifier handling.
 ---
 
 MSSQL support currently has two main operational templates: the safe default and the disposable fast path.

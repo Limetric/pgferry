@@ -1,6 +1,6 @@
 ---
 title: Chunked-resume
-description: Resumable SQLite-to-PostgreSQL example for larger files and restart safety.
+description: Resumable SQLite-to-PostgreSQL config with chunking, checkpoints, and row-count validation so large single-worker SQLite files restart safely.
 ---
 
 ## When to use it

@@ -1,6 +1,6 @@
 ---
 title: MSSQL to Neon
-description: An MSSQL to Neon migration playbook — migrate SQL Server to Neon serverless Postgres with pgferry, covering the direct endpoint, scale-to-zero, TLS, and SQL Server type caveats.
+description: MSSQL to Neon playbook — pgferry moves SQL Server to Neon serverless Postgres via the direct endpoint, scale-to-zero, and sys.* SQL Server type conversions.
 ---
 
 This is an operator's playbook for an **MSSQL to Neon** migration. It covers the Neon-specific endpoint, scale-to-zero, and TLS details plus the SQL Server type caveats you need to move Microsoft SQL Server into [Neon](https://neon.com/)'s serverless PostgreSQL.

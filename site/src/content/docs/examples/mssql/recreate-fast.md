@@ -1,6 +1,6 @@
 ---
 title: Recreate-fast
-description: Fast disposable MSSQL-to-PostgreSQL example for repeatable dev or staging loads.
+description: Fast disposable MSSQL-to-PostgreSQL config that recreates the schema each run with unlogged tables and 8 workers for repeatable dev reloads.
 ---
 
 ## When to use it

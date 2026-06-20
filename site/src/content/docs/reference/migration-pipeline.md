@@ -1,6 +1,6 @@
 ---
 title: Migration Pipeline
-description: Stage order, mode differences, chunking, resume behavior, validation timing, and snapshot strategy.
+description: The pgferry stage order plus schema_only and data_only modes, chunking, resume checkpoints, validation timing, and source snapshot strategy.
 ---
 
 The default pgferry flow is built to load data first and add expensive constraints later.

@@ -1,6 +1,6 @@
 ---
 title: Minimal-safe
-description: The safest default pgferry path for first production rehearsals and cautious cutovers.
+description: The safest pgferry pattern for first production rehearsals — durable tables, no schema clobbering, and explicit orphan cleanup.
 ---
 
 Choose `minimal-safe` when you want the least surprising behavior, even if it costs some speed.

@@ -1,6 +1,6 @@
 ---
 title: AWS RDS MySQL to Neon
-description: An AWS RDS MySQL to Neon migration playbook — move RDS (or Aurora) MySQL into Neon serverless Postgres with pgferry, covering security groups, RDS CA TLS, read replicas, the direct endpoint, and scale-to-zero.
+description: AWS RDS MySQL to Neon migration playbook — pgferry moves RDS or Aurora MySQL to Neon serverless Postgres via security groups, RDS CA TLS, and scale-to-zero.
 ---
 
 This is an operator's playbook for an **AWS RDS MySQL to Neon** migration. It covers the RDS side — security-group access, the Amazon RDS certificate authority, and reading from a replica — together with the Neon endpoint and scale-to-zero details you need to move [Amazon RDS for MySQL](https://aws.amazon.com/rds/mysql/) (or Aurora MySQL) into [Neon](https://neon.com/)'s serverless PostgreSQL.

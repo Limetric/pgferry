@@ -1,6 +1,6 @@
 ---
 title: MySQL to Neon
-description: A MySQL to Neon migration playbook — move MySQL to Neon serverless Postgres with pgferry, including direct vs pooled endpoints, scale-to-zero, and TLS details generic pgloader guides skip.
+description: MySQL to Neon migration playbook — pgferry moves MySQL to Neon serverless Postgres via the direct (unpooled) endpoint, mandatory TLS, and scale-to-zero.
 ---
 
 This is an operator's playbook for a **MySQL to Neon** migration. It covers the Neon-specific endpoint, scale-to-zero, and TLS details you need to move MySQL into [Neon](https://neon.com/)'s serverless PostgreSQL — the parts generic import tutorials leave out.

@@ -1,6 +1,6 @@
 ---
 title: PlanetScale to Neon
-description: A PlanetScale to Neon migration playbook — move a PlanetScale MySQL database into Neon serverless Postgres with pgferry, covering Vitess connection constraints, required TLS, the direct endpoint, and scale-to-zero.
+description: PlanetScale to Neon playbook — pgferry moves a PlanetScale MySQL/Vitess DB to Neon serverless Postgres via tls=true, the direct endpoint, and scale-to-zero.
 ---
 
 This is an operator's playbook for a **PlanetScale to Neon** migration — moving a **PlanetScale (MySQL/Vitess) database** into [Neon](https://neon.com/)'s serverless PostgreSQL with `pgferry`. PlanetScale's classic product is MySQL on Vitess, so this is a cross-engine MySQL → PostgreSQL migration, with one twist: Vitess imposes connection and transaction constraints that plain self-hosted MySQL does not.

@@ -1,6 +1,6 @@
 ---
 title: PlanetScale to Supabase
-description: A PlanetScale to Supabase migration playbook — move a PlanetScale MySQL database into Supabase Postgres with pgferry, covering Vitess connection constraints, required TLS, snapshot caveats, and MySQL type handling.
+description: PlanetScale to Supabase playbook — pgferry moves a PlanetScale MySQL/Vitess DB to Supabase Postgres via tls=true, Vitess snapshot caveats, and session pooling.
 ---
 
 This is an operator's playbook for a **PlanetScale to Supabase** migration — moving a **PlanetScale (MySQL/Vitess) database** into [Supabase](https://supabase.com/) PostgreSQL with `pgferry`. PlanetScale's classic product is MySQL on Vitess, so this is a cross-engine MySQL → PostgreSQL migration, with one twist: Vitess imposes connection and transaction constraints that plain self-hosted MySQL does not.

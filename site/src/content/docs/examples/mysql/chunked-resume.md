@@ -1,6 +1,6 @@
 ---
 title: Chunked-resume
-description: Resumable MySQL-to-PostgreSQL example for large tables and restart safety.
+description: Resumable MySQL-to-PostgreSQL config using chunking, checkpoints, and row-count validation for large numeric-PK tables and restart safety.
 ---
 
 ## When to use it

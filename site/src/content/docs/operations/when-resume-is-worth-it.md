@@ -1,6 +1,6 @@
 ---
 title: When Resume Is Worth It
-description: Use resume when restart cost matters more than absolute bulk-load speed.
+description: Decide when pgferry resume earns its cost — long runs and large chunkable tables where restart pain outweighs raw bulk-load speed.
 ---
 
 `resume = true` is valuable when redoing work is expensive. It is not the default fastest path.

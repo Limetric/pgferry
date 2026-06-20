@@ -1,6 +1,6 @@
 ---
 title: Azure SQL to Supabase
-description: An Azure SQL to Supabase migration playbook — move Azure SQL Database into Supabase Postgres with pgferry, covering the Azure firewall, encrypt=true TLS, snapshot isolation, and SQL Server type caveats.
+description: Azure SQL to Supabase migration playbook — pgferry moves Azure SQL Database to Supabase Postgres via firewall rules, encrypt=true TLS, and snapshot isolation.
 ---
 
 This is an operator's playbook for an **Azure SQL to Supabase** migration. It covers the Azure SQL Database side — server-level firewall rules, mandatory encryption, and the snapshot-isolation setting `single_tx` relies on — together with the Supabase connection and timeout setup you need to land [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/) on [Supabase](https://supabase.com/) PostgreSQL.

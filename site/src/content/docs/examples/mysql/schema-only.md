@@ -1,6 +1,6 @@
 ---
 title: Schema-only
-description: MySQL example for creating PostgreSQL schema objects without loading data.
+description: MySQL schema-only config that creates PostgreSQL DDL without loading data — inspect generated types and hooks before a later data-only run.
 ---
 
 ## When to use it

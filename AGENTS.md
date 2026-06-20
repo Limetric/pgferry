@@ -37,6 +37,14 @@ go test -tags integration -run TestIntegration_MSSQL -count=1 -v ./...
 
 **Code changes must be reflected in the site.** The site source lives in `site/src/content/docs/`. When you add, remove, or change CLI flags, config options, behavior, or supported types, update the relevant docs pages — especially `reference/configuration.md`, `reference/type-mapping.md`, and any affected guides or examples.
 
+### Page descriptions
+
+Every page needs a frontmatter `description`. Starlight renders it as the `<meta name="description">` and `og:description` tags, so it is the search-result and social-preview snippet — write it for that, not as a title restatement.
+
+- **Length:** aim 110–160 characters, hard max 160 (search engines truncate beyond ~160).
+- **Content:** summarize what that specific page actually covers; name the concrete specifics (source DB, pattern, key flags/behavior). Keep parallel pages (e.g. the per-source `minimal-safe`/`recreate-fast` examples) distinct from one another.
+- **Style:** declarative and active, ending with a period; use an em-dash (`—`) for asides. Keep it a plain YAML scalar — avoid `: ` inside the value, or wrap the whole value in double quotes.
+
 ## Site package management
 
 The documentation site uses Bun for package management. Work from `site/`.

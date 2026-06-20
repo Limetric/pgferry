@@ -1,6 +1,6 @@
 ---
 title: MSSQL to Railway Postgres
-description: An MSSQL to Railway Postgres migration playbook — migrate SQL Server to a Railway PostgreSQL service with pgferry, covering the public TCP proxy, self-signed TLS, egress, and SQL Server type caveats.
+description: MSSQL to Railway Postgres playbook — pgferry moves SQL Server to a Railway PostgreSQL service via the public TCP proxy, self-signed TLS, and sys.* conversions.
 ---
 
 This is an operator's playbook for an **MSSQL to Railway Postgres** migration. It covers the Railway-specific connection details — the public TCP proxy, self-signed TLS, and private networking — plus the SQL Server type caveats you need to move Microsoft SQL Server into a [Railway](https://railway.com/) PostgreSQL service.

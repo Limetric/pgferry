@@ -1,6 +1,6 @@
 ---
 title: Schema-only And Data-only
-description: Split the pgferry workflow when you need DDL review or tighter cutover sequencing.
+description: Split pgferry into schema_only and data_only runs for DDL review, tighter cutover sequencing, and truncate-before-copy into existing schemas.
 ---
 
 Use the split-phase workflow when you need schema creation and data loading to happen at different times.

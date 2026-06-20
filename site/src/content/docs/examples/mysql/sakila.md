@@ -1,6 +1,6 @@
 ---
 title: Sakila
-description: Real MySQL Sakila sample database migration with cleanup and post-migration SQL hooks.
+description: End-to-end MySQL Sakila sample migration to PostgreSQL with a before_fk orphan-cleanup hook and an after_all view plus ANALYZE pass.
 ---
 
 ## Why this example matters

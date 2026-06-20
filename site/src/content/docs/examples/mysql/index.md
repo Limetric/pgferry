@@ -1,6 +1,6 @@
 ---
 title: MySQL Examples
-description: MySQL-to-PostgreSQL example playbooks with real configs and hook snippets.
+description: MySQL-to-PostgreSQL examples — minimal-safe, recreate-fast, chunked-resume, hooks, schema-only, data-only, and the Sakila sample migration.
 ---
 
 MySQL has the broadest example surface because it exercises the most pgferry features.

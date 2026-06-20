@@ -1,6 +1,6 @@
 ---
 title: Recreate-fast
-description: Fast disposable MySQL-to-PostgreSQL example for repeatable dev or staging loads.
+description: Fastest disposable MySQL-to-PostgreSQL config — drops the schema each run, uses unlogged tables, orphan cleanup, and 8 workers for quick reloads.
 ---
 
 ## When to use it

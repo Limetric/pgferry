@@ -1,6 +1,6 @@
 ---
 title: MySQL to Supabase
-description: A practical MySQL to Supabase migration playbook — move MySQL to Supabase Postgres with pgferry, including pooler, TLS, and statement-timeout setup that generic pgloader advice skips.
+description: MySQL to Supabase migration playbook — pgferry moves MySQL to Supabase Postgres via the session pooler, mandatory TLS, and statement-timeout setup.
 ---
 
 This is an operator's playbook for a **MySQL to Supabase** migration. It covers the Supabase-specific connection, pooler, and timeout details you need to move MySQL into [Supabase](https://supabase.com/)'s hosted PostgreSQL without the dead ends that come from generic import advice.

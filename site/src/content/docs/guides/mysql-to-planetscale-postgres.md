@@ -1,6 +1,6 @@
 ---
 title: MySQL to PlanetScale Postgres
-description: A MySQL to PlanetScale Postgres migration playbook — move MySQL into PlanetScale for Postgres with pgferry, covering the direct port, verify-full TLS, PSBouncer, and the postgres-vs-Vitess distinction.
+description: MySQL to PlanetScale Postgres playbook — pgferry moves MySQL to PlanetScale for Postgres (not Vitess) via the direct port 5432, verify-full TLS, not PSBouncer.
 ---
 
 This is an operator's playbook for a **MySQL to PlanetScale Postgres** migration — moving a MySQL database into **PlanetScale for Postgres**, PlanetScale's PostgreSQL product (generally available since September 2025), **not** PlanetScale's legacy MySQL/Vitess platform.

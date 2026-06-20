@@ -1,6 +1,6 @@
 ---
 title: Minimal-safe
-description: Conservative SQLite-to-PostgreSQL example for first real migrations.
+description: Conservative SQLite-to-PostgreSQL config — the simplest safe starting point for a first .db migration with durable, logged target writes.
 ---
 
 ## When to use it

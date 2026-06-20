@@ -1,6 +1,6 @@
 ---
 title: Common Failures And Recovery
-description: Recovering from the most common pgferry migration failures without making the situation worse.
+description: Recover from common pgferry failures — unsupported types, FK errors, interrupted runs, and data_only trigger-control preflight aborts.
 ---
 
 ## Common failure modes

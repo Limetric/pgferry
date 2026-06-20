@@ -1,6 +1,6 @@
 ---
 title: Recreate-fast
-description: Fast disposable SQLite-to-PostgreSQL example for repeatable reloads.
+description: Fast disposable SQLite-to-PostgreSQL config that recreates the schema each run with unlogged tables for a quick reload loop from a .db file.
 ---
 
 ## When to use it

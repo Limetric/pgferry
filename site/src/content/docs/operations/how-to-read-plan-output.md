@@ -1,6 +1,6 @@
 ---
 title: How To Read Plan Output
-description: Treat pgferry plan output as a worklist, not a warning dump.
+description: Read pgferry plan output as a worklist — unsupported types, skipped indexes, views, extensions, copy-risk findings, and the copy-phase ETA.
 ---
 
 `pgferry plan` is the safest first command because it tells you what pgferry will not guess about automatically.

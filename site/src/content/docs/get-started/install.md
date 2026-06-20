@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Install pgferry from releases or build it from source.
+description: Install pgferry — a single Go binary with no sidecars — from prebuilt macOS, Linux, and Windows releases or by building from source.
 sidebar:
   order: 1
 ---

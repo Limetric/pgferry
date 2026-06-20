@@ -1,6 +1,6 @@
 ---
 title: Data-only
-description: SQLite example for loading rows into an existing PostgreSQL schema.
+description: Minimal SQLite data-only config that copies rows from a .db file into pre-existing PostgreSQL tables when DDL is managed elsewhere.
 ---
 
 ## `migration.toml`

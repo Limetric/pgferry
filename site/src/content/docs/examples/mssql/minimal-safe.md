@@ -1,6 +1,6 @@
 ---
 title: Minimal-safe
-description: Conservative MSSQL-to-PostgreSQL example for first production rehearsals.
+description: Conservative MSSQL-to-PostgreSQL rehearsal config with logged target writes, error-on-existing-schema, and manual integrity inspection.
 ---
 
 ## When to use it

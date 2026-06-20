@@ -1,6 +1,6 @@
 ---
 title: Azure SQL to Neon
-description: An Azure SQL to Neon migration playbook — move Azure SQL Database into Neon serverless Postgres with pgferry, covering the Azure firewall, encrypt=true TLS, snapshot isolation, the direct endpoint, and scale-to-zero.
+description: Azure SQL to Neon playbook — pgferry moves Azure SQL Database into Neon serverless Postgres via encrypt=true TLS, snapshot isolation, and scale-to-zero.
 ---
 
 This is an operator's playbook for an **Azure SQL to Neon** migration. It covers the Azure SQL Database side — server-level firewall rules, mandatory encryption, and the snapshot-isolation setting `single_tx` relies on — together with the Neon endpoint and scale-to-zero details you need to land [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/) on [Neon](https://neon.com/)'s serverless PostgreSQL.

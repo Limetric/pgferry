@@ -1,6 +1,6 @@
 ---
 title: Guides
-description: Source-specific and destination-specific guides for MySQL, MariaDB, SQLite, MSSQL, and more.
+description: Source and destination guides for migrating MySQL, MariaDB, SQLite, and MSSQL to PostgreSQL on Supabase, Neon, Railway, Render, and more.
 ---
 
 Guides for specific sources, destinations, and combinations — covering caveats, defaults, and practical starting points.

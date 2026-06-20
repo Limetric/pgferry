@@ -1,6 +1,6 @@
 ---
 title: Cutover Checklist
-description: A short practical checklist for the final pgferry rehearsal and cutover run.
+description: Steps for the final pgferry cutover run — verify plan warnings, watch progress and checkpoints, then validate the app against PostgreSQL.
 ---
 
 ## Before the run

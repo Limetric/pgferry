@@ -1,6 +1,6 @@
 ---
 title: Schema-only
-description: SQLite example for creating PostgreSQL schema objects without copying data.
+description: SQLite schema-only config that recreates PostgreSQL tables and DDL from a .db file without copying any rows — load data later separately.
 ---
 
 ## `migration.toml`

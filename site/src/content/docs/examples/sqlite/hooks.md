@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: SQLite example showing all four PostgreSQL hook phases.
+description: SQLite-to-PostgreSQL config wiring all four hook phases — before_data, after_data, before_fk, after_all — for extensions, ANALYZE, and cleanup SQL.
 ---
 
 ## `migration.toml`

@@ -1,6 +1,6 @@
 ---
 title: Reference
-description: Complete end-user reference for configuration, type mapping, hooks, pipeline stages, and operational limits.
+description: Exact pgferry behavior, defaults, and constraints — configuration, type mapping, pipeline stages, hooks, and source-specific limitations.
 ---
 
 Use the reference section when you already understand the basic flow and need exact behavior, defaults, or source-specific constraints.

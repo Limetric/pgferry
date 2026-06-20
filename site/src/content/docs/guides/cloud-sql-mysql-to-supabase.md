@@ -1,6 +1,6 @@
 ---
 title: Cloud SQL for MySQL to Supabase
-description: A Cloud SQL for MySQL to Supabase migration playbook — move Google Cloud SQL MySQL into Supabase Postgres with pgferry, covering the Auth Proxy, authorized networks, SSL, and MySQL type handling.
+description: Cloud SQL for MySQL to Supabase playbook — pgferry moves Cloud SQL MySQL into Supabase Postgres via the Auth Proxy, session pooler, and statement-timeout setup.
 ---
 
 This is an operator's playbook for a **Cloud SQL for MySQL to Supabase** migration. It covers the Google Cloud SQL side — the Cloud SQL Auth Proxy versus public-IP authorized networks, and SSL/TLS — together with the Supabase connection and timeout setup you need to move [Cloud SQL for MySQL](https://cloud.google.com/sql/docs/mysql) into [Supabase](https://supabase.com/) PostgreSQL.

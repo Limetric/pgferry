@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Start with the wizard, then run plan and migrate.
+description: Run your first pgferry migration to PostgreSQL — let the wizard write the config, run plan to preview issues, then migrate and validate.
 sidebar:
   order: 2
 ---

@@ -1,6 +1,6 @@
 ---
 title: How To Choose Snapshot Mode
-description: Choose between speed and consistency deliberately when the source stays live.
+description: Choose pgferry source_snapshot_mode none for speed or single_tx for one consistent snapshot when the source stays live during migration.
 ---
 
 The rule is simple: use `none` unless the source is live enough that cross-table inconsistency matters.

@@ -1,6 +1,6 @@
 ---
 title: Minimal-safe
-description: Conservative MariaDB-to-PostgreSQL example for first production-style rehearsals.
+description: Conservative MariaDB-to-PostgreSQL rehearsal config using single_tx snapshots, row-count validation, and spatial fallback as a safe baseline.
 ---
 
 ## When to use it

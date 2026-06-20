@@ -1,6 +1,6 @@
 ---
 title: SQLite To PostgreSQL
-description: SQLite-specific pgferry behavior, constraints, and example starting points.
+description: Migrate SQLite to PostgreSQL with pgferry — single-worker read-only loads, real-file-only sources, and the few constraints to plan around.
 ---
 
 SQLite is simpler operationally, but there are still a few important constraints to account for before you start.

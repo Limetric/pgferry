@@ -1,6 +1,6 @@
 ---
 title: Data-only
-description: MySQL example for loading rows into an existing PostgreSQL schema.
+description: MySQL data-only config that loads rows into pre-existing PostgreSQL tables to backfill or refresh data when schema creation is handled separately.
 ---
 
 ## When to use it

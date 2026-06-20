@@ -1,6 +1,6 @@
 ---
 title: Advanced Options
-description: A tour of the features you'll reach for once the basic migrate works.
+description: Go beyond a basic pgferry migrate with hooks, resume, snapshot mode, type mapping, validation, table and column filtering, and renames.
 sidebar:
   order: 3
 ---

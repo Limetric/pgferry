@@ -1,6 +1,6 @@
 ---
 title: Migration Patterns
-description: Choose the right pgferry run style before you start editing flags.
+description: Pick a pgferry run style — minimal-safe, recreate-fast, chunked-resume, schema-only and data-only, or hooks-driven — before tuning flags.
 ---
 
 Most operators only need a handful of migration patterns. Choose one first, then refine it for your schema.

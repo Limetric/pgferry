@@ -1,6 +1,6 @@
 ---
 title: SQLite Examples
-description: SQLite-to-PostgreSQL example playbooks with real configs and practical sequencing notes.
+description: SQLite-to-PostgreSQL examples — minimal-safe, recreate-fast, chunked-resume, hooks, schema-only, and data-only configs for migrating a .db file.
 ---
 
 SQLite is operationally simpler than MySQL or MSSQL, but the examples still map to the same major migration decisions.

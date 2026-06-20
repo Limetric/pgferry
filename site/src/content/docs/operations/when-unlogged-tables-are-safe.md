@@ -1,6 +1,6 @@
 ---
 title: When Unlogged Tables Are Safe
-description: Use UNLOGGED tables only when losing the in-flight target after a crash is acceptable.
+description: Use pgferry UNLOGGED tables for disposable dev, staging, and rehearsal loads — never when a crash forcing a restart from zero is unacceptable.
 ---
 
 `unlogged_tables = true` is a performance choice, not a default safety choice.

@@ -1,6 +1,6 @@
 ---
 title: MSSQL to Render Postgres
-description: An MSSQL to Render Postgres migration playbook — migrate SQL Server to a Render PostgreSQL instance with pgferry, covering internal vs external URLs, required TLS, inbound IP allowlists, and SQL Server type caveats.
+description: MSSQL to Render Postgres playbook — pgferry moves SQL Server to a Render PostgreSQL instance via the External URL, required TLS, and IP allowlists.
 ---
 
 This is an operator's playbook for an **MSSQL to Render Postgres** migration. It covers the Render-specific connection details — external vs internal URLs, required TLS, and the inbound IP allowlist — plus the SQL Server type caveats you need to move Microsoft SQL Server into a [Render](https://render.com/) PostgreSQL instance.

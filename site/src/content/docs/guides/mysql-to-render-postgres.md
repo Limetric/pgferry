@@ -1,6 +1,6 @@
 ---
 title: MySQL to Render Postgres
-description: A MySQL to Render Postgres migration playbook — move MySQL to a Render PostgreSQL instance with pgferry, covering internal vs external URLs, required TLS, and inbound IP allowlists.
+description: MySQL to Render Postgres playbook — pgferry moves MySQL to a Render PostgreSQL instance via the External URL, required TLS, and inbound IP allowlists.
 ---
 
 This is an operator's playbook for a **MySQL to Render Postgres** migration. It covers the Render-specific connection details — external vs internal URLs, required TLS, and the inbound IP allowlist — that you need to move MySQL into a [Render](https://render.com/) PostgreSQL instance.

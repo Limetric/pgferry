@@ -1,6 +1,6 @@
 ---
 title: Cloud SQL for MySQL to Neon
-description: A Cloud SQL for MySQL to Neon migration playbook — move Google Cloud SQL MySQL into Neon serverless Postgres with pgferry, covering the Auth Proxy, authorized networks, SSL, the direct endpoint, and scale-to-zero.
+description: Cloud SQL for MySQL to Neon playbook — pgferry moves Cloud SQL MySQL into Neon serverless Postgres via the Auth Proxy, the direct endpoint, and scale-to-zero.
 ---
 
 This is an operator's playbook for a **Cloud SQL for MySQL to Neon** migration. It covers the Google Cloud SQL side — the Cloud SQL Auth Proxy versus public-IP authorized networks, and SSL/TLS — together with the Neon endpoint and scale-to-zero details you need to move [Cloud SQL for MySQL](https://cloud.google.com/sql/docs/mysql) into [Neon](https://neon.com/)'s serverless PostgreSQL.

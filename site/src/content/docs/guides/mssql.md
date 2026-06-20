@@ -1,6 +1,6 @@
 ---
 title: MSSQL To PostgreSQL
-description: MSSQL-specific pgferry behavior, caveats, and example starting points.
+description: Migrate SQL Server to PostgreSQL with pgferry — sys.* introspection, snapshot isolation, uniqueidentifier reordering, and temporal-table caveats.
 ---
 
 MSSQL support uses `sys.*` catalog introspection and a small set of SQL Server-specific conversions that are worth understanding up front.

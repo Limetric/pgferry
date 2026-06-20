@@ -1,6 +1,6 @@
 ---
 title: Hooks
-description: Hook phases, path resolution, schema templating, and practical examples for custom migration SQL.
+description: Run custom SQL at four pgferry phases — before_data, after_data, before_fk, after_all — with path resolution, schema templating, and mode availability.
 ---
 
 Hooks let you run your own PostgreSQL SQL at four controlled points in the migration.

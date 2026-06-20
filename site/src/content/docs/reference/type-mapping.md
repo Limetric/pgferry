@@ -1,6 +1,6 @@
 ---
 title: Type Mapping
-description: Source-to-PostgreSQL type mappings, alternate modes, and source-specific coercion flags.
+description: How pgferry maps MySQL, MariaDB, SQLite, and MSSQL types to PostgreSQL — defaults, alternate modes, enum and set handling, and spatial flags.
 ---
 
 pgferry defaults to conservative, mostly lossless mappings. The main default exception is JSON, which becomes PostgreSQL `jsonb` because that is usually the more useful target type.

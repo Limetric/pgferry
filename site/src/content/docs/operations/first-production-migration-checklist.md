@@ -1,6 +1,6 @@
 ---
 title: First Production Migration Checklist
-description: A practical checklist for the first real pgferry production rehearsal.
+description: Prepare your first real pgferry migration — safe config defaults, source and target checks, plan review, and dry-run discipline.
 ---
 
 Use this before the first migration that matters. The goal is not speed. The goal is to avoid discovering missing assumptions during cutover.
