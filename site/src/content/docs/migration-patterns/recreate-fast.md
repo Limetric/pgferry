@@ -3,7 +3,7 @@ title: Recreate-fast
 description: The fastest pgferry pattern for disposable dev and staging targets — UNLOGGED tables, schema recreate, and high worker parallelism.
 ---
 
-Choose `recreate-fast` when the target can be dropped and rebuilt and you care more about speed than crash durability.
+Pick `recreate-fast` when the target is yours to drop and rebuild, and speed matters more than crash durability.
 
 ## What defines this pattern
 

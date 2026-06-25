@@ -3,7 +3,7 @@ title: Chunked-resume
 description: The pgferry pattern for large or interruption-prone migrations — chunking, resumable checkpoints, and row-count validation cut restart cost.
 ---
 
-Choose `chunked-resume` when large tables or operational interruption risk make restart cost unacceptable.
+Go with `chunked-resume` when big tables or the risk of interruption make starting over too costly to stomach.
 
 ## What defines this pattern
 

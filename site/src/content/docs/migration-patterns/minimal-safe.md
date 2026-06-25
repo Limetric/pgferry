@@ -3,7 +3,7 @@ title: Minimal-safe
 description: The safest pgferry pattern for first production rehearsals — durable tables, no schema clobbering, and explicit orphan cleanup.
 ---
 
-Choose `minimal-safe` when you want the least surprising behavior, even if it costs some speed.
+Reach for `minimal-safe` when you want the least surprising behavior — even if it trades away a little speed.
 
 ## What defines this pattern
 
