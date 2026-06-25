@@ -3,7 +3,7 @@ title: AWS RDS MySQL to Supabase
 description: AWS RDS MySQL to Supabase migration playbook — pgferry moves RDS or Aurora MySQL to Supabase Postgres via security groups, RDS CA TLS, and the session pooler.
 ---
 
-This is an operator's playbook for an **AWS RDS MySQL to Supabase** migration. It covers the RDS side — security-group access, the Amazon RDS certificate authority, and reading from a replica — together with the Supabase connection and timeout setup you need to move [Amazon RDS for MySQL](https://aws.amazon.com/rds/mysql/) (or Aurora MySQL) into [Supabase](https://supabase.com/) PostgreSQL.
+This is an operator's playbook for an **AWS RDS MySQL to Supabase** migration. It covers the RDS side — security-group access, the Amazon RDS certificate authority, and reading from a replica — together with the Supabase connection and timeout setup that carry [Amazon RDS for MySQL](https://aws.amazon.com/rds/mysql/) (or Aurora MySQL) into [Supabase](https://supabase.com/) PostgreSQL in one piece.
 
 If you searched for how to **migrate RDS MySQL to Supabase** or move **AWS RDS MySQL to Supabase Postgres**, the short version is: open the RDS security group to your migration host, connect with TLS, optionally read from an RDS read replica, point `pgferry` at Supabase's session pooler, and raise the `postgres` role statement timeout for the load.
 
@@ -148,4 +148,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [AWS RDS MySQL to Neon](/guides/aws-rds-mysql-to-neon/) · [MySQL to Supabase](/guides/mysql-to-supabase/) · [Cloud SQL for MySQL to Supabase](/guides/cloud-sql-mysql-to-supabase/) · [PlanetScale to Supabase](/guides/planetscale-to-supabase/)
-</content>

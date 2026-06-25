@@ -13,7 +13,7 @@ Use this guide when your source is a **PlanetScale MySQL/Vitess** database and y
 
 ## Why use pgferry instead of generic pgloader advice
 
-Most "planetscale to postgres" advice points at `pgloader`, which struggles on real schemas — and PlanetScale's own exporter targets MySQL/PlanetScale, not PostgreSQL:
+Most "planetscale to postgres" advice points at `pgloader`, which tends to struggle on real schemas — and PlanetScale's own exporter targets MySQL/PlanetScale, not PostgreSQL:
 
 - `pgloader` has no resume and loads in long transactions; over a Neon connection that auto-suspends, an interrupted load restarts from zero. `pgferry` checkpoints and resumes.
 - MySQL enums, sets, unsigned integers, `tinyint(1)`, and zero dates are explicit, documented knobs in `pgferry`; `pgloader` guesses and frequently picks `text`.
@@ -141,4 +141,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [PlanetScale to Supabase](/guides/planetscale-to-supabase/) · [MySQL to Neon](/guides/mysql-to-neon/) · [AWS RDS MySQL to Neon](/guides/aws-rds-mysql-to-neon/) · [Cloud SQL for MySQL to Neon](/guides/cloud-sql-mysql-to-neon/)
-</content>

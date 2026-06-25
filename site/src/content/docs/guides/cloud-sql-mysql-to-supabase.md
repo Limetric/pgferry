@@ -3,7 +3,7 @@ title: Cloud SQL for MySQL to Supabase
 description: Cloud SQL for MySQL to Supabase playbook — pgferry moves Cloud SQL MySQL into Supabase Postgres via the Auth Proxy, session pooler, and statement-timeout setup.
 ---
 
-This is an operator's playbook for a **Cloud SQL for MySQL to Supabase** migration. It covers the Google Cloud SQL side — the Cloud SQL Auth Proxy versus public-IP authorized networks, and SSL/TLS — together with the Supabase connection and timeout setup you need to move [Cloud SQL for MySQL](https://cloud.google.com/sql/docs/mysql) into [Supabase](https://supabase.com/) PostgreSQL.
+This is an operator's playbook for a **Cloud SQL for MySQL to Supabase** migration. It covers the Google Cloud SQL side — the Cloud SQL Auth Proxy versus public-IP authorized networks, and SSL/TLS — together with the Supabase connection and timeout setup that get [Cloud SQL for MySQL](https://cloud.google.com/sql/docs/mysql) into [Supabase](https://supabase.com/) PostgreSQL without the dead ends.
 
 If you searched for how to **migrate Cloud SQL MySQL to Supabase** or move **Google Cloud SQL for MySQL to Supabase Postgres**, the short version is: connect to Cloud SQL through the **Auth Proxy** (or add your IP to authorized networks and enforce SSL), point `pgferry` at Supabase's session pooler, and raise the `postgres` role statement timeout for the load.
 
@@ -155,4 +155,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [Cloud SQL for MySQL to Neon](/guides/cloud-sql-mysql-to-neon/) · [MySQL to Supabase](/guides/mysql-to-supabase/) · [AWS RDS MySQL to Supabase](/guides/aws-rds-mysql-to-supabase/) · [PlanetScale to Supabase](/guides/planetscale-to-supabase/)
-</content>
