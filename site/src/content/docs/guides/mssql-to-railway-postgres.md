@@ -3,7 +3,7 @@ title: MSSQL to Railway Postgres
 description: MSSQL to Railway Postgres playbook — pgferry moves SQL Server to a Railway PostgreSQL service via the public TCP proxy, self-signed TLS, and sys.* conversions.
 ---
 
-This is an operator's playbook for an **MSSQL to Railway Postgres** migration. It covers the Railway-specific connection details — the public TCP proxy, self-signed TLS, and private networking — plus the SQL Server type caveats you need to move Microsoft SQL Server into a [Railway](https://railway.com/) PostgreSQL service.
+This is an operator's playbook for an **MSSQL to Railway Postgres** migration. It covers the Railway-specific connection details — the public TCP proxy, self-signed TLS, and private networking — plus the SQL Server type caveats that get Microsoft SQL Server into a [Railway](https://railway.com/) PostgreSQL service without surprises.
 
 If you searched for how to **migrate SQL Server to Railway Postgres** or move **MSSQL to Railway**, the short version is: use Railway's **public proxy URL** (`DATABASE_PUBLIC_URL`) with `sslmode=require` from an external host, run the migration **inside Railway** to avoid egress charges when you can, and let pgferry's `sys.*` catalog introspection handle the SQL Server types generic tools botch.
 
@@ -132,4 +132,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [MSSQL to Render Postgres](/guides/mssql-to-render-postgres/) · [MSSQL to Supabase](/guides/mssql-to-supabase/) · [MSSQL to Neon](/guides/mssql-to-neon/) · [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/) · [Azure SQL to Neon](/guides/azure-sql-to-neon/)
-</content>
