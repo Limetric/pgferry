@@ -3,7 +3,7 @@ title: MariaDB Examples
 description: MariaDB-to-PostgreSQL example with explicit source.type = mariadb, MySQL-family type mapping, and spatial fallback since PostGIS is unsupported.
 ---
 
-MariaDB is a first-class source type in `pgferry`, even though the example surface is intentionally smaller than MySQL.
+MariaDB is a first-class source in `pgferry` — the example set here is just smaller than MySQL's on purpose.
 
 ## Start here
 

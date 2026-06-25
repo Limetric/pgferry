@@ -3,7 +3,7 @@ title: Examples
 description: Copy-pasteable pgferry migration.toml examples for MySQL, MariaDB, SQLite, and MSSQL — grouped by source database and migration pattern.
 ---
 
-Use the examples section when you want a working starting point instead of an abstract reference page.
+Reach for the examples when you'd rather start from something that already works than from an abstract reference page.
 
 ## Pick by situation
 
