@@ -3,7 +3,7 @@ title: MSSQL To PostgreSQL
 description: Migrate SQL Server to PostgreSQL with pgferry — sys.* introspection, snapshot isolation, uniqueidentifier reordering, and temporal-table caveats.
 ---
 
-MSSQL support uses `sys.*` catalog introspection and a small set of SQL Server-specific conversions that are worth understanding up front.
+MSSQL support leans on `sys.*` catalog introspection plus a small set of SQL Server-specific conversions — all worth a quick read before you start.
 
 ## Start here
 
@@ -38,7 +38,7 @@ MSSQL support uses `sys.*` catalog introspection and a small set of SQL Server-s
 
 ## Migrating to a managed Postgres provider?
 
-These destination-specific guides add the provider connection, TLS, pooling, and firewall setup on top of the MSSQL behavior above:
+With the MSSQL side understood, these destination playbooks add the provider connection, TLS, pooling, and firewall setup:
 
 - [MSSQL to Supabase](/guides/mssql-to-supabase/)
 - [MSSQL to Neon](/guides/mssql-to-neon/)
@@ -48,7 +48,7 @@ These destination-specific guides add the provider connection, TLS, pooling, and
 
 ## Source is Azure SQL Database?
 
-Azure SQL Database is the same T-SQL engine, but the access, encryption, and snapshot-isolation setup are Azure-specific. These guides read as Azure-specific playbooks rather than generic MSSQL pages:
+Azure SQL Database runs the same T-SQL engine, but its access, encryption, and snapshot-isolation setup are Azure's own. These guides are Azure-specific playbooks, not generic MSSQL pages:
 
 - [Azure SQL to Supabase](/guides/azure-sql-to-supabase/)
 - [Azure SQL to Neon](/guides/azure-sql-to-neon/)

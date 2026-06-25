@@ -3,7 +3,7 @@ title: MariaDB To PostgreSQL
 description: Migrate MariaDB to PostgreSQL with pgferry as a first-class source — native UUID and JSON handling, MySQL-family knobs, and where MariaDB differs.
 ---
 
-MariaDB is a first-class pgferry source type. It shares most MySQL-family behavior, but pgferry treats it separately so config validation, examples, and type handling can be explicit about MariaDB-specific behavior.
+MariaDB is a first-class source in pgferry, not a MySQL afterthought. It shares most MySQL-family behavior, but pgferry treats it as its own thing so config validation, examples, and type handling can be explicit about where MariaDB differs.
 
 ## Start here
 
@@ -29,4 +29,4 @@ MariaDB is a first-class pgferry source type. It shares most MySQL-family behavi
 
 - PostGIS migration is MySQL-only in this release; MariaDB should use spatial fallback modes instead
 - unsupported indexes such as `FULLTEXT`, prefix indexes, and expression indexes are still reported and skipped rather than guessed
-- if you are coming from existing MySQL configs or automation, make sure they do not leave `source.type = "mysql"` behind by habit
+- coming from existing MySQL configs or automation? Double-check they don't leave `source.type = "mysql"` behind out of habit
