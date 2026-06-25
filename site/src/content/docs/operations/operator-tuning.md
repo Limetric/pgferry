@@ -3,7 +3,7 @@ title: Operator Tuning
 description: Tune PostgreSQL, source pressure, and pgferry settings deliberately before large migrations.
 ---
 
-Most slow migrations are bottlenecked by target PostgreSQL write behavior, post-load index builds, source read pressure, or network RTT long before Go code becomes the limiting factor.
+Most slow migrations are bottlenecked by target PostgreSQL write behavior, post-load index builds, source read pressure, or network RTT — long before pgferry's Go code is the thing holding you up.
 
 Treat pgferry tuning as an operator problem first:
 
