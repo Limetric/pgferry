@@ -3,7 +3,7 @@ title: MySQL to Render Postgres
 description: MySQL to Render Postgres playbook — pgferry moves MySQL to a Render PostgreSQL instance via the External URL, required TLS, and inbound IP allowlists.
 ---
 
-This is an operator's playbook for a **MySQL to Render Postgres** migration. It covers the Render-specific connection details — external vs internal URLs, required TLS, and the inbound IP allowlist — that you need to move MySQL into a [Render](https://render.com/) PostgreSQL instance.
+This is an operator's playbook for a **MySQL to Render Postgres** migration. It covers the Render-specific connection details — external vs internal URLs, required TLS, and the inbound IP allowlist — that get MySQL into a [Render](https://render.com/) PostgreSQL instance.
 
 If you searched for how to **migrate MySQL to Render Postgres** or **move a MySQL database to Render**, the short version is: connect from an external host with Render's **External Database URL** and `sslmode=require`, allow your migration host in the inbound IP rules, never load production data into a Free instance, and let pgferry's [MySQL type mapping](/reference/type-mapping/) handle enums, sets, and unsigned integers.
 
@@ -13,7 +13,7 @@ Use this guide when you have a live MySQL database and want it on a Render-hoste
 
 ## Why use pgferry instead of generic pgloader advice
 
-`pgloader` is the common "mysql to render postgres" recommendation and it struggles on real workloads:
+`pgloader` is the common "mysql to render postgres" recommendation, and it struggles once real workloads are involved:
 
 - No resume — a drop mid-load means starting over. `pgferry` checkpoints and resumes.
 - MySQL enums, sets, unsigned integers, `tinyint(1)`, and zero dates are explicit knobs in `pgferry`.

@@ -18,7 +18,7 @@ For source-side behavior that is not PlanetScale-specific, read the generic [MyS
 
 ## Why use pgferry instead of generic pgloader advice
 
-PlanetScale recommends `pg_dump`/`pg_restore` for Postgres-to-Postgres imports, but those are useless for a MySQL **source**. The generic cross-engine tool is `pgloader`, which struggles on real schemas:
+PlanetScale recommends `pg_dump`/`pg_restore` for Postgres-to-Postgres imports, but those do nothing for a MySQL **source**. The generic cross-engine tool is `pgloader`, which struggles on real schemas:
 
 - No resume, single long transactions, and weak type fidelity for MySQL enums/sets/unsigned integers.
 - `pgferry` streams with chunked, parallel `COPY`, checkpoints for `resume`, and runs a [`plan`](/operations/how-to-read-plan-output/) preflight.

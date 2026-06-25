@@ -3,7 +3,7 @@ title: MySQL to Supabase
 description: MySQL to Supabase migration playbook — pgferry moves MySQL to Supabase Postgres via the session pooler, mandatory TLS, and statement-timeout setup.
 ---
 
-This is an operator's playbook for a **MySQL to Supabase** migration. It covers the Supabase-specific connection, pooler, and timeout details you need to move MySQL into [Supabase](https://supabase.com/)'s hosted PostgreSQL without the dead ends that come from generic import advice.
+This is an operator's playbook for a **MySQL to Supabase** migration. It covers the Supabase-specific connection, pooler, and timeout details that get MySQL into [Supabase](https://supabase.com/)'s hosted PostgreSQL — minus the dead ends that generic import advice tends to lead you into.
 
 If you searched for how to **migrate MySQL to Supabase** or **move MySQL to Supabase Postgres**, the short version is: point `pgferry` at a session-mode (not transaction-mode) Supabase connection, raise the `postgres` role statement timeout for the load, and let the [MySQL type mapping](/reference/type-mapping/) handle enums, sets, and unsigned integers that `pgloader` mangles.
 
@@ -13,7 +13,7 @@ Use this guide when you have a live MySQL database (self-hosted, RDS, Aurora MyS
 
 ## Why use pgferry instead of generic pgloader advice
 
-Most "mysql to supabase" walkthroughs reach for `pgloader`. On real schemas that path routinely stalls or loses fidelity:
+Most "mysql to supabase" walkthroughs reach for `pgloader`. On real schemas, that path has a habit of stalling or quietly losing fidelity:
 
 - `pgloader` loads each table in long-running transactions and has no resume — a dropped connection (common over a hosted pooler) means starting over.
 - MySQL enums, sets, unsigned integers, `tinyint(1)` booleans, and zero dates need deliberate decisions. `pgferry` exposes each as an explicit, documented knob; `pgloader` guesses.
