@@ -3,7 +3,7 @@ title: Hooks-driven Migrations
 description: Use pgferry SQL hook phases to create extensions, run ANALYZE, clean orphans, and recreate views and routines around the built-in pipeline.
 ---
 
-Hooks are the normal answer when pgferry correctly tells you that something exists but should not be recreated automatically.
+Hooks are the natural answer when pgferry rightly tells you something exists but shouldn't be recreated for you automatically.
 
 ## Typical use cases
 

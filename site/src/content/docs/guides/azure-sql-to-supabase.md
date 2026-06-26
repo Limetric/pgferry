@@ -3,7 +3,7 @@ title: Azure SQL to Supabase
 description: Azure SQL to Supabase migration playbook — pgferry moves Azure SQL Database to Supabase Postgres via firewall rules, encrypt=true TLS, and snapshot isolation.
 ---
 
-This is an operator's playbook for an **Azure SQL to Supabase** migration. It covers the Azure SQL Database side — server-level firewall rules, mandatory encryption, and the snapshot-isolation setting `single_tx` relies on — together with the Supabase connection and timeout setup you need to land [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/) on [Supabase](https://supabase.com/) PostgreSQL.
+This is an operator's playbook for an **Azure SQL to Supabase** migration. It covers the Azure SQL Database side — server-level firewall rules, mandatory encryption, and the snapshot-isolation setting `single_tx` relies on — together with the Supabase connection and timeout setup that land [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/) on [Supabase](https://supabase.com/) PostgreSQL without the dead ends.
 
 If you searched for how to **migrate Azure SQL to Supabase** or move **Azure SQL Database to Supabase Postgres**, the short version is: open the Azure server firewall to your migration host, connect with `encrypt=true`, enable `ALLOW_SNAPSHOT_ISOLATION` for a consistent read, point `pgferry` at Supabase's session pooler, and raise the `postgres` role statement timeout for the load.
 
@@ -157,5 +157,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [Azure SQL to Neon](/guides/azure-sql-to-neon/) · [MSSQL to Supabase](/guides/mssql-to-supabase/) · [MSSQL to Neon](/guides/mssql-to-neon/) · [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/)
-</content>
-</invoke>

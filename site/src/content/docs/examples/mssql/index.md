@@ -3,7 +3,7 @@ title: MSSQL Examples
 description: MSSQL-to-PostgreSQL examples covering safe and fast-rebuild templates, dbo schema defaults, money-to-numeric, and uniqueidentifier handling.
 ---
 
-MSSQL support currently has two main operational templates: the safe default and the disposable fast path.
+MSSQL comes with two go-to templates: the safe default and the disposable fast path.
 
 ## Start here
 

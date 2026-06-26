@@ -3,7 +3,7 @@ title: MSSQL to Render Postgres
 description: MSSQL to Render Postgres playbook — pgferry moves SQL Server to a Render PostgreSQL instance via the External URL, required TLS, and IP allowlists.
 ---
 
-This is an operator's playbook for an **MSSQL to Render Postgres** migration. It covers the Render-specific connection details — external vs internal URLs, required TLS, and the inbound IP allowlist — plus the SQL Server type caveats you need to move Microsoft SQL Server into a [Render](https://render.com/) PostgreSQL instance.
+This is an operator's playbook for an **MSSQL to Render Postgres** migration. It covers the Render-specific connection details — external vs internal URLs, required TLS, and the inbound IP allowlist — plus the SQL Server type caveats that get Microsoft SQL Server onto a [Render](https://render.com/) PostgreSQL instance in one piece.
 
 If you searched for how to **migrate SQL Server to Render Postgres** or move **MSSQL to Render**, the short version is: connect from an external host with Render's **External Database URL** and `sslmode=require`, allow your migration host in the inbound IP rules, never load production data into a Free instance, and let pgferry's `sys.*` catalog introspection handle the SQL Server types generic tools botch.
 
@@ -123,4 +123,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [MSSQL to Railway Postgres](/guides/mssql-to-railway-postgres/) · [MSSQL to Supabase](/guides/mssql-to-supabase/) · [MSSQL to Neon](/guides/mssql-to-neon/) · [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/) · [Azure SQL to Supabase](/guides/azure-sql-to-supabase/)
-</content>

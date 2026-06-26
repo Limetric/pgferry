@@ -3,7 +3,7 @@ title: Cloud SQL for MySQL to Neon
 description: Cloud SQL for MySQL to Neon playbook — pgferry moves Cloud SQL MySQL into Neon serverless Postgres via the Auth Proxy, the direct endpoint, and scale-to-zero.
 ---
 
-This is an operator's playbook for a **Cloud SQL for MySQL to Neon** migration. It covers the Google Cloud SQL side — the Cloud SQL Auth Proxy versus public-IP authorized networks, and SSL/TLS — together with the Neon endpoint and scale-to-zero details you need to move [Cloud SQL for MySQL](https://cloud.google.com/sql/docs/mysql) into [Neon](https://neon.com/)'s serverless PostgreSQL.
+This is an operator's playbook for a **Cloud SQL for MySQL to Neon** migration. It covers the Google Cloud SQL side — the Cloud SQL Auth Proxy versus public-IP authorized networks, and SSL/TLS — together with the Neon endpoint and scale-to-zero details that get [Cloud SQL for MySQL](https://cloud.google.com/sql/docs/mysql) onto [Neon](https://neon.com/)'s serverless PostgreSQL in one piece.
 
 If you searched for how to **migrate Cloud SQL MySQL to Neon** or move **Google Cloud SQL for MySQL to Neon Postgres**, the short version is: connect to Cloud SQL through the **Auth Proxy** (or add your IP to authorized networks and enforce SSL), point `pgferry` at Neon's **unpooled (direct)** endpoint, and disable scale-to-zero for the load.
 
@@ -146,4 +146,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [Cloud SQL for MySQL to Supabase](/guides/cloud-sql-mysql-to-supabase/) · [MySQL to Neon](/guides/mysql-to-neon/) · [AWS RDS MySQL to Neon](/guides/aws-rds-mysql-to-neon/) · [PlanetScale to Neon](/guides/planetscale-to-neon/)
-</content>

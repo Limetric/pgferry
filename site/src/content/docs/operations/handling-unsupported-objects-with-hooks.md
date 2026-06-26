@@ -3,7 +3,7 @@ title: Handling Unsupported Objects With Hooks
 description: Use hook phases to recreate the source objects pgferry intentionally reports instead of migrating automatically.
 ---
 
-pgferry reports certain objects instead of guessing how to recreate them. Hooks are the normal way to finish that work.
+pgferry reports certain objects rather than guessing how to recreate them — and hooks are the normal way to finish that work yourself.
 
 ## Objects you should expect to handle yourself
 

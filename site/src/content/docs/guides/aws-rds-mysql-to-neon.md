@@ -3,7 +3,7 @@ title: AWS RDS MySQL to Neon
 description: AWS RDS MySQL to Neon migration playbook — pgferry moves RDS or Aurora MySQL to Neon serverless Postgres via security groups, RDS CA TLS, and scale-to-zero.
 ---
 
-This is an operator's playbook for an **AWS RDS MySQL to Neon** migration. It covers the RDS side — security-group access, the Amazon RDS certificate authority, and reading from a replica — together with the Neon endpoint and scale-to-zero details you need to move [Amazon RDS for MySQL](https://aws.amazon.com/rds/mysql/) (or Aurora MySQL) into [Neon](https://neon.com/)'s serverless PostgreSQL.
+This is an operator's playbook for an **AWS RDS MySQL to Neon** migration. It covers the RDS side — security-group access, the Amazon RDS certificate authority, and reading from a replica — together with the Neon endpoint and scale-to-zero details that carry [Amazon RDS for MySQL](https://aws.amazon.com/rds/mysql/) (or Aurora MySQL) into [Neon](https://neon.com/)'s serverless PostgreSQL in one piece.
 
 If you searched for how to **migrate RDS MySQL to Neon** or move **AWS RDS MySQL to Neon Postgres**, the short version is: open the RDS security group to your migration host, connect with TLS, optionally read from an RDS read replica, point `pgferry` at Neon's **unpooled (direct)** endpoint, and disable scale-to-zero for the load.
 
@@ -139,4 +139,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MySQL minimal-safe example](/examples/mysql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [AWS RDS MySQL to Supabase](/guides/aws-rds-mysql-to-supabase/) · [MySQL to Neon](/guides/mysql-to-neon/) · [Cloud SQL for MySQL to Neon](/guides/cloud-sql-mysql-to-neon/) · [PlanetScale to Neon](/guides/planetscale-to-neon/)
-</content>

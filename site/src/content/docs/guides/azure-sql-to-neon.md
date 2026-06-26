@@ -3,7 +3,7 @@ title: Azure SQL to Neon
 description: Azure SQL to Neon playbook — pgferry moves Azure SQL Database into Neon serverless Postgres via encrypt=true TLS, snapshot isolation, and scale-to-zero.
 ---
 
-This is an operator's playbook for an **Azure SQL to Neon** migration. It covers the Azure SQL Database side — server-level firewall rules, mandatory encryption, and the snapshot-isolation setting `single_tx` relies on — together with the Neon endpoint and scale-to-zero details you need to land [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/) on [Neon](https://neon.com/)'s serverless PostgreSQL.
+This is an operator's playbook for an **Azure SQL to Neon** migration. It covers the Azure SQL Database side — server-level firewall rules, mandatory encryption, and the snapshot-isolation setting `single_tx` relies on — together with the Neon endpoint and scale-to-zero details that land [Azure SQL Database](https://learn.microsoft.com/en-us/azure/azure-sql/database/) on [Neon](https://neon.com/)'s serverless PostgreSQL in one piece.
 
 If you searched for how to **migrate Azure SQL to Neon** or move **Azure SQL Database to Neon Postgres**, the short version is: open the Azure server firewall to your migration host, connect with `encrypt=true`, enable `ALLOW_SNAPSHOT_ISOLATION` for a consistent read, point `pgferry` at Neon's **unpooled (direct)** endpoint, and disable scale-to-zero for the load.
 
@@ -148,4 +148,3 @@ See [common failures and recovery](/operations/common-failures-and-recovery/).
 - [MSSQL minimal-safe example](/examples/mssql/minimal-safe/)
 - [Cutover checklist](/operations/cutover-checklist/) · [First production migration checklist](/operations/first-production-migration-checklist/)
 - Other destinations: [Azure SQL to Supabase](/guides/azure-sql-to-supabase/) · [MSSQL to Neon](/guides/mssql-to-neon/) · [MSSQL to Supabase](/guides/mssql-to-supabase/) · [MSSQL to PlanetScale Postgres](/guides/mssql-to-planetscale-postgres/)
-</content>

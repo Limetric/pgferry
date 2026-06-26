@@ -3,7 +3,7 @@ title: MySQL to Railway Postgres
 description: MySQL to Railway Postgres playbook — pgferry moves MySQL to a Railway PostgreSQL service via the public TCP proxy, self-signed TLS, and private networking.
 ---
 
-This is an operator's playbook for a **MySQL to Railway Postgres** migration. It covers the Railway-specific connection details — the public TCP proxy, self-signed TLS, and private networking — that you need to move MySQL into a [Railway](https://railway.com/) PostgreSQL service.
+This is an operator's playbook for a **MySQL to Railway Postgres** migration. It covers the Railway-specific connection details — the public TCP proxy, self-signed TLS, and private networking — that get MySQL into a [Railway](https://railway.com/) PostgreSQL service without surprises.
 
 If you searched for how to **migrate MySQL to Railway Postgres** or **move a MySQL database to Railway**, the short version is: use Railway's **public proxy URL** (`DATABASE_PUBLIC_URL`) with `sslmode=require` from an external host, run the migration **inside Railway** to avoid egress charges when you can, and let pgferry's [MySQL type mapping](/reference/type-mapping/) handle enums, sets, and unsigned integers.
 
@@ -13,7 +13,7 @@ Use this guide when you have a live MySQL database and want it on a Railway-host
 
 ## Why use pgferry instead of generic pgloader advice
 
-`pgloader` is the usual "mysql to railway postgres" suggestion, and it falls down on real schemas:
+`pgloader` is the usual "mysql to railway postgres" suggestion, and it tends to fall down on real schemas:
 
 - No resume — a drop over Railway's TCP proxy means restarting the whole load. `pgferry` checkpoints and resumes.
 - MySQL enums, sets, unsigned integers, `tinyint(1)`, and zero dates are explicit, documented knobs in `pgferry`.

@@ -3,7 +3,7 @@ title: MSSQL to Supabase
 description: MSSQL to Supabase playbook — pgferry moves SQL Server to Supabase Postgres via the session pooler, statement-timeout setup, and sys.* type conversions.
 ---
 
-This is an operator's playbook for an **MSSQL to Supabase** migration. It covers the Supabase-specific connection and timeout setup plus the SQL Server type caveats you need to move Microsoft SQL Server into [Supabase](https://supabase.com/)'s hosted PostgreSQL.
+This is an operator's playbook for an **MSSQL to Supabase** migration. It covers the Supabase-specific connection and timeout setup plus the SQL Server type caveats that get Microsoft SQL Server into [Supabase](https://supabase.com/)'s hosted PostgreSQL without the usual dead ends.
 
 If you searched for how to **migrate SQL Server to Supabase** or move **MSSQL to Supabase Postgres**, the short version is: point `pgferry` at a session-mode (not transaction-mode) Supabase connection, raise the `postgres` role statement timeout for the load, and let pgferry's `sys.*` catalog introspection handle the SQL Server types that no `pgloader` recipe covers well.
 

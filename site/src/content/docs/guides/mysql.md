@@ -3,13 +3,13 @@ title: MySQL To PostgreSQL
 description: Migrate MySQL to PostgreSQL with pgferry — enum, set, unsigned, and UUID type knobs, generated-column and index caveats, plus optional PostGIS.
 ---
 
-MySQL is still the richest pgferry source because it includes enums, sets, unsigned types, generated columns, optional PostGIS migration, and collation handling. If your source is MariaDB, use the dedicated [MariaDB guide](/guides/mariadb/) rather than assuming every MySQL-specific feature applies unchanged.
+MySQL is the richest source pgferry handles — enums, sets, unsigned types, generated columns, optional PostGIS, and collation handling all live here. If your source is actually MariaDB, hop over to the dedicated [MariaDB guide](/guides/mariadb/) instead of assuming every MySQL-specific feature carries over unchanged.
 
 ## Start here
 
-- [minimal-safe example](/examples/mysql/minimal-safe/) for the first real rehearsal
-- [chunked-resume example](/examples/mysql/chunked-resume/) when restart cost matters
-- [hooks example](/examples/mysql/hooks/) if `plan` reports manual follow-up work
+- [minimal-safe example](/examples/mysql/minimal-safe/) — the gentle first rehearsal
+- [chunked-resume example](/examples/mysql/chunked-resume/) — for when starting over would really hurt
+- [hooks example](/examples/mysql/hooks/) — if `plan` flags manual follow-up work
 
 ## MySQL-specific options to decide deliberately
 
@@ -32,7 +32,7 @@ MySQL is still the richest pgferry source because it includes enums, sets, unsig
 
 ## Migrating to a managed Postgres provider?
 
-These destination-specific guides add the provider connection, TLS, pooling, and firewall setup on top of the MySQL behavior above:
+Once the MySQL side is sorted, these destination playbooks layer on the provider connection, TLS, pooling, and firewall setup:
 
 - [MySQL to Supabase](/guides/mysql-to-supabase/)
 - [MySQL to Neon](/guides/mysql-to-neon/)
@@ -42,7 +42,7 @@ These destination-specific guides add the provider connection, TLS, pooling, and
 
 ## Migrating from a managed MySQL source?
 
-PlanetScale, RDS, and Cloud SQL are all MySQL — the type behavior above applies unchanged — but each adds its own access, TLS, and firewall setup. These guides cover the source-side specifics:
+PlanetScale, RDS, and Cloud SQL are all MySQL under the hood — the type behavior above applies unchanged — but each brings its own access, TLS, and firewall quirks. These guides cover the source-side specifics:
 
 - [PlanetScale to Supabase](/guides/planetscale-to-supabase/) · [PlanetScale to Neon](/guides/planetscale-to-neon/) — PlanetScale's MySQL/Vitess product as a source
 - [AWS RDS MySQL to Supabase](/guides/aws-rds-mysql-to-supabase/) · [AWS RDS MySQL to Neon](/guides/aws-rds-mysql-to-neon/) — RDS and Aurora MySQL

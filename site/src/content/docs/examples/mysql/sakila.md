@@ -5,7 +5,7 @@ description: End-to-end MySQL Sakila sample migration to PostgreSQL with a befor
 
 ## Why this example matters
 
-This is the most complete MySQL playbook in the repo: a real sample schema, a `before_fk` cleanup hook, and an `after_all` view plus `ANALYZE` pass.
+This is the most complete MySQL walkthrough in the repo — a real sample schema, a `before_fk` cleanup hook, and an `after_all` view plus `ANALYZE` pass, all in one run.
 
 ## `migration.toml`
 

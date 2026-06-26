@@ -3,7 +3,7 @@ title: MySQL to Neon
 description: MySQL to Neon migration playbook — pgferry moves MySQL to Neon serverless Postgres via the direct (unpooled) endpoint, mandatory TLS, and scale-to-zero.
 ---
 
-This is an operator's playbook for a **MySQL to Neon** migration. It covers the Neon-specific endpoint, scale-to-zero, and TLS details you need to move MySQL into [Neon](https://neon.com/)'s serverless PostgreSQL — the parts generic import tutorials leave out.
+This is an operator's playbook for a **MySQL to Neon** migration. It covers the Neon-specific endpoint, scale-to-zero, and TLS details that get MySQL into [Neon](https://neon.com/)'s serverless PostgreSQL — the parts generic import tutorials quietly skip.
 
 If you searched for how to **migrate MySQL to Neon** or **move a MySQL database to Neon Postgres**, the short version is: point `pgferry` at the **unpooled (direct)** Neon endpoint, disable scale-to-zero for the load, and let the [MySQL type mapping](/reference/type-mapping/) handle enums, sets, and unsigned integers that `pgloader` mishandles.
 
@@ -13,7 +13,7 @@ Use this guide when you have a live MySQL database (self-hosted, RDS, Aurora MyS
 
 ## Why use pgferry instead of generic pgloader advice
 
-The usual "mysql to neon" advice is `pgloader`, which struggles on real migrations:
+The usual "mysql to neon" advice is `pgloader`, which tends to struggle once a real migration is involved:
 
 - `pgloader` has no resume. Over a Neon connection that auto-suspends or hiccups, an interrupted load restarts from zero. `pgferry` checkpoints and resumes.
 - MySQL enums, sets, unsigned integers, `tinyint(1)`, and zero dates are explicit, documented knobs in `pgferry`; `pgloader` guesses and frequently picks `text`.

@@ -9,7 +9,7 @@ If you searched for how to **migrate SQL Server to PlanetScale Postgres** or mov
 
 ## What this guide is for
 
-Use this guide when your source is **Microsoft SQL Server** and your destination is **PlanetScale for Postgres**. Note that this is a real cross-engine MSSQL-to-PostgreSQL migration: PlanetScale for Postgres is genuine PostgreSQL on PlanetScale Metal, unrelated to PlanetScale's MySQL/Vitess product. For source-side behavior that is not PlanetScale-specific, read the generic [MSSQL to PostgreSQL guide](/guides/mssql/) alongside this page.
+Use this guide when your source is **Microsoft SQL Server** and your destination is **PlanetScale for Postgres**. Worth knowing up front: this is a genuine cross-engine MSSQL-to-PostgreSQL migration — PlanetScale for Postgres is real PostgreSQL on PlanetScale Metal, unrelated to PlanetScale's MySQL/Vitess product. For source-side behavior that is not PlanetScale-specific, read the generic [MSSQL to PostgreSQL guide](/guides/mssql/) alongside this page.
 
 ## Why use pgferry instead of generic pgloader advice
 
