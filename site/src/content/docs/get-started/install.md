@@ -1,11 +1,22 @@
 ---
 title: Install
-description: Install pgferry — a single Go binary with no sidecars — from prebuilt macOS, Linux, and Windows releases or by building from source.
+description: Install pgferry with Homebrew from the Limetric tap, direct prebuilt macOS, Linux, and Windows binaries, or a local Go build.
 sidebar:
   order: 1
 ---
 
 `pgferry` is a single Go binary. There are no sidecar services, no runtime agents, and no extra database middleware to deploy.
+
+## Homebrew
+
+On macOS and Linux, install `pgferry` from the Limetric tap:
+
+```bash
+brew install Limetric/tap/pgferry
+pgferry version
+```
+
+The tap repository is [`Limetric/homebrew-tap`](https://github.com/Limetric/homebrew-tap). Homebrew maps GitHub repositories named `homebrew-<tap>` to the shorter `<owner>/<tap>` form, so `Limetric/homebrew-tap` is installed as `Limetric/tap`.
 
 ## Download a release
 

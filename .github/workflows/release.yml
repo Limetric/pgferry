@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Run Go checks
+        run: |
+          go vet ./...
+          go test ./... -count=1
+
+      - name: Build release binaries
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          build_date="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ldflags="-s -w -X main.buildVersion=${GITHUB_REF_NAME} -X main.buildCommit=${GITHUB_SHA} -X main.buildDate=${build_date}"
+
+          for target in \
+            linux/amd64 \
+            linux/arm64 \
+            darwin/amd64 \
+            darwin/arm64 \
+            windows/amd64 \
+            windows/arm64
+          do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            ext=""
+            if [ "$goos" = "windows" ]; then
+              ext=".exe"
+            fi
+
+            out="dist/pgferry-${goos}-${goarch}${ext}"
+            GOOS="$goos" GOARCH="$goarch" go build -trimpath -ldflags="$ldflags" -o "$out" .
+          done
+
+      - name: Upload release binaries
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/pgferry-*
+
+      - name: Update Homebrew tap
+        if: ${{ vars.HOMEBREW_TAP_REPOSITORY != '' }}
+        env:
+          HOMEBREW_TAP_REPOSITORY: ${{ vars.HOMEBREW_TAP_REPOSITORY }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is required when HOMEBREW_TAP_REPOSITORY is set." >&2
+            exit 1
+          fi
+
+          darwin_amd64_sha="$(sha256sum dist/pgferry-darwin-amd64 | awk '{print $1}')"
+          darwin_arm64_sha="$(sha256sum dist/pgferry-darwin-arm64 | awk '{print $1}')"
+          linux_amd64_sha="$(sha256sum dist/pgferry-linux-amd64 | awk '{print $1}')"
+          linux_arm64_sha="$(sha256sum dist/pgferry-linux-arm64 | awk '{print $1}')"
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPOSITORY}.git" homebrew-tap
+          mkdir -p homebrew-tap/Formula
+
+          bash scripts/generate-homebrew-formula.sh \
+            "${GITHUB_REF_NAME}" \
+            "${darwin_amd64_sha}" \
+            "${darwin_arm64_sha}" \
+            "${linux_amd64_sha}" \
+            "${linux_arm64_sha}" \
+            > homebrew-tap/Formula/pgferry.rb
+
+          git -C homebrew-tap config user.name "github-actions[bot]"
+          git -C homebrew-tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git -C homebrew-tap diff --quiet -- Formula/pgferry.rb; then
+            echo "Homebrew formula already matches ${GITHUB_REF_NAME}."
+            exit 0
+          fi
+
+          git -C homebrew-tap add Formula/pgferry.rb
+          git -C homebrew-tap commit -m "Update pgferry to ${GITHUB_REF_NAME}"
+          git -C homebrew-tap push
