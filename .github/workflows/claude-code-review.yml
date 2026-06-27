@@ -32,6 +32,10 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "*"
+          plugin_marketplaces: |
+            https://github.com/JuliusBrussee/caveman.git
+          plugins: |
+            caveman@caveman
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
@@ -63,6 +67,7 @@ jobs:
           claude_args: |
             --model claude-opus-4-8
             --mcp-config .mcp.json
+            --system-prompt "Caveman mode active. Respond terse like smart caveman: drop articles, filler, pleasantries, hedging. Keep technical terms exact. Code and commands unchanged; security warnings clear."
 
           additional_permissions: |
             actions: read
