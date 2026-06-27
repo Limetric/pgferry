@@ -20,6 +20,8 @@ CI runs integration tests across MySQL 5.7, 8.0 and latest, MariaDB 10.6 and lat
 
 ## Install
 
+### Brew
+
 On macOS and Linux, install with Homebrew from the Limetric tap:
 
 ```bash
@@ -27,9 +29,11 @@ brew install Limetric/tap/pgferry
 pgferry version
 ```
 
-Homebrew resolves `Limetric/tap` to the shared [`Limetric/homebrew-tap`](https://github.com/Limetric/homebrew-tap) repository, which is intended to host pgferry and future Limetric tools.
+### Download Binary
 
-You can also download the latest binary from [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest), or build from source:
+Download the latest binary from [GitHub Releases](https://github.com/Limetric/pgferry/releases/latest).
+
+### Build from source
 
 ```bash
 git clone https://github.com/Limetric/pgferry.git

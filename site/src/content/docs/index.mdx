@@ -85,26 +85,19 @@ dsn = "postgres://…/target_db?sslmode=disable"
 	</div>
 </div>
 
-## How pgferry compares
+## Highlights
 
-Every tool makes different trade-offs. Here's how pgferry stacks up against the alternatives you're most likely evaluating.
-
-| | pgferry | pgloader | AWS DMS |
-| --- | --- | --- | --- |
-| Install | ✅ Single binary | ⚠️ Lisp toolchain or Docker | ☁️ Managed AWS service |
-| Config format | TOML | Custom Lisp-inspired DSL | JSON + AWS Console |
-| MySQL source | ✅ | ✅ | ✅ |
-| MariaDB source | ✅ | ⚠️ Via MySQL source path | ✅ |
-| SQLite source | ✅ | ✅ | ❌ |
-| MSSQL source | ✅ | ✅ | ✅ |
-| Preflight plan | ✅ Reports issues before data is touched | ❌ | ✅ Premigration assessment |
-| Resumable loads | ✅ Checkpoint-based chunking | ❌ | ✅ Checkpoint-based |
-| Hook phases | ✅ 4 phases | ⚠️ 2 phases | ❌ External orchestration |
-| Post-load validation | ✅ Row counts + sampled hash | ❌ | ✅ Row-level comparison |
-| Self-hosted | ✅ | ✅ | ❌ AWS only |
-| Cost | ✅ Free and open source | ✅ Free and open source | 💰 Per replication instance hour |
-
-pgloader has migrated a lot of databases over the years, but its own source matrix still calls out MySQL rather than MariaDB as a separate source category. AWS DMS explicitly documents MariaDB as a MySQL-compatible source. pgferry treats MariaDB as a first-class source type with its own config validation, examples, and docs.
+- No runtime dependencies or extra tooling to install.
+- Interactive `pgferry wizard` that can generate, plan, and start a migration in one flow.
+- Fast parallel `COPY` loads with range-based chunking for large tables.
+- Clear stage and row-copy progress logs, so long runs do not look frozen.
+- Preflight `plan` reports views, routines, triggers, generated columns, skipped indexes, semantic-drift warnings, orphan-cleanup candidates, required extensions, collation warnings, and copy-risk ETA ranges before PostgreSQL is touched.
+- Resumable chunked migrations, so failures do not send you back to zero.
+- Consistent-snapshot mode for migrating live source databases safely.
+- Built for messy real-world schemas with hooks, orphan cleanup, generated-column reporting, and unsupported-index warnings.
+- `schema_only` and `data_only` runs when you need tighter control.
+- Extension-backed features like `citext` and PostGIS, with validation and optional auto-create.
+- Post-load validation modes that range from fast `row_count` checks to stronger bounded `sampled_hash` content checks.
 
 ## Read next
 

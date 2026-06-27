@@ -16,8 +16,6 @@ brew install Limetric/tap/pgferry
 pgferry version
 ```
 
-The tap repository is [`Limetric/homebrew-tap`](https://github.com/Limetric/homebrew-tap). Homebrew maps GitHub repositories named `homebrew-<tap>` to the shorter `<owner>/<tap>` form, so `Limetric/homebrew-tap` is installed as `Limetric/tap`.
-
 ## Download a release
 
 Pick the latest binary for your platform directly:
