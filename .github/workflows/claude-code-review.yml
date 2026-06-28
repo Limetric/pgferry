@@ -67,6 +67,7 @@ jobs:
           claude_args: |
             --model claude-opus-4-8
             --mcp-config .mcp.json
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
             --system-prompt "Caveman mode active. Respond terse like smart caveman: drop articles, filler, pleasantries, hedging. Keep technical terms exact. Code and commands unchanged; security warnings clear."
 
           additional_permissions: |
