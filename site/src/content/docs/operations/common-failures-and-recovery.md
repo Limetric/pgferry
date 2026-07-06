@@ -9,7 +9,7 @@ description: Recover from common pgferry failures — unsupported types, FK erro
 | --- | --- |
 | unsupported type | stop, fix type mapping, rerun |
 | `data_only` trigger-control preflight fails | stop before cutover, grant the required trigger-control privilege or switch away from `data_only` |
-| `data_only` reports no sequence found for an auto-increment column | attach the target schema's sequence to the column (`ALTER SEQUENCE ... OWNED BY`) or define the column as identity, then rerun |
+| `data_only` reports no sequence found for an auto-increment column | give the column a `DEFAULT nextval(...)` on the target schema's sequence or define it as identity, then rerun |
 | FK creation fails | inspect orphan data or use `before_fk` hooks |
 | missing extension | install the extension or change the mapping |
 | interrupted long run | rerun with the same config if `resume = true` |
