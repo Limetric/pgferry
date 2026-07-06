@@ -495,11 +495,12 @@ func dataOnlySequenceLookupSQL(pgSchema string, t Table, col Column) string {
 	pg_get_serial_sequence(%s, %s),
 	(SELECT quote_ident(sn.nspname) || '.' || quote_ident(sc.relname)
 	 FROM pg_attrdef ad
-	 JOIN pg_depend dep ON dep.classid = 'pg_attrdef'::regclass AND dep.objid = ad.oid AND dep.refclassid = 'pg_class'::regclass
+	 JOIN pg_depend dep ON dep.classid = 'pg_attrdef'::regclass AND dep.objid = ad.oid AND dep.refclassid = 'pg_class'::regclass AND dep.deptype = 'n'
 	 JOIN pg_class sc ON sc.oid = dep.refobjid AND sc.relkind = 'S'
 	 JOIN pg_namespace sn ON sn.oid = sc.relnamespace
 	 WHERE ad.adrelid = to_regclass(%s)
 	   AND ad.adnum = (SELECT a.attnum FROM pg_attribute a WHERE a.attrelid = ad.adrelid AND a.attname = %s)
+	 ORDER BY sc.oid
 	 LIMIT 1),
 	to_regclass(%s)::text)`,
 		tableLit, colLit,

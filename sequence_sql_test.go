@@ -85,7 +85,7 @@ func TestDataOnlySequenceLookupSQL_ResolvesDefaultNextvalSequence(t *testing.T) 
 	}
 	first := strings.Index(q, "pg_get_serial_sequence")
 	def := strings.Index(q, "pg_attrdef")
-	last := strings.Index(q, "to_regclass")
+	last := strings.Index(q, `to_regclass('"myapp"."Orders_Id_seq"')`)
 	if first == -1 || def == -1 || last == -1 || !(first < def && def < last) {
 		t.Fatalf("lookup order should be attached, then DEFAULT expression, then convention name, got: %q", q)
 	}

@@ -771,9 +771,9 @@ func TestIntegration_SQLite_DataOnly_DefaultNextvalSequence(t *testing.T) {
 		fmt.Sprintf("CREATE SCHEMA %s", qs),
 		fmt.Sprintf(`CREATE SEQUENCE %s."OrderIdSequence"`, qs),
 		fmt.Sprintf(`CREATE TABLE %s.orders (
-			id bigint PRIMARY KEY DEFAULT nextval('%s."OrderIdSequence"'),
+			id bigint PRIMARY KEY DEFAULT nextval(%s),
 			label text NOT NULL
-		)`, qs, qs),
+		)`, qs, pgQualifiedRegclassLiteral(pgSchema, "OrderIdSequence")),
 	} {
 		if _, err := pgPool.Exec(ctx, stmt); err != nil {
 			t.Fatalf("create external schema %q: %v", stmt[:min(len(stmt), 60)], err)
