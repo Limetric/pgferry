@@ -80,7 +80,7 @@ When an external schema migrator also inserts seed or reference rows, set `trunc
 
 For multi-schema data-only batches with cross-schema foreign keys, set `truncate_before_copy = "once"` only on the first schema config and set `truncate_before_copy_schemas` to every target schema in the batch. pgferry discovers tables in those schemas and runs one `TRUNCATE TABLE ... CASCADE` before COPY, avoiding later per-schema cascades into already-loaded schemas. If a listed schema is missing or has no ordinary tables to truncate, pgferry fails before issuing `TRUNCATE`.
 
-After COPY, pgferry advances existing auto-increment sequences with `setval`. It does not create sequences or change column defaults in `data_only`; the pre-existing schema is expected to own that DDL.
+After COPY, pgferry advances existing auto-increment sequences with `setval`, resolving each sequence from the target catalog: first via `pg_get_serial_sequence` (identity columns and `OWNED BY` sequences, under whatever name the external migration tool gave them), then by pgferry's own `{table}_{col}_seq` naming from a `schema_only` run. If no sequence is found for an auto-increment column, the run fails with an error naming that column. pgferry does not create sequences or change column defaults in `data_only`; the pre-existing schema is expected to own that DDL.
 
 ## Two-phase workflow
 

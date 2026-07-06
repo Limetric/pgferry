@@ -441,9 +441,14 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 			if !hasAutoIncrementExtra(col) {
 				continue
 			}
+			if mode == sequenceResetDataOnly {
+				if err := resetAttachedSequence(ctx, pool, pgSchema, t, col); err != nil {
+					return err
+				}
+				continue
+			}
 			seqName := generatedSequenceName(t, col)
-			stmts := resetSequenceStatements(pgSchema, t, col, mode)
-			for _, q := range stmts {
+			for _, q := range resetSequenceStatements(pgSchema, t, col) {
 				if err := execSQL(ctx, pool, seqName, q); err != nil {
 					return err
 				}
@@ -454,23 +459,61 @@ func resetSequences(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 	return nil
 }
 
-func resetSequenceStatements(pgSchema string, t Table, col Column, mode sequenceResetMode) []string {
+func resetSequenceStatements(pgSchema string, t Table, col Column) []string {
 	seqName := generatedSequenceName(t, col)
 	seqRef := pgQualifiedRegclassLiteral(pgSchema, seqName)
-	setvalStmt := fmt.Sprintf("SELECT setval(%s, COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)",
-		seqRef,
-		pgIdent(col.PGName), pgQualifiedIdent(pgSchema, t.PGName))
-
-	if mode == sequenceResetDataOnly {
-		return []string{setvalStmt}
-	}
 
 	return []string{
 		fmt.Sprintf("CREATE SEQUENCE IF NOT EXISTS %s", pgQualifiedIdent(pgSchema, seqName)),
-		setvalStmt,
+		setvalStatement(seqRef, pgSchema, t, col),
 		fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT nextval(%s)",
 			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName), seqRef),
 	}
+}
+
+// setvalStatement advances seqRef (a regclass expression) to max(col)+1 so the
+// next insert does not collide with the copied rows.
+func setvalStatement(seqRef, pgSchema string, t Table, col Column) string {
+	return fmt.Sprintf("SELECT setval(%s, COALESCE((SELECT MAX(%s) FROM %s), 0) + 1, false)",
+		seqRef,
+		pgIdent(col.PGName), pgQualifiedIdent(pgSchema, t.PGName))
+}
+
+// dataOnlySequenceLookupSQL resolves which sequence backs an auto-increment column
+// when the target schema may not have been created by pgferry. It prefers the
+// sequence actually attached to the column (identity or serial/OWNED BY — external
+// migration tools create these under their own names) and falls back to pgferry's
+// {table}_{col}_seq convention, because sequences from a pgferry schema_only run
+// are free-standing and invisible to pg_get_serial_sequence.
+func dataOnlySequenceLookupSQL(pgSchema string, t Table, col Column) string {
+	return fmt.Sprintf("SELECT COALESCE(pg_get_serial_sequence(%s, %s), to_regclass(%s)::text)",
+		pgLiteral(pgQualifiedIdent(pgSchema, t.PGName)),
+		pgLiteral(col.PGName),
+		pgLiteral(pgQualifiedIdent(pgSchema, generatedSequenceName(t, col))))
+}
+
+// resetAttachedSequence advances the sequence backing an auto-increment column in
+// data_only mode. The sequence name cannot be assumed there: schemas created by
+// external migration tools (Entity Framework, Flyway, Liquibase, ...) name
+// sequences under their own conventions, so the sequence is resolved from the
+// target catalog instead.
+func resetAttachedSequence(ctx context.Context, db queryExecutor, pgSchema string, t Table, col Column) error {
+	lookup := dataOnlySequenceLookupSQL(pgSchema, t, col)
+	var seq *string
+	if err := db.QueryRow(ctx, lookup).Scan(&seq); err != nil {
+		return fmt.Errorf("look up sequence for %s.%s: %w\nSQL: %s",
+			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName), err, lookup)
+	}
+	if seq == nil {
+		return fmt.Errorf("no sequence found for auto-increment column %s.%s: the target column has no attached sequence (identity or OWNED BY) and no sequence named %s exists; attach the target schema's sequence to the column (ALTER SEQUENCE ... OWNED BY) or define the column as identity so pgferry can advance it after COPY",
+			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName),
+			pgQualifiedIdent(pgSchema, generatedSequenceName(t, col)))
+	}
+	if err := execSQL(ctx, db, *seq, setvalStatement(pgLiteral(*seq)+"::regclass", pgSchema, t, col)); err != nil {
+		return err
+	}
+	log.Printf("    sequence %s reset", *seq)
+	return nil
 }
 
 func pgQualifiedIdent(schema, name string) string {
