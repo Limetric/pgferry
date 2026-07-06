@@ -77,11 +77,17 @@ func TestDataOnlySequenceLookupSQL_ResolvesAttachedThenConventionName(t *testing
 
 func TestDataOnlySequenceLookupSQL_EscapesQuotes(t *testing.T) {
 	table := Table{PGName: "o'brien"}
-	col := Column{PGName: "id", Extra: "auto_increment"}
+	col := Column{PGName: "it's_id", Extra: "auto_increment"}
 
 	q := dataOnlySequenceLookupSQL("app", table, col)
 	if !strings.Contains(q, `'"app"."o''brien"'`) {
 		t.Fatalf("table literal should escape single quotes, got: %q", q)
+	}
+	if !strings.Contains(q, `, 'it''s_id')`) {
+		t.Fatalf("column literal should escape single quotes, got: %q", q)
+	}
+	if !strings.Contains(q, `to_regclass('"app"."o''brien_it''s_id_seq"')`) {
+		t.Fatalf("fallback sequence literal should escape single quotes, got: %q", q)
 	}
 }
 
