@@ -75,6 +75,22 @@ func TestDataOnlySequenceLookupSQL_ResolvesAttachedThenConventionName(t *testing
 	}
 }
 
+func TestDataOnlySequenceLookupSQL_ResolvesDefaultNextvalSequence(t *testing.T) {
+	table := Table{PGName: "Orders"}
+	col := Column{PGName: "Id", Extra: "auto_increment"}
+
+	q := dataOnlySequenceLookupSQL("myapp", table, col)
+	if !strings.Contains(q, "pg_attrdef") || !strings.Contains(q, "pg_depend") {
+		t.Fatalf("lookup should resolve sequences referenced only by the column DEFAULT (issue #250), got: %q", q)
+	}
+	first := strings.Index(q, "pg_get_serial_sequence")
+	def := strings.Index(q, "pg_attrdef")
+	last := strings.Index(q, `to_regclass('"myapp"."Orders_Id_seq"')`)
+	if first == -1 || def == -1 || last == -1 || !(first < def && def < last) {
+		t.Fatalf("lookup order should be attached, then DEFAULT expression, then convention name, got: %q", q)
+	}
+}
+
 func TestDataOnlySequenceLookupSQL_EscapesQuotes(t *testing.T) {
 	table := Table{PGName: "o'brien"}
 	col := Column{PGName: "it's_id", Extra: "auto_increment"}

@@ -482,13 +482,29 @@ func setvalStatement(seqRef, pgSchema string, t Table, col Column) string {
 // dataOnlySequenceLookupSQL resolves which sequence backs an auto-increment column
 // when the target schema may not have been created by pgferry. It prefers the
 // sequence actually attached to the column (identity or serial/OWNED BY — external
-// migration tools create these under their own names) and falls back to pgferry's
-// {table}_{col}_seq convention, because sequences from a pgferry schema_only run
-// are free-standing and invisible to pg_get_serial_sequence.
+// migration tools create these under their own names), then the sequence referenced
+// by the column's DEFAULT nextval(...) expression via pg_depend (tools like Entity
+// Framework create custom-named sequences without OWNED BY, invisible to
+// pg_get_serial_sequence), and falls back to pgferry's {table}_{col}_seq convention,
+// because sequences from a pgferry schema_only run are free-standing with a plain
+// nextval default.
 func dataOnlySequenceLookupSQL(pgSchema string, t Table, col Column) string {
-	return fmt.Sprintf("SELECT COALESCE(pg_get_serial_sequence(%s, %s), to_regclass(%s)::text)",
-		pgLiteral(pgQualifiedIdent(pgSchema, t.PGName)),
-		pgLiteral(col.PGName),
+	tableLit := pgLiteral(pgQualifiedIdent(pgSchema, t.PGName))
+	colLit := pgLiteral(col.PGName)
+	return fmt.Sprintf(`SELECT COALESCE(
+	pg_get_serial_sequence(%s, %s),
+	(SELECT quote_ident(sn.nspname) || '.' || quote_ident(sc.relname)
+	 FROM pg_attrdef ad
+	 JOIN pg_depend dep ON dep.classid = 'pg_attrdef'::regclass AND dep.objid = ad.oid AND dep.refclassid = 'pg_class'::regclass AND dep.deptype = 'n'
+	 JOIN pg_class sc ON sc.oid = dep.refobjid AND sc.relkind = 'S'
+	 JOIN pg_namespace sn ON sn.oid = sc.relnamespace
+	 WHERE ad.adrelid = to_regclass(%s)
+	   AND ad.adnum = (SELECT a.attnum FROM pg_attribute a WHERE a.attrelid = ad.adrelid AND a.attname = %s)
+	 ORDER BY sc.oid
+	 LIMIT 1),
+	to_regclass(%s)::text)`,
+		tableLit, colLit,
+		tableLit, colLit,
 		pgLiteral(pgQualifiedIdent(pgSchema, generatedSequenceName(t, col))))
 }
 
@@ -505,7 +521,7 @@ func resetAttachedSequence(ctx context.Context, db queryExecutor, pgSchema strin
 			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName), err, lookup)
 	}
 	if seq == nil {
-		return fmt.Errorf("no sequence found for auto-increment column %s.%s: the target column has no attached sequence (identity or OWNED BY) and no sequence named %s exists; attach the target schema's sequence to the column (ALTER SEQUENCE ... OWNED BY) or define the column as identity so pgferry can advance it after COPY",
+		return fmt.Errorf("no sequence found for auto-increment column %s.%s: the target column has no attached sequence (identity or OWNED BY), no DEFAULT nextval(...) referencing a sequence, and no sequence named %s exists; give the column a nextval default or define it as identity so pgferry can advance the sequence after COPY",
 			pgQualifiedIdent(pgSchema, t.PGName), pgIdent(col.PGName),
 			pgQualifiedIdent(pgSchema, generatedSequenceName(t, col)))
 	}

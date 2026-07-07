@@ -725,6 +725,86 @@ dsn = %q
 	}
 }
 
+// TestIntegration_SQLite_DataOnly_DefaultNextvalSequence covers data_only against
+// a target schema whose sequence is wired to the column only through DEFAULT
+// nextval(...) — custom name, no OWNED BY, no identity (issue #250). Entity
+// Framework creates sequences this way; pg_get_serial_sequence returns NULL for
+// them, so the lookup must resolve the sequence from the column's DEFAULT
+// expression via pg_depend.
+func TestIntegration_SQLite_DataOnly_DefaultNextvalSequence(t *testing.T) {
+	pgDSN := os.Getenv("POSTGRES_DSN")
+	if pgDSN == "" {
+		t.Skip("POSTGRES_DSN env var required")
+	}
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	sqliteFile := filepath.Join(tmpDir, "test.db")
+
+	db, err := sql.Open("sqlite", sqliteFile)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	for _, stmt := range []string{
+		`CREATE TABLE orders (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			label TEXT NOT NULL
+		)`,
+		"INSERT INTO orders (label) VALUES ('one')",
+		"INSERT INTO orders (label) VALUES ('two')",
+		"INSERT INTO orders (label) VALUES ('three')",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed sqlite %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+	db.Close()
+
+	pgPool := openIntegrationPGPool(t, pgDSN)
+	t.Cleanup(func() { pgPool.Close() })
+
+	pgSchema := integrationSchemaName("inttest_sqlite_nextval_seq")
+	ensureDroppedSchema(t, pgPool, pgSchema)
+	t.Cleanup(func() { dropSchema(t, pgPool, pgSchema) })
+
+	qs := pgIdent(pgSchema)
+	for _, stmt := range []string{
+		fmt.Sprintf("CREATE SCHEMA %s", qs),
+		fmt.Sprintf(`CREATE SEQUENCE %s."OrderIdSequence"`, qs),
+		fmt.Sprintf(`CREATE TABLE %s.orders (
+			id bigint PRIMARY KEY DEFAULT nextval(%s),
+			label text NOT NULL
+		)`, qs, pgQualifiedRegclassLiteral(pgSchema, "OrderIdSequence")),
+	} {
+		if _, err := pgPool.Exec(ctx, stmt); err != nil {
+			t.Fatalf("create external schema %q: %v", stmt[:min(len(stmt), 60)], err)
+		}
+	}
+
+	cfgPath := writeIntegrationConfig(t, tmpDir, fmt.Sprintf(`schema = %q
+data_only = true
+
+[source]
+type = "sqlite"
+dsn = %q
+
+[target]
+dsn = %q
+`, pgSchema, sqliteFile, pgDSN))
+
+	runMigrationFromConfig(t, cfgPath)
+
+	assertRowCount(t, pgPool, pgSchema, "orders", 3)
+
+	var insertedID int64
+	insert := fmt.Sprintf("INSERT INTO %s.orders (label) VALUES ('probe') RETURNING id", qs)
+	if err := pgPool.QueryRow(ctx, insert).Scan(&insertedID); err != nil {
+		t.Fatalf("insert into orders after DEFAULT-nextval data_only: %v", err)
+	}
+	if insertedID != 4 {
+		t.Errorf("inserted orders id after DEFAULT-nextval sequence reset: got %d, want 4", insertedID)
+	}
+}
+
 func TestIntegration_SQLite_SchemaOnlyThenDataOnly(t *testing.T) {
 	pgDSN := os.Getenv("POSTGRES_DSN")
 	if pgDSN == "" {
