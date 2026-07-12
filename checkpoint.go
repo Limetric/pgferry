@@ -10,7 +10,13 @@ import (
 	"time"
 )
 
-const checkpointVersion = 2
+// checkpointVersion gates whether a saved checkpoint may be resumed. Bump it
+// whenever the chunk planner's index-to-key-range mapping changes: completed
+// chunks are recorded by ordinal, so a checkpoint written by a planner that
+// mapped ordinal i to a different key range would silently skip or re-copy rows
+// on resume. Version 3 covers the overflow and sparse-range widening fixes in
+// planChunks.
+const checkpointVersion = 3
 
 // CheckpointState persists the progress of a chunked migration.
 type CheckpointState struct {
@@ -66,10 +72,12 @@ func loadCheckpoint(path string) (*CheckpointState, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, fmt.Errorf("parse checkpoint: %w", err)
 	}
+	// Older versions still parse so that `checkpoint status` can inspect them and
+	// validateCheckpointCompatibility can refuse the resume with actionable advice.
 	switch state.Version {
-	case 1, checkpointVersion:
+	case 1, 2, checkpointVersion:
 	default:
-		return nil, fmt.Errorf("unsupported checkpoint version %d (expected 1 or %d)", state.Version, checkpointVersion)
+		return nil, fmt.Errorf("unsupported checkpoint version %d (expected 1..%d)", state.Version, checkpointVersion)
 	}
 	if state.Tables == nil {
 		state.Tables = make(map[string]*TableCheckpoint)

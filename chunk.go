@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 )
@@ -36,40 +37,85 @@ type ChunkPlan struct {
 	PGCopyColumns []string
 }
 
-// estimatedChunkCount returns how many chunks planChunks produces for [min, max]
-// with the given positive chunkSize. For rangeSize < chunkSize it returns 1 (single
-// chunk path). Returns 0 if the count does not fit in int or would overflow int64
-// arithmetic (caller should skip preallocation).
-func estimatedChunkCount(min, max, chunkSize int64) int {
-	if chunkSize <= 0 {
+// maxPlannedChunks bounds how many chunks a single table may be split into.
+// Chunks are planned over the key *range*, not the row count, so a sparse key
+// space (snowflake IDs, a jumped AUTO_INCREMENT, timestamp-derived keys) can
+// imply an astronomical chunk count for a table holding very few rows. Rather
+// than allocating and querying that many chunks, planChunks widens the chunk
+// size so the count stays bounded. A dense table only reaches this limit above
+// ~1e11 rows at the default chunk size, where the widening is a no-op anyway.
+const maxPlannedChunks = 1_000_000
+
+// keySpan returns the inclusive width of [min, max] minus one, i.e. the distance
+// max-min, as an exact uint64. Modular uint64 subtraction preserves the true
+// distance even when the range crosses zero or touches the int64 extremes, where
+// signed max-min would overflow.
+func keySpan(min, max int64) uint64 {
+	if max < min {
 		return 0
 	}
-	rangeSize := max - min
-	if rangeSize < chunkSize {
+	return uint64(max) - uint64(min)
+}
+
+// estimatedChunkCount returns how many chunks planChunks produces for [min, max]
+// with the given positive chunkSize. For a span smaller than chunkSize it returns 1
+// (single chunk path). Returns 0 if the count does not fit in int (caller should
+// skip preallocation).
+func estimatedChunkCount(min, max, chunkSize int64) int {
+	if chunkSize <= 0 || max < min {
+		return 0
+	}
+	span := keySpan(min, max)
+	if span < uint64(chunkSize) {
 		return 1
 	}
-	q := rangeSize / chunkSize
-	if q > math.MaxInt64-1 {
+	q := span / uint64(chunkSize)
+	if q == math.MaxUint64 {
 		return 0
 	}
 	n := q + 1
-	if n < 0 || n > int64(math.MaxInt) {
+	if n > uint64(math.MaxInt) {
 		return 0
 	}
 	return int(n)
 }
 
+// effectiveChunkSize widens chunkSize when the key range would otherwise be split
+// into more than maxPlannedChunks chunks. Returns the size to actually plan with.
+func effectiveChunkSize(min, max, chunkSize int64) int64 {
+	if chunkSize <= 0 || max < min {
+		return chunkSize
+	}
+	span := keySpan(min, max)
+	// planChunks emits span/chunkSize + 1 chunks, so the count stays within the
+	// limit exactly while span/chunkSize < maxPlannedChunks.
+	if span/uint64(chunkSize) < uint64(maxPlannedChunks) {
+		return chunkSize
+	}
+	widened := span/uint64(maxPlannedChunks-1) + 1
+	if widened > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(widened)
+}
+
 // planChunks divides the [min, max] key range into chunks of approximately chunkSize.
 // Returns a single chunk covering the full range if the range is smaller than chunkSize.
 func planChunks(min, max, chunkSize int64) []Chunk {
-	if chunkSize <= 0 {
-		chunkSize = 100000
+	chunkSize = normalizedChunkSize(chunkSize)
+
+	if max < min {
+		return []Chunk{{Index: 0, LowerBound: min, UpperBound: max, IsLast: true}}
 	}
 
-	// Guard against int64 overflow: if max-min would overflow when adding 1,
-	// the range is larger than any chunkSize so we skip the single-chunk path.
-	rangeSize := max - min // safe: max >= min
-	if rangeSize < chunkSize {
+	if widened := effectiveChunkSize(min, max, chunkSize); widened != chunkSize {
+		log.Printf("  WARN: key range %d..%d is too sparse for chunk_size %d "+
+			"(would need >%d chunks); widening chunk size to %d",
+			min, max, chunkSize, maxPlannedChunks, widened)
+		chunkSize = widened
+	}
+
+	if keySpan(min, max) < uint64(chunkSize) {
 		return []Chunk{{
 			Index:      0,
 			LowerBound: min,
@@ -84,21 +130,29 @@ func planChunks(min, max, chunkSize int64) []Chunk {
 	} else {
 		chunks = make([]Chunk, 0)
 	}
-	for lower := min; lower <= max; {
-		upper := lower + chunkSize
-		isLast := upper > max
-		if isLast {
-			upper = max
+
+	// Walk the range with uint64 offsets: lower+chunkSize can overflow int64 near
+	// the top of the key space, which previously wrapped negative, emitted a chunk
+	// whose predicate matched no rows, and sent the loop spinning back up from the
+	// bottom of the range.
+	for lower := min; ; {
+		remaining := uint64(max) - uint64(lower)
+		if remaining < uint64(chunkSize) {
+			chunks = append(chunks, Chunk{
+				Index:      len(chunks),
+				LowerBound: lower,
+				UpperBound: max,
+				IsLast:     true,
+			})
+			break
 		}
+		upper := int64(uint64(lower) + uint64(chunkSize))
 		chunks = append(chunks, Chunk{
 			Index:      len(chunks),
 			LowerBound: lower,
 			UpperBound: upper,
-			IsLast:     isLast,
+			IsLast:     false,
 		})
-		if isLast {
-			break
-		}
 		lower = upper
 	}
 	return chunks

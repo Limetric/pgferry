@@ -656,11 +656,31 @@ func TestPersistentCheckpointManager_RejectsLegacyCheckpointForSafeResume(t *tes
 	}
 }
 
-func TestPersistentCheckpointManager_RejectsMissingCompatibilityMetadata(t *testing.T) {
+func TestPersistentCheckpointManager_RejectsPreChunkPlannerFixCheckpoint(t *testing.T) {
+	// Version 2 checkpoints were written by a planner whose chunk ordinals mapped
+	// to different key ranges (pre-#257). Resuming one would skip or re-copy rows.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
 	if err := os.WriteFile(path, []byte(`{"version":2,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	compat := testCheckpointCompatibility()
+	_, err := newPersistentCheckpointManager(path, &compat)
+	if err == nil {
+		t.Fatal("expected pre-planner-fix checkpoint rejection")
+	}
+	if !strings.Contains(err.Error(), "older pgferry version") {
+		t.Fatalf("expected legacy version message, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsMissingCompatibilityMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	if err := os.WriteFile(path, []byte(`{"version":3,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
