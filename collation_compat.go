@@ -136,7 +136,7 @@ func pgCollationClause(col Column, typeMap TypeMappingConfig) string {
 
 	// User-provided mapping takes precedence
 	if mapped, ok := typeMap.CollationMap[col.Collation]; ok {
-		return fmt.Sprintf(`COLLATE "%s"`, mapped)
+		return fmt.Sprintf("COLLATE %s", pgIdent(mapped))
 	}
 
 	// _ci columns handled by citext don't need a COLLATE clause
