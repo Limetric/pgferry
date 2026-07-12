@@ -2,7 +2,28 @@ package main
 
 import (
 	"testing"
+	"unicode/utf8"
 )
+
+func TestToSnakeCase_NonASCIIPreserved(t *testing.T) {
+	cases := map[string]string{
+		"preço":       "preço",
+		"café":        "café",
+		"名前":          "名前",
+		"precioTotal": "precio_total",
+		"preçoTotal":  "preço_total",
+		"ÉtatCivil":   "état_civil",
+	}
+	for in, want := range cases {
+		got := toSnakeCase(in)
+		if got != want {
+			t.Errorf("toSnakeCase(%q) = %q, want %q", in, got, want)
+		}
+		if !utf8.ValidString(got) {
+			t.Errorf("toSnakeCase(%q) produced invalid UTF-8: %v", in, []byte(got))
+		}
+	}
+}
 
 func TestToSnakeCase_ConsecutiveUnderscores(t *testing.T) {
 	// Input already containing underscores should not deduplicate them
