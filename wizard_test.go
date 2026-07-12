@@ -77,6 +77,72 @@ func TestRunGenerateWizardWritesConfig(t *testing.T) {
 	}
 }
 
+func TestRunGenerateWizardWritesConfigNotWorldReadable(t *testing.T) {
+	// The generated config embeds source and target DSNs including passwords, so
+	// it must never be group- or world-readable.
+	wizardInput := func(outputPath string, confirmOverwrite bool) string {
+		lines := []string{
+			"sqlite",
+			"/tmp/source.db",
+			"n",
+			"postgres://postgres:secret@127.0.0.1:5432/target?sslmode=disable",
+			"n",
+			"", "", "", "", "", "", "", "", "",
+			"n",
+			"",
+			outputPath,
+		}
+		if confirmOverwrite {
+			lines = append(lines, "y")
+		}
+		lines = append(lines, "stop")
+		return strings.Join(lines, "\n") + "\n"
+	}
+
+	run := func(t *testing.T, outputPath string, confirmOverwrite bool) {
+		t.Helper()
+		cmd := &cobra.Command{}
+		cmd.SetIn(strings.NewReader(wizardInput(outputPath, confirmOverwrite)))
+		cmd.SetOut(&bytes.Buffer{})
+		if err := runGenerateWizard(cmd, nil); err != nil {
+			t.Fatalf("runGenerateWizard() error: %v", err)
+		}
+	}
+
+	assertNotWorldReadable := func(t *testing.T, path string) {
+		t.Helper()
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("stat generated config: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != 0600 {
+			t.Fatalf("config %s has permissions %04o, want 0600", path, perm)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read generated config: %v", err)
+		}
+		if !strings.Contains(string(data), "secret") {
+			t.Fatalf("expected the generated config to embed the DSN password, got:\n%s", data)
+		}
+	}
+
+	t.Run("new file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "migration.toml")
+		run(t, path, false)
+		assertNotWorldReadable(t, path)
+	})
+
+	t.Run("overwrites permissive existing file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "migration.toml")
+		if err := os.WriteFile(path, []byte("# stale\n"), 0644); err != nil {
+			t.Fatalf("seed existing config: %v", err)
+		}
+		run(t, path, true)
+		assertNotWorldReadable(t, path)
+	})
+}
+
 func TestRunGenerateWizardRunsGeneratedConfig(t *testing.T) {
 	dir := t.TempDir()
 	prevWD, err := os.Getwd()

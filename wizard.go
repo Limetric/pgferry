@@ -111,7 +111,7 @@ func runGenerateWizard(cmd *cobra.Command, _ []string) error {
 		if err := maybeConfirmOverwrite(&w, absPath); err != nil {
 			return err
 		}
-		if err := os.WriteFile(absPath, []byte(rendered), 0644); err != nil {
+		if err := writeSecretFile(absPath, []byte(rendered)); err != nil {
 			return fmt.Errorf("write config: %w", err)
 		}
 		if err := finalizeConfig(cfg, filepath.Dir(absPath)); err != nil {
@@ -1296,4 +1296,39 @@ func (w *wizardPrompter) readLine() (string, error) {
 		}
 	}
 	return strings.TrimSpace(line), err
+}
+
+// writeSecretFile atomically writes data to path with owner-only permissions.
+// The generated config embeds source and target DSNs, including passwords, so it
+// is written to a 0600 temp file and renamed into place. Writing in place would
+// leave the secret readable through an existing file's permissions until a
+// follow-up chmod landed.
+func writeSecretFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".pgferry_config_*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp config: %w", err)
+	}
+	tmpPath := tmp.Name()
+
+	// os.CreateTemp already uses 0600, but be explicit: this file holds credentials.
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("secure temp config: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("write temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("close temp config: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("rename config: %w", err)
+	}
+	return nil
 }
