@@ -165,7 +165,10 @@ func TestBuildParallelMigrationWorkItems_AllSkippedReturnsEmpty(t *testing.T) {
 		doneTables: map[string]bool{"users": true, "profiles": true},
 	}
 
-	items := buildParallelMigrationWorkItems(plans, mgr)
+	items, err := buildParallelMigrationWorkItems(plans, mgr)
+	if err != nil {
+		t.Fatalf("buildParallelMigrationWorkItems: %v", err)
+	}
 	if len(items) != 0 {
 		t.Fatalf("expected 0 work items when all tables are done, got %d", len(items))
 	}

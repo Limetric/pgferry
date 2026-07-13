@@ -35,6 +35,14 @@ type ChunkPlan struct {
 	// PGCopyColumns is the ordered list of PostgreSQL column names for COPY,
 	// one per table.Columns entry. Populated for every plan.
 	PGCopyColumns []string
+	// KeyMin and KeyMax are the chunk key's MIN/MAX that Chunks were planned over.
+	// Chunk ordinals are only meaningful relative to this range: chunk i covers
+	// [KeyMin + i*ChunkSize, ...), so a resume against a moved range would have the
+	// same ordinal denote a different slice of the table.
+	KeyMin int64
+	KeyMax int64
+	// HasRows is false when the table was empty at plan time.
+	HasRows bool
 }
 
 // maxPlannedChunks bounds how many chunks a single table may be split into.
