@@ -115,6 +115,54 @@ func (s *sqliteSourceDB) IntrospectSchema(db *sql.DB, _ string) (*Schema, error)
 	return &Schema{Tables: tables}, nil
 }
 
+// IntrospectSchemaSemanticWarnings reports SQLite schema semantics that are not
+// migrated. SQLite has no table/column comments and no partitioning, so CHECK
+// constraints are the only category with anything to report; column defaults are
+// handled generically by collectDefaultSemanticWarning.
+func (s *sqliteSourceDB) IntrospectSchemaSemanticWarnings(db *sql.DB, _ string) ([]SchemaSemanticWarning, error) {
+	rows, err := db.Query(
+		`SELECT name, sql FROM sqlite_master
+		 WHERE type = 'table' AND sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+		 ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("introspect check constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var warnings []SchemaSemanticWarning
+	for rows.Next() {
+		var tableName, ddl string
+		if err := rows.Scan(&tableName, &ddl); err != nil {
+			return nil, fmt.Errorf("introspect check constraints: %w", err)
+		}
+
+		for i, check := range extractSQLiteCheckConstraints(ddl) {
+			name := check.Name
+			if name == "" {
+				name = fmt.Sprintf("check_%d", i+1)
+			}
+
+			reason := "SQLite CHECK constraint is not migrated automatically."
+			if check.Name != "" {
+				reason = fmt.Sprintf("SQLite CHECK constraint %q is not migrated automatically.", check.Name)
+			}
+			if detail := compactSemanticDetail(check.Expr); detail != "" {
+				reason += " Definition: " + detail
+			}
+
+			warnings = append(warnings, SchemaSemanticWarning{
+				Category:            "constraints",
+				ObjectType:          "constraint",
+				ObjectName:          s.identName(tableName) + "." + s.identName(name),
+				Disposition:         "skipped",
+				Reason:              reason,
+				RecommendedFollowUp: "Recreate the CHECK constraint in PostgreSQL DDL or hook SQL after loading data.",
+			})
+		}
+	}
+	return warnings, rows.Err()
+}
+
 func (s *sqliteSourceDB) IntrospectSourceObjects(db *sql.DB, _ string) (*SourceObjects, error) {
 	objs := &SourceObjects{}
 

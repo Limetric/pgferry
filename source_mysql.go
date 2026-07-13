@@ -903,7 +903,48 @@ func introspectMySQLSourceObjects(db *sql.DB, dbName, dialect string) (*SourceOb
 		return nil, fmt.Errorf("iterate triggers: %w", err)
 	}
 
+	// Scheduled events have no PostgreSQL equivalent. They were previously not
+	// introspected at all, so a source using the event scheduler lost them silently.
+	evRows, err := db.Query(`
+		SELECT EVENT_NAME, COALESCE(EVENT_DEFINITION, '')
+		FROM INFORMATION_SCHEMA.EVENTS
+		WHERE EVENT_SCHEMA = ?
+		ORDER BY EVENT_NAME
+	`, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect events: %w", err)
+	}
+	defer evRows.Close()
+	for evRows.Next() {
+		var name, definition string
+		if err := evRows.Scan(&name, &definition); err != nil {
+			return nil, fmt.Errorf("scan events: %w", err)
+		}
+		objs.Events = append(objs.Events, SourceEvent{
+			Name:       name,
+			Dialect:    dialect,
+			Definition: mysqlEventDefinition(name, definition),
+		})
+	}
+	if err := evRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events: %w", err)
+	}
+
 	return objs, nil
+}
+
+func mysqlEventDefinition(name, body string) string {
+	body = strings.TrimSpace(body)
+	if name == "" || body == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"-- Source catalog exposed the event body only; schedule and options are omitted here.\n"+
+			"-- PostgreSQL has no event scheduler; use pg_cron or an external scheduler.\n"+
+			"-- EVENT %s\n%s",
+		quoteMySQLBacktickIdent(name),
+		body,
+	)
 }
 
 func mysqlRoutineDefinition(routineType, routineName, body string) string {

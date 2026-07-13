@@ -87,8 +87,13 @@ pgferry reports these rather than silently faking them:
 - views
 - routines or procedures
 - source triggers
+- scheduled events (MySQL and MariaDB event scheduler)
 
-These are not migrated automatically. Recreate them with hooks or separate DDL.
+These are not migrated automatically. Recreate them with hooks or separate DDL. PostgreSQL has no event scheduler, so scheduled events need `pg_cron` or a scheduler outside the database.
+
+### CHECK constraints
+
+Source `CHECK` constraints are reported, not migrated, for every source — including SQLite, where they are recovered from the table DDL. Recreate the ones you rely on in an `after_all` hook.
 
 ### Unsupported or skipped indexes
 

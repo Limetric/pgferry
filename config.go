@@ -128,8 +128,8 @@ type TypeMappingConfig struct {
 	Binary16AsUUID        bool              `toml:"binary16_as_uuid"`
 	DatetimeAsTimestamptz bool              `toml:"datetime_as_timestamptz"`
 	JSONAsJSONB           bool              `toml:"json_as_jsonb"`
-	EnumMode              string            `toml:"enum_mode"` // text|check
-	SetMode               string            `toml:"set_mode"`  // text|text_array
+	EnumMode              string            `toml:"enum_mode"` // text|check|native
+	SetMode               string            `toml:"set_mode"`  // text|text_array|text_array_check
 	WidenUnsignedIntegers bool              `toml:"widen_unsigned_integers"`
 	VarcharAsText         bool              `toml:"varchar_as_text"`
 	SanitizeJSONNullBytes bool              `toml:"sanitize_json_null_bytes"`
