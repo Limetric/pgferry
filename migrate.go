@@ -212,21 +212,55 @@ func runParallelMigrationWorkers(ctx context.Context, workers int, openSource fu
 						return
 					}
 
-					if source == nil {
-						var err error
-						source, err = openSource()
-						if err != nil {
-							recordErr(fmt.Errorf("open source worker: %w", err))
-							return
+					// Retry transient connection failures. Each chunk COPY is its own
+					// transaction and rolls back cleanly on error, so re-running a work
+					// item cannot double-insert rows. Only the parallel path retries:
+					// single_tx holds a long-lived snapshot that reconnecting would
+					// silently replace.
+					var count int64
+					failed := false
+					for attempt := 1; ; attempt++ {
+						if source == nil {
+							var openErr error
+							source, openErr = openSource()
+							if openErr != nil {
+								if attempt < maxCopyAttempts && isTransientError(openErr) {
+									log.Printf("  WARN: open source worker: %v (attempt %d/%d), retrying in %s",
+										openErr, attempt, maxCopyAttempts, copyRetryBackoff(attempt))
+									if waitBeforeRetry(ctx, attempt) != nil {
+										return
+									}
+									continue
+								}
+								recordErr(fmt.Errorf("open source worker: %w", openErr))
+								return
+							}
 						}
-					}
 
-					count, err := execute(ctx, source, item)
-					if err != nil {
+						var err error
+						count, err = execute(ctx, source, item)
+						if err == nil {
+							break
+						}
 						if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 							return
 						}
+						if attempt < maxCopyAttempts && isTransientError(err) {
+							log.Printf("  WARN: %v (attempt %d/%d), retrying in %s",
+								formatMigrationWorkError(item, err), attempt, maxCopyAttempts, copyRetryBackoff(attempt))
+							// The connection may be dead; drop it so the next attempt redials.
+							source.Close()
+							source = nil
+							if waitBeforeRetry(ctx, attempt) != nil {
+								return
+							}
+							continue
+						}
 						recordErr(formatMigrationWorkError(item, err))
+						failed = true
+						break
+					}
+					if failed {
 						return
 					}
 					recordMigrationWorkResult(mgr, item, count)
