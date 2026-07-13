@@ -68,11 +68,12 @@ func extractSQLiteCheckConstraints(ddl string) []sqliteCheckConstraint {
 			pendingName = ""
 			i = next
 		default:
-			// Any other keyword ends a pending CONSTRAINT <name> that turned out not
-			// to introduce a CHECK (a named PRIMARY KEY or UNIQUE, for example).
-			if !strings.EqualFold(word, "NOT") && !strings.EqualFold(word, "NULL") {
-				pendingName = ""
-			}
+			// Any other keyword ends a pending CONSTRAINT <name> that turned out not to
+			// introduce a CHECK — a named PRIMARY KEY, UNIQUE, or NOT NULL. CHECK always
+			// follows its CONSTRAINT name immediately, so nothing may sit between them:
+			// keeping the name alive across NOT/NULL would misattribute it to the next
+			// anonymous CHECK in the table.
+			pendingName = ""
 		}
 	}
 

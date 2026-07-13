@@ -594,7 +594,13 @@ func (m *persistentCheckpointManager) Flush() error {
 	m.mu.Lock()
 	m.flushing = false
 	if writeErr == nil {
+		// Clamp as flushNow does: the two snapshot m.unflushed independently, so an
+		// interleave can subtract the same records twice and drive the counter
+		// negative, which would delay the next count-triggered flush.
 		m.unflushed -= flushedCount
+		if m.unflushed < 0 {
+			m.unflushed = 0
+		}
 		m.dirty = m.unflushed > 0
 		m.lastFlush = time.Now()
 	}

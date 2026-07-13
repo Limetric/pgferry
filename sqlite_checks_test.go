@@ -70,6 +70,16 @@ func TestExtractSQLiteCheckConstraints(t *testing.T) {
 			want: []sqliteCheckConstraint{{Name: "", Expr: "b > 0"}},
 		},
 		{
+			name: "a named NOT NULL constraint does not name a later anonymous check",
+			ddl:  `CREATE TABLE t (a INT CONSTRAINT nn NOT NULL, b INT, CHECK (b > 0))`,
+			want: []sqliteCheckConstraint{{Name: "", Expr: "b > 0"}},
+		},
+		{
+			name: "a named check still keeps its own name",
+			ddl:  `CREATE TABLE t (a INT CONSTRAINT nn NOT NULL, b INT CONSTRAINT b_pos CHECK (b > 0))`,
+			want: []sqliteCheckConstraint{{Name: "b_pos", Expr: "b > 0"}},
+		},
+		{
 			name: "comments are skipped",
 			ddl: `CREATE TABLE t (
 				-- CHECK (commented out)
