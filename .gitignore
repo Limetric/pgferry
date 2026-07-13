@@ -53,3 +53,7 @@ Thumbs.db
 
 # Superset
 /.superset/attachments/
+# Build output (the CLI binary was tracked here by accident)
+/pgferry
+/build/
+/dist/
