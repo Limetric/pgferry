@@ -946,6 +946,46 @@ func TestColumnSelectExpr_MSSQLSqlVariant(t *testing.T) {
 	}
 }
 
+func TestColumnSelectExpr_MSSQLMoneyConvertedServerSide(t *testing.T) {
+	// money is an exact scaled integer with 19 significant digits; go-mssqldb
+	// decodes it to float64 (~15-17 digits), so it must be converted to exact
+	// decimal text server-side rather than round-tripped through a float.
+	src := &mssqlSourceDB{}
+	for _, dataType := range []string{"money", "smallmoney"} {
+		col := Column{SourceName: "amount", DataType: dataType}
+		got := columnSelectExpr(src, col, defaultTypeMappingConfig())
+		want := "CONVERT(varchar(41), [amount]) AS [amount]"
+		if got != want {
+			t.Errorf("columnSelectExpr(%s) = %q, want %q", dataType, got, want)
+		}
+	}
+}
+
+func TestMSSQLMoneyTransformer_PassesThroughExactDecimalText(t *testing.T) {
+	// With the server-side CONVERT in place the driver hands us exact decimal text,
+	// which must survive untouched. The float64 branch remains only as a fallback.
+	col := Column{SourceName: "amount", DataType: "money"}
+
+	exact := "922337203685477.5807"
+	got, err := mssqlTransformValue(exact, col, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("mssqlTransformValue(%q) error: %v", exact, err)
+	}
+	if got != exact {
+		t.Errorf("mssqlTransformValue(%q) = %v, want the exact decimal preserved", exact, got)
+	}
+
+	// Demonstrate why the CONVERT is necessary: float64 cannot represent this value,
+	// so the old driver-decoded path silently lost precision.
+	viaFloat, err := mssqlTransformValue(922337203685477.5807, col, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("mssqlTransformValue(float64) error: %v", err)
+	}
+	if viaFloat == exact {
+		t.Errorf("float64 round-tripped %s exactly; the precision premise of this fix is wrong", exact)
+	}
+}
+
 func TestColumnSelectExpr_MSSQLRegularColumn(t *testing.T) {
 	src := &mssqlSourceDB{}
 	col := Column{SourceName: "name", DataType: "nvarchar"}

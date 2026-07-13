@@ -1393,7 +1393,11 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 		return fmt.Sprintf("B'%s'", bits), nil
 
 	case pgType == "text[]":
-		vals := parseMySQLSetDefault(unquoted)
+		// SET members may carry leading spaces, which MySQL preserves and which the
+		// generated CHECK constraint keeps. Parse from the original default text so
+		// the outer TrimSpace above cannot strip the first member's leading space and
+		// produce a DEFAULT that violates its own CHECK.
+		vals := parseMySQLSetDefault(mysqlDefaultUnquote(*col.Default))
 		if len(vals) == 0 {
 			return "ARRAY[]::text[]", nil
 		}
