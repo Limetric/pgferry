@@ -903,7 +903,48 @@ func introspectMySQLSourceObjects(db *sql.DB, dbName, dialect string) (*SourceOb
 		return nil, fmt.Errorf("iterate triggers: %w", err)
 	}
 
+	// Scheduled events have no PostgreSQL equivalent. They were previously not
+	// introspected at all, so a source using the event scheduler lost them silently.
+	evRows, err := db.Query(`
+		SELECT EVENT_NAME, COALESCE(EVENT_DEFINITION, '')
+		FROM INFORMATION_SCHEMA.EVENTS
+		WHERE EVENT_SCHEMA = ?
+		ORDER BY EVENT_NAME
+	`, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("introspect events: %w", err)
+	}
+	defer evRows.Close()
+	for evRows.Next() {
+		var name, definition string
+		if err := evRows.Scan(&name, &definition); err != nil {
+			return nil, fmt.Errorf("scan events: %w", err)
+		}
+		objs.Events = append(objs.Events, SourceEvent{
+			Name:       name,
+			Dialect:    dialect,
+			Definition: mysqlEventDefinition(name, definition),
+		})
+	}
+	if err := evRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate events: %w", err)
+	}
+
 	return objs, nil
+}
+
+func mysqlEventDefinition(name, body string) string {
+	body = strings.TrimSpace(body)
+	if name == "" || body == "" {
+		return ""
+	}
+	return fmt.Sprintf(
+		"-- Source catalog exposed the event body only; schedule and options are omitted here.\n"+
+			"-- PostgreSQL has no event scheduler; use pg_cron or an external scheduler.\n"+
+			"-- EVENT %s\n%s",
+		quoteMySQLBacktickIdent(name),
+		body,
+	)
 }
 
 func mysqlRoutineDefinition(routineType, routineName, body string) string {
@@ -1333,8 +1374,21 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 		return "CURRENT_TIMESTAMP", nil
 	}
 
-	if strings.HasPrefix(lower, "current_timestamp(") && strings.HasSuffix(lower, ")") {
-		return strings.ToUpper(raw), nil
+	// CURRENT_TIMESTAMP(n) is emitted as bare SQL rather than escaped, so the
+	// fractional-seconds precision must be parsed out and re-rendered. Returning the
+	// source text verbatim would let a crafted default such as
+	// "current_timestamp(6), CHECK (pg_sleep(10) IS NULL) --)" inject into the DDL.
+	const ctPrefix = "current_timestamp("
+	if len(raw) > len(ctPrefix) && strings.EqualFold(raw[:len(ctPrefix)], ctPrefix) && strings.HasSuffix(raw, ")") {
+		inner := strings.TrimSpace(raw[len(ctPrefix) : len(raw)-1])
+		if inner == "" {
+			return "CURRENT_TIMESTAMP", nil
+		}
+		precision, err := strconv.Atoi(inner)
+		if err != nil || precision < 0 || precision > 6 {
+			return "", fmt.Errorf("unsupported current_timestamp default %q", raw)
+		}
+		return fmt.Sprintf("CURRENT_TIMESTAMP(%d)", precision), nil
 	}
 
 	unquoted := mysqlDefaultUnquote(raw)
@@ -1366,15 +1420,25 @@ func mysqlMapDefault(col Column, pgType string, typeMap TypeMappingConfig) (stri
 		return "", fmt.Errorf("geometry defaults are not supported (value %q)", raw)
 
 	case strings.HasPrefix(pgType, "bit(") || pgType == "varbit":
-		// MySQL BIT defaults are typically binary literals like b'0' or b'101'
-		if strings.HasPrefix(unquoted, "b'") && strings.HasSuffix(unquoted, "'") {
-			bits := unquoted[2 : len(unquoted)-1]
-			return fmt.Sprintf("B'%s'", bits), nil
+		// MySQL BIT defaults are typically binary literals like b'0' or b'101'.
+		bits := unquoted
+		if len(bits) >= 3 && (strings.HasPrefix(bits, "b'") || strings.HasPrefix(bits, "B'")) && strings.HasSuffix(bits, "'") {
+			bits = bits[2 : len(bits)-1]
 		}
-		return fmt.Sprintf("B'%s'", unquoted), nil
+		// This value is interpolated into a B'...' literal rather than escaped via
+		// pgLiteral, so it must be validated: a quote in a source-controlled default
+		// would otherwise break out into the generated DDL.
+		if !isBinaryDigits(bits) {
+			return "", fmt.Errorf("unsupported bit default %q: expected a binary literal", raw)
+		}
+		return fmt.Sprintf("B'%s'", bits), nil
 
 	case pgType == "text[]":
-		vals := parseMySQLSetDefault(unquoted)
+		// SET members may carry leading spaces, which MySQL preserves and which the
+		// generated CHECK constraint keeps. Parse from the original default text so
+		// the outer TrimSpace above cannot strip the first member's leading space and
+		// produce a DEFAULT that violates its own CHECK.
+		vals := parseMySQLSetDefault(mysqlDefaultUnquote(*col.Default))
 		if len(vals) == 0 {
 			return "ARRAY[]::text[]", nil
 		}
@@ -1452,6 +1516,18 @@ func mysqlDefaultUnquote(v string) string {
 		return strings.ReplaceAll(inner, "''", "'")
 	}
 	return v
+}
+
+// isBinaryDigits reports whether s consists solely of '0'/'1', i.e. whether it is
+// safe to interpolate into a PostgreSQL B'...' bit literal. The empty string is
+// accepted: MySQL's b” is a legal empty bit literal, and B” is injection-safe.
+func isBinaryDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '0' && s[i] != '1' {
+			return false
+		}
+	}
+	return true
 }
 
 // mysqlTimeToInterval converts a MySQL TIME string (e.g. "838:59:59", "-12:30:00")

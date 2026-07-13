@@ -13,7 +13,22 @@ description: Recover from common pgferry failures — unsupported types, FK erro
 | FK creation fails | inspect orphan data or use `before_fk` hooks |
 | missing extension | install the extension or change the mapping |
 | interrupted long run | rerun with the same config if `resume = true` |
+| dropped connection mid-copy | pgferry retries the affected chunk automatically; if it still fails, rerun with `resume = true` |
 | broken semantic object after migration | recreate it with hooks or separate DDL |
+
+## Interrupting a run
+
+Press `Ctrl+C` (or send `SIGTERM`) to stop a migration cleanly. pgferry cancels its workers, saves the checkpoint, and exits. With `resume = true`, the next run picks up from the completed chunks instead of redoing them.
+
+Press `Ctrl+C` a second time to abort immediately. That skips the checkpoint save, so progress since the last flush is lost and the resumed run repeats it.
+
+## Transient connection failures
+
+Connection-level failures during the data copy — a dropped socket, a managed-database failover, a target briefly refusing connections — are retried automatically with exponential backoff before the run is failed. Each chunk is copied in its own transaction and rolls back cleanly on error, so a retried chunk cannot duplicate rows.
+
+Retries apply to the parallel copy path. `source_snapshot_mode = "single_tx"` holds one long-lived source transaction, and reconnecting would silently replace its snapshot, so a lost connection there fails the run instead — rerun with `resume = true`.
+
+Errors that will not fix themselves (a missing relation, a type or constraint violation) fail immediately rather than burning retries.
 
 ## Recovery rules
 

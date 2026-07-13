@@ -26,6 +26,7 @@ These are command-line flags, not TOML keys:
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
+| `--config` | none | Path to the TOML config file. Accepted on the root command and on `migrate`, as an alternative to passing the path positionally. |
 | `--log-format` | `text` | Values: `text`, `json`. `json` writes one machine-readable summary object to stdout when `migrate` finishes. Human progress and errors stay on stderr. |
 | `--log-level` | `verbose` | Values: `verbose`, `table`, `schema`. Controls row-copy progress detail. `verbose` includes per-chunk start/done logs. `table` emits one row-copy start/done pair per table. `schema` suppresses row-copy detail. |
 | `--quiet`, `-q` | `false` | Shorthand for `--log-level table`. Cannot be combined with an explicit `--log-level`. |
@@ -217,6 +218,8 @@ xml_as_text = false
 collation_mode = "none"
 ci_as_citext = false
 ```
+
+The `enum_mode` default is source-dependent: `check` for MySQL and MariaDB sources, `text` for everything else. The block above shows the MySQL-family default.
 
 Optional MySQL-family collation remapping:
 

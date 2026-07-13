@@ -57,6 +57,11 @@ func parseMySQLEnumSetValues(columnType string) ([]string, error) {
 	return values, nil
 }
 
+// parseMySQLSetDefault splits a MySQL SET column default ("a,b") into its members.
+// Members are kept verbatim: MySQL preserves leading spaces in SET/ENUM member
+// values, and both the generated CHECK constraint (parseMySQLEnumSetValues) and
+// the row transformer (mysqlSetTextArrayTransformer) split without trimming.
+// Trimming here produced a DEFAULT that its own CHECK constraint rejected.
 func parseMySQLSetDefault(v string) []string {
 	if v == "" {
 		return nil
@@ -64,7 +69,6 @@ func parseMySQLSetDefault(v string) []string {
 	parts := strings.Split(v, ",")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
-		p = strings.TrimSpace(p)
 		if p == "" {
 			continue
 		}

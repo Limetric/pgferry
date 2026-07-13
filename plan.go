@@ -247,11 +247,20 @@ type PlanSourceTrigger struct {
 	Definition string `json:"definition,omitempty"`
 }
 
+// PlanSourceEvent is a scheduled event on the source database (MySQL/MariaDB event
+// scheduler). PostgreSQL has no equivalent.
+type PlanSourceEvent struct {
+	Name       string `json:"name"`
+	Dialect    string `json:"dialect,omitempty"`
+	Definition string `json:"definition,omitempty"`
+}
+
 // PlanSourceObjects holds non-table source objects.
 type PlanSourceObjects struct {
 	Views    []PlanSourceView    `json:"views"`
 	Routines []PlanSourceRoutine `json:"routines"`
 	Triggers []PlanSourceTrigger `json:"triggers"`
+	Events   []PlanSourceEvent   `json:"events"`
 }
 
 // MarshalJSON emits empty arrays for nil slices (including triggers) so saved reports stay consistent.
@@ -260,12 +269,21 @@ func (p PlanSourceObjects) MarshalJSON() ([]byte, error) {
 		Views    []PlanSourceView    `json:"views"`
 		Routines []PlanSourceRoutine `json:"routines"`
 		Triggers []PlanSourceTrigger `json:"triggers"`
+		Events   []PlanSourceEvent   `json:"events"`
 	}
 	return json.Marshal(out{
 		Views:    ensurePlanViewsSlice(p.Views),
 		Routines: ensurePlanRoutinesSlice(p.Routines),
 		Triggers: ensurePlanTriggersSlice(p.Triggers),
+		Events:   ensurePlanEventsSlice(p.Events),
 	})
+}
+
+func ensurePlanEventsSlice(e []PlanSourceEvent) []PlanSourceEvent {
+	if e == nil {
+		return []PlanSourceEvent{}
+	}
+	return e
 }
 
 func ensurePlanViewsSlice(v []PlanSourceView) []PlanSourceView {
@@ -295,6 +313,7 @@ func (p *PlanSourceObjects) UnmarshalJSON(data []byte) error {
 		Views    json.RawMessage `json:"views"`
 		Routines json.RawMessage `json:"routines"`
 		Triggers json.RawMessage `json:"triggers"`
+		Events   json.RawMessage `json:"events"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -307,8 +326,13 @@ func (p *PlanSourceObjects) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	events, err := decodePlanSourceEvents(raw.Events)
+	if err != nil {
+		return err
+	}
 	p.Views = views
 	p.Routines = routines
+	p.Events = events
 	if len(raw.Triggers) == 0 || string(bytes.TrimSpace(raw.Triggers)) == "null" {
 		p.Triggers = []PlanSourceTrigger{}
 		return nil
@@ -363,6 +387,27 @@ func decodePlanSourceRoutines(data json.RawMessage) ([]PlanSourceRoutine, error)
 	var objs []PlanSourceRoutine
 	if err := json.Unmarshal(data, &objs); err != nil {
 		return nil, fmt.Errorf("source_objects.routines: expected string array or object array: %w", err)
+	}
+	return objs, nil
+}
+
+// decodePlanSourceEvents accepts the object form, and tolerates its absence so
+// reports saved before events were introspected still load via plan --input.
+func decodePlanSourceEvents(data json.RawMessage) ([]PlanSourceEvent, error) {
+	if len(data) == 0 || string(bytes.TrimSpace(data)) == "null" {
+		return []PlanSourceEvent{}, nil
+	}
+	var strs []string
+	if err := json.Unmarshal(data, &strs); err == nil {
+		out := make([]PlanSourceEvent, len(strs))
+		for i, s := range strs {
+			out[i] = PlanSourceEvent{Name: s}
+		}
+		return out, nil
+	}
+	var objs []PlanSourceEvent
+	if err := json.Unmarshal(data, &objs); err != nil {
+		return nil, fmt.Errorf("source_objects.events: expected string array or object array: %w", err)
 	}
 	return objs, nil
 }
@@ -800,6 +845,7 @@ func buildPlanReport(schema *Schema, sourceObjects *SourceObjects, semanticWarni
 		report.SourceObjects.Views = planViewsFromSource(sourceObjects.Views)
 		report.SourceObjects.Routines = planRoutinesFromSource(sourceObjects.Routines)
 		report.SourceObjects.Triggers = planTriggersFromSource(sourceObjects.Triggers)
+		report.SourceObjects.Events = planEventsFromSource(sourceObjects.Events)
 	} else {
 		report.SourceObjects.Views = []PlanSourceView{}
 		report.SourceObjects.Routines = []PlanSourceRoutine{}
@@ -917,6 +963,17 @@ func planTriggersFromSource(tr []SourceTrigger) []PlanSourceTrigger {
 	out := make([]PlanSourceTrigger, len(tr))
 	for i, t := range tr {
 		out[i] = PlanSourceTrigger(t)
+	}
+	return out
+}
+
+func planEventsFromSource(ev []SourceEvent) []PlanSourceEvent {
+	if len(ev) == 0 {
+		return []PlanSourceEvent{}
+	}
+	out := make([]PlanSourceEvent, len(ev))
+	for i, e := range ev {
+		out[i] = PlanSourceEvent(e)
 	}
 	return out
 }
@@ -1089,7 +1146,7 @@ func writePlanText(w io.Writer, report *PlanReport) {
 
 	// Source objects
 	objs := &report.SourceObjects
-	if len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 {
+	if len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 || len(objs.Events) > 0 {
 		hasContent = true
 		fmt.Fprintf(w, "## Source Objects (require manual migration)\n\n")
 		if planSourceObjectsHaveDefinitions(*objs) {
@@ -1128,6 +1185,15 @@ func writePlanText(w io.Writer, report *PlanReport) {
 				}
 			}
 			fmt.Fprintf(w, "  Recommended hook phase: after_all\n\n")
+		}
+		if len(objs.Events) > 0 {
+			fmt.Fprintf(w, "Events (%d):\n", len(objs.Events))
+			fmt.Fprintf(w, "  Note: PostgreSQL has no event scheduler. Recreate these with pg_cron\n")
+			fmt.Fprintf(w, "  or an external scheduler.\n")
+			for _, e := range objs.Events {
+				fmt.Fprintf(w, "  - %s\n", e.Name)
+			}
+			fmt.Fprintln(w)
 		}
 	}
 
@@ -1336,7 +1402,7 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 	}
 
 	objs := &report.SourceObjects
-	if len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 {
+	if len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 || len(objs.Events) > 0 {
 		hasContent = true
 		fmt.Fprintln(w, "## Source Objects")
 		fmt.Fprintln(w)
@@ -1375,6 +1441,15 @@ func writePlanMarkdown(w io.Writer, report *PlanReport) {
 			}
 			fmt.Fprintln(w)
 			fmt.Fprintf(w, "Recommended hook phase: %s\n\n", markdownCode("after_all"))
+		}
+		if len(objs.Events) > 0 {
+			fmt.Fprintf(w, "### Events (%d)\n\n", len(objs.Events))
+			fmt.Fprintln(w, "PostgreSQL has no event scheduler. Recreate these with pg_cron or an external scheduler.")
+			fmt.Fprintln(w)
+			for _, e := range objs.Events {
+				fmt.Fprintf(w, "- %s\n", markdownEscape(e.Name))
+			}
+			fmt.Fprintln(w)
 		}
 	}
 
@@ -1686,7 +1761,7 @@ func buildAfterDataSkeleton(report *PlanReport) string {
 
 func buildAfterAllSkeleton(report *PlanReport) string {
 	objs := &report.SourceObjects
-	hasObjects := len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0
+	hasObjects := len(objs.Views) > 0 || len(objs.Routines) > 0 || len(objs.Triggers) > 0 || len(objs.Events) > 0
 	hasIndexes := len(report.SkippedIndexes) > 0
 	hasUnsupportedColumns := len(report.UnsupportedColumns) > 0
 
@@ -1732,6 +1807,16 @@ func buildAfterAllSkeleton(report *PlanReport) string {
 				fmt.Fprintf(&b, "-- TODO: CREATE TRIGGER %s ...;\n", pgIdent(tg.Name))
 			}
 			appendCommentedSourceDefinition(&b, tg.Dialect, tg.Definition, "Informational source SQL only. Rebuild with PostgreSQL trigger functions.")
+		}
+		b.WriteByte('\n')
+	}
+
+	if len(objs.Events) > 0 {
+		b.WriteString("-- Scheduled Events\n")
+		b.WriteString("-- PostgreSQL has no event scheduler. Recreate these with pg_cron or an external scheduler.\n")
+		for _, e := range objs.Events {
+			fmt.Fprintf(&b, "-- TODO: schedule %s outside PostgreSQL\n", sanitizeSQLCommentText(e.Name))
+			appendCommentedSourceDefinition(&b, e.Dialect, e.Definition, "Informational source SQL only. PostgreSQL cannot schedule this natively.")
 		}
 		b.WriteByte('\n')
 	}
@@ -1830,6 +1915,11 @@ func planSourceObjectsHaveDefinitions(objs PlanSourceObjects) bool {
 	}
 	for _, t := range objs.Triggers {
 		if strings.TrimSpace(t.Definition) != "" {
+			return true
+		}
+	}
+	for _, e := range objs.Events {
+		if strings.TrimSpace(e.Definition) != "" {
 			return true
 		}
 	}

@@ -43,8 +43,8 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	compat := testCheckpointCompatibility()
 	state := newCheckpointStateWithCompatibility(&compat)
 	state.recordFullTable("users", 1000)
-	state.recordChunk("orders", 0, 500, 3)
-	state.recordChunk("orders", 1, 300, 3)
+	state.recordChunk("orders", testChunk(0), 500, 3)
+	state.recordChunk("orders", testChunk(1), 300, 3)
 
 	if err := saveCheckpoint(path, state); err != nil {
 		t.Fatalf("save: %v", err)
@@ -143,9 +143,9 @@ func TestCheckpointPath(t *testing.T) {
 
 func TestCheckpointRecordChunkAccumulates(t *testing.T) {
 	state := newCheckpointState()
-	state.recordChunk("t1", 0, 100, 3)
-	state.recordChunk("t1", 1, 200, 3)
-	state.recordChunk("t1", 2, 150, 3)
+	state.recordChunk("t1", testChunk(0), 100, 3)
+	state.recordChunk("t1", testChunk(1), 200, 3)
+	state.recordChunk("t1", testChunk(2), 150, 3)
 
 	tc := state.Tables["t1"]
 	if tc.TotalRowsCopied != 450 {
@@ -194,13 +194,13 @@ func TestNoopCheckpointManager(t *testing.T) {
 	if mgr.IsTableDone("anything") {
 		t.Error("noop should never report table done")
 	}
-	if mgr.IsChunkCompleted("anything", 0) {
+	if mgr.IsChunkCompleted("anything", testChunk(0)) {
 		t.Error("noop should never report chunk completed")
 	}
 
 	// Record calls should not panic
 	mgr.RecordFullTable("t1", 1000)
-	mgr.RecordChunk("t1", 0, 500, 3)
+	mgr.RecordChunk("t1", testChunk(0), 500, 3)
 
 	if err := mgr.Flush(); err != nil {
 		t.Errorf("Flush: %v", err)
@@ -250,7 +250,7 @@ func TestPersistentCheckpointManager_FreshStart(t *testing.T) {
 	if mgr.IsTableDone("t1") {
 		t.Error("fresh manager should not report table done")
 	}
-	if mgr.IsChunkCompleted("t1", 0) {
+	if mgr.IsChunkCompleted("t1", testChunk(0)) {
 		t.Error("fresh manager should not report chunk completed")
 	}
 	if mgr.state.Compatibility == nil {
@@ -268,8 +268,8 @@ func TestPersistentCheckpointManager_SkipSets(t *testing.T) {
 	// Create a checkpoint with some completed work
 	state := newCheckpointState()
 	state.recordFullTable("users", 1000)
-	state.recordChunk("orders", 0, 500, 3)
-	state.recordChunk("orders", 1, 300, 3)
+	state.recordChunk("orders", testChunk(0), 500, 3)
+	state.recordChunk("orders", testChunk(1), 300, 3)
 	if err := saveCheckpoint(path, state); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -287,16 +287,16 @@ func TestPersistentCheckpointManager_SkipSets(t *testing.T) {
 	if mgr.IsTableDone("orders") {
 		t.Error("orders should not be done")
 	}
-	if !mgr.IsChunkCompleted("orders", 0) {
+	if !mgr.IsChunkCompleted("orders", testChunk(0)) {
 		t.Error("orders chunk 0 should be completed")
 	}
-	if !mgr.IsChunkCompleted("orders", 1) {
+	if !mgr.IsChunkCompleted("orders", testChunk(1)) {
 		t.Error("orders chunk 1 should be completed")
 	}
-	if mgr.IsChunkCompleted("orders", 2) {
+	if mgr.IsChunkCompleted("orders", testChunk(2)) {
 		t.Error("orders chunk 2 should not be completed")
 	}
-	if mgr.IsChunkCompleted("nonexistent", 0) {
+	if mgr.IsChunkCompleted("nonexistent", testChunk(0)) {
 		t.Error("nonexistent table should not have completed chunks")
 	}
 }
@@ -312,14 +312,14 @@ func TestPersistentCheckpointManager_BatchedFlush(t *testing.T) {
 
 	// Record fewer items than the flush threshold — file should not exist yet
 	for i := 0; i < checkpointFlushCount-1; i++ {
-		mgr.RecordChunk("t1", i, 100, checkpointFlushCount+5)
+		mgr.RecordChunk("t1", testChunk(i), 100, checkpointFlushCount+5)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("checkpoint file should not exist before flush threshold")
 	}
 
 	// One more record should trigger the flush
-	mgr.RecordChunk("t1", checkpointFlushCount-1, 100, checkpointFlushCount+5)
+	mgr.RecordChunk("t1", testChunk(checkpointFlushCount-1), 100, checkpointFlushCount+5)
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("checkpoint file should exist after flush threshold")
 	}
@@ -416,7 +416,7 @@ func TestPersistentCheckpointManager_ConcurrentRecords(t *testing.T) {
 			tableName := "t1"
 			for i := 0; i < chunksPerWorker; i++ {
 				idx := workerID*chunksPerWorker + i
-				mgr.RecordChunk(tableName, idx, 100, numWorkers*chunksPerWorker)
+				mgr.RecordChunk(tableName, testChunk(idx), 100, numWorkers*chunksPerWorker)
 			}
 		}(w)
 	}
@@ -455,7 +455,7 @@ func TestPersistentCheckpointManager_TimeBasedFlush(t *testing.T) {
 	mgr.mu.Unlock()
 
 	// Even a single record should trigger flush due to elapsed time
-	mgr.RecordChunk("t1", 0, 100, 5)
+	mgr.RecordChunk("t1", testChunk(0), 100, 5)
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		t.Error("checkpoint file should exist after time-based flush")
@@ -472,8 +472,8 @@ func TestPersistentCheckpointManager_FlushPreservesProgressOnError(t *testing.T)
 	}
 
 	// Simulate partial migration: some chunks succeed, then an error occurs.
-	mgr.RecordChunk("orders", 0, 500, 5)
-	mgr.RecordChunk("orders", 1, 500, 5)
+	mgr.RecordChunk("orders", testChunk(0), 500, 5)
+	mgr.RecordChunk("orders", testChunk(1), 500, 5)
 	mgr.RecordFullTable("users", 1000)
 
 	// Explicit flush (as the error path in migrateData would do)
@@ -507,13 +507,13 @@ func TestPersistentCheckpointManager_FlushPreservesProgressOnError(t *testing.T)
 	if !mgr2.IsTableDone("users") {
 		t.Error("resumed manager should skip users")
 	}
-	if !mgr2.IsChunkCompleted("orders", 0) {
+	if !mgr2.IsChunkCompleted("orders", testChunk(0)) {
 		t.Error("resumed manager should skip orders chunk 0")
 	}
-	if !mgr2.IsChunkCompleted("orders", 1) {
+	if !mgr2.IsChunkCompleted("orders", testChunk(1)) {
 		t.Error("resumed manager should skip orders chunk 1")
 	}
-	if mgr2.IsChunkCompleted("orders", 2) {
+	if mgr2.IsChunkCompleted("orders", testChunk(2)) {
 		t.Error("resumed manager should not skip orders chunk 2")
 	}
 }
@@ -527,7 +527,7 @@ func TestPersistentCheckpointManager_DirtyRetainedOnWriteFailure(t *testing.T) {
 		t.Fatalf("new manager: %v", err)
 	}
 
-	mgr.RecordChunk("t1", 0, 100, 5)
+	mgr.RecordChunk("t1", testChunk(0), 100, 5)
 
 	// Flush should fail because the directory doesn't exist
 	if err := mgr.Flush(); err == nil {
@@ -549,7 +549,7 @@ func TestPersistentCheckpointManager_RejectsIncompatibleChunkSize(t *testing.T) 
 
 	compat := testCheckpointCompatibility()
 	state := newCheckpointStateWithCompatibility(&compat)
-	state.recordChunk("users", 0, 100, 2)
+	state.recordChunk("users", testChunk(0), 100, 2)
 	if err := saveCheckpoint(path, state); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -656,11 +656,31 @@ func TestPersistentCheckpointManager_RejectsLegacyCheckpointForSafeResume(t *tes
 	}
 }
 
-func TestPersistentCheckpointManager_RejectsMissingCompatibilityMetadata(t *testing.T) {
+func TestPersistentCheckpointManager_RejectsPreChunkPlannerFixCheckpoint(t *testing.T) {
+	// Version 2 checkpoints were written by a planner whose chunk ordinals mapped
+	// to different key ranges (pre-#257). Resuming one would skip or re-copy rows.
 	dir := t.TempDir()
 	path := filepath.Join(dir, "checkpoint.json")
 
 	if err := os.WriteFile(path, []byte(`{"version":2,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	compat := testCheckpointCompatibility()
+	_, err := newPersistentCheckpointManager(path, &compat)
+	if err == nil {
+		t.Fatal("expected pre-planner-fix checkpoint rejection")
+	}
+	if !strings.Contains(err.Error(), "older pgferry version") {
+		t.Fatalf("expected legacy version message, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsMissingCompatibilityMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	if err := os.WriteFile(path, []byte(`{"version":3,"started_at":"2026-01-01T00:00:00Z","tables":{}}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -798,5 +818,330 @@ func TestCheckpointCompactJSON(t *testing.T) {
 	}
 	if !loaded.isTableDone("t1") {
 		t.Error("t1 should be done")
+	}
+}
+
+func TestPersistentCheckpointManager_RejectsMovedKeyRangeOnResume(t *testing.T) {
+	// Chunk ordinals are only meaningful relative to the key range they were
+	// planned over: chunk i covers [min + i*chunkSize, ...). If rows are inserted
+	// between runs, MAX moves, chunk i denotes a different slice of the table, and
+	// trusting the ordinal would skip or duplicate rows. Fail loudly instead.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	first, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	original := planChunks(1, 250, 100)
+	if err := first.PrepareTablePlan("orders", 1, 250, original); err != nil {
+		t.Fatalf("PrepareTablePlan: %v", err)
+	}
+	// Complete the last chunk only, then crash.
+	last := original[len(original)-1]
+	first.RecordChunk("orders", last, 50, len(original))
+	if err := first.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	// The source grew to 400 before the retry, so the replanned chunk 2 covers a
+	// different range than the one recorded.
+	resumed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	grown := planChunks(1, 400, 100)
+	err = resumed.PrepareTablePlan("orders", 1, 400, grown)
+	if err == nil {
+		t.Fatal("expected the resume to be refused after the source key range moved")
+	}
+	if !strings.Contains(err.Error(), "key range changed") {
+		t.Fatalf("error should explain the moved key range, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_AcceptsUnchangedKeyRangeOnResume(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	first, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	chunks := planChunks(1, 250, 100)
+	if err := first.PrepareTablePlan("orders", 1, 250, chunks); err != nil {
+		t.Fatalf("PrepareTablePlan: %v", err)
+	}
+	first.RecordChunk("orders", chunks[0], 100, len(chunks))
+	if err := first.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	resumed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	if err := resumed.PrepareTablePlan("orders", 1, 250, chunks); err != nil {
+		t.Fatalf("an unchanged key range must resume cleanly, got: %v", err)
+	}
+	if !resumed.IsChunkCompleted("orders", chunks[0]) {
+		t.Error("chunk 0 was completed and should be skipped on resume")
+	}
+	if resumed.IsChunkCompleted("orders", chunks[1]) {
+		t.Error("chunk 1 was never completed and must be copied")
+	}
+}
+
+func TestPersistentCheckpointManager_ChunkMatchIsBoundsAwareNotOrdinalOnly(t *testing.T) {
+	// Second line of defence: even if a chunk with the same ordinal appears, it is
+	// only treated as completed when it covers the same key bounds.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	mgr, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	recorded := Chunk{Index: 2, LowerBound: 201, UpperBound: 250, IsLast: true}
+	mgr.RecordChunk("orders", recorded, 50, 3)
+	if err := mgr.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	resumed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	if !resumed.IsChunkCompleted("orders", recorded) {
+		t.Error("the identical chunk should be reported completed")
+	}
+	sameOrdinalDifferentRange := Chunk{Index: 2, LowerBound: 201, UpperBound: 301, IsLast: false}
+	if resumed.IsChunkCompleted("orders", sameOrdinalDifferentRange) {
+		t.Error("a chunk with the same ordinal but different bounds must not count as completed")
+	}
+}
+
+func TestCheckpointRecordsChunkBoundsAndKeyRange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+
+	state := newCheckpointState()
+	state.recordKeyRange("orders", 1, 250)
+	state.recordChunk("orders", Chunk{Index: 0, LowerBound: 1, UpperBound: 101}, 100, 3)
+	if err := saveCheckpoint(path, state); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	tc := loaded.Tables["orders"]
+	if tc.KeyRange == nil {
+		t.Fatal("key range was not persisted")
+	}
+	if tc.KeyRange.Min != 1 || tc.KeyRange.Max != 250 {
+		t.Errorf("key range = %+v, want {1 250}", tc.KeyRange)
+	}
+	res := tc.CompletedChunks[0]
+	if res.LowerBound != 1 || res.UpperBound != 101 {
+		t.Errorf("chunk bounds = %d..%d, want 1..101", res.LowerBound, res.UpperBound)
+	}
+}
+
+func TestPersistentCheckpointManager_RefusesResumeAfterCrashDuringFullTableCopy(t *testing.T) {
+	// The scenario from #260: a full-table COPY of a PK-less table commits 40M rows
+	// in PostgreSQL, then the machine dies before the checkpoint records it. Nothing
+	// in the target can detect the resulting duplicates, so the resume must refuse
+	// rather than copy the table a second time.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	crashed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := crashed.BeginFullTable("events"); err != nil {
+		t.Fatalf("BeginFullTable: %v", err)
+	}
+	// The marker must already be durable — a hard crash runs no more code here.
+	// (No Flush(), no ClearInFlight(): simulate kill -9.)
+
+	resumed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	if resumed.IsTableDone("events") {
+		t.Fatal("the interrupted table must not be reported as done")
+	}
+	err = resumed.BeginFullTable("events")
+	if err == nil {
+		t.Fatal("expected the resume to refuse a table whose full-table copy was interrupted by a crash")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("error should warn about duplication, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_CleanExitClearsInFlightMarker(t *testing.T) {
+	// A cancelled or failed COPY rolls back, so a clean exit must not leave a marker
+	// that would block a legitimate resume.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	first, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := first.BeginFullTable("events"); err != nil {
+		t.Fatalf("BeginFullTable: %v", err)
+	}
+	// Simulate an interrupt: the COPY rolled back, and the run exits cleanly.
+	first.ClearInFlight()
+	if err := first.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	resumed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	if err := resumed.BeginFullTable("events"); err != nil {
+		t.Fatalf("a cleanly interrupted table must be resumable, got: %v", err)
+	}
+}
+
+func TestPersistentCheckpointManager_CompletedFullTableResumesAsDone(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	first, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := first.BeginFullTable("events"); err != nil {
+		t.Fatalf("BeginFullTable: %v", err)
+	}
+	first.RecordFullTable("events", 40_000_000)
+	if err := first.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	resumed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	if !resumed.IsTableDone("events") {
+		t.Error("a completed full-table copy should be skipped on resume")
+	}
+	// Recording completion must clear the in-flight marker, or the table would be
+	// both done and blocked.
+	if err := resumed.BeginFullTable("events"); err != nil {
+		t.Errorf("a completed table must not carry a stale in-flight marker: %v", err)
+	}
+}
+
+func TestBeginFullTableIsDurableBeforeTheCopyStarts(t *testing.T) {
+	// The marker exists to detect a crash between the COPY commit and the checkpoint
+	// write. If it is only in memory, it cannot detect the crash it exists for.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	mgr, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := mgr.BeginFullTable("events"); err != nil {
+		t.Fatalf("BeginFullTable: %v", err)
+	}
+
+	// Read the file directly: no Flush() was called after BeginFullTable.
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded == nil || loaded.Tables["events"] == nil {
+		t.Fatal("BeginFullTable did not persist the table entry")
+	}
+	if !loaded.Tables["events"].InFlight {
+		t.Error("the in-flight marker must be on disk before the COPY starts")
+	}
+}
+
+func TestPersistentCheckpointManager_CrashMarkerSurvivesTheRefusedResume(t *testing.T) {
+	// A refused resume still exits "cleanly" and clears in-flight markers. It must
+	// clear only the markers IT created — if it also cleared the one inherited from
+	// the crashed run, the next resume would happily copy the ambiguous table and
+	// duplicate it, defeating the guard entirely.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	crashed, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if err := crashed.BeginFullTable("events"); err != nil {
+		t.Fatalf("BeginFullTable: %v", err)
+	}
+	// Hard crash: no ClearInFlight, no Flush.
+
+	// Second run: refuses, then exits cleanly (which calls ClearInFlight + Flush).
+	second, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("resume manager: %v", err)
+	}
+	if err := second.BeginFullTable("events"); err == nil {
+		t.Fatal("the second run should have refused the ambiguous table")
+	}
+	second.ClearInFlight()
+	if err := second.Flush(); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	// Third run must STILL refuse.
+	third, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("third manager: %v", err)
+	}
+	if err := third.BeginFullTable("events"); err == nil {
+		t.Fatal("the crash marker was erased by the refused resume; a third run would silently duplicate the table")
+	}
+}
+
+func TestBeginFullTableIsDurableEvenWhileAnotherFlushIsInProgress(t *testing.T) {
+	// Flush() skips when a flush is already running. BeginFullTable must not rely on
+	// that path, or its marker can be lost exactly when concurrent workers are busy.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "checkpoint.json")
+	compat := testCheckpointCompatibility()
+
+	mgr, err := newPersistentCheckpointManager(path, &compat)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	// Simulate a flush already in progress.
+	mgr.mu.Lock()
+	mgr.flushing = true
+	mgr.mu.Unlock()
+
+	if err := mgr.BeginFullTable("events"); err != nil {
+		t.Fatalf("BeginFullTable: %v", err)
+	}
+
+	loaded, err := loadCheckpoint(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if loaded == nil || loaded.Tables["events"] == nil || !loaded.Tables["events"].InFlight {
+		t.Fatal("the in-flight marker was not durable while another flush was in progress")
 	}
 }

@@ -314,17 +314,38 @@ type fakeMigrationCheckpointManager struct {
 	mu            sync.Mutex
 	recordedFull  []string
 	recordedChunk []string
+	begunFull     []string
+
+	beginFullTableErr error
+	clearedInFlight   bool
 }
 
 func (m *fakeMigrationCheckpointManager) IsTableDone(tableName string) bool {
 	return m.doneTables[tableName]
 }
 
-func (m *fakeMigrationCheckpointManager) IsChunkCompleted(tableName string, chunkIndex int) bool {
+func (m *fakeMigrationCheckpointManager) IsChunkCompleted(tableName string, chunk Chunk) bool {
 	if chunks, ok := m.doneChunks[tableName]; ok {
-		return chunks[chunkIndex]
+		return chunks[chunk.Index]
 	}
 	return false
+}
+
+func (m *fakeMigrationCheckpointManager) PrepareTablePlan(string, int64, int64, []Chunk) error {
+	return nil
+}
+
+func (m *fakeMigrationCheckpointManager) BeginFullTable(tableName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.begunFull = append(m.begunFull, tableName)
+	return m.beginFullTableErr
+}
+
+func (m *fakeMigrationCheckpointManager) ClearInFlight() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.clearedInFlight = true
 }
 
 func (m *fakeMigrationCheckpointManager) RecordFullTable(tableName string, _ int64) {
@@ -333,14 +354,25 @@ func (m *fakeMigrationCheckpointManager) RecordFullTable(tableName string, _ int
 	m.recordedFull = append(m.recordedFull, tableName)
 }
 
-func (m *fakeMigrationCheckpointManager) RecordChunk(tableName string, chunkIndex int, _ int64, _ int) {
+func (m *fakeMigrationCheckpointManager) RecordChunk(tableName string, chunk Chunk, _ int64, _ int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.recordedChunk = append(m.recordedChunk, tableName+":"+fmt.Sprint(chunkIndex))
+	m.recordedChunk = append(m.recordedChunk, tableName+":"+fmt.Sprint(chunk.Index))
 }
 
 func (m *fakeMigrationCheckpointManager) Flush() error   { return nil }
 func (m *fakeMigrationCheckpointManager) Cleanup() error { return nil }
+
+// testChunk builds a Chunk with deterministic bounds for the given ordinal, so
+// tests exercise the same bounds-matching the real planner produces.
+func testChunk(index int) Chunk {
+	lower := int64(index) * 100
+	return Chunk{
+		Index:      index,
+		LowerBound: lower,
+		UpperBound: lower + 100,
+	}
+}
 
 type fakeMigrationWorkerSource struct {
 	id          int
@@ -642,7 +674,10 @@ func TestBuildParallelMigrationWorkItems_SkipsCompletedResumeEntries(t *testing.
 		doneChunks: map[string]map[int]bool{"orders": {1: true}},
 	}
 
-	got := buildParallelMigrationWorkItems(plans, mgr)
+	got, err := buildParallelMigrationWorkItems(plans, mgr)
+	if err != nil {
+		t.Fatalf("buildParallelMigrationWorkItems: %v", err)
+	}
 	if len(got) != 5 {
 		t.Fatalf("work item count = %d, want 5", len(got))
 	}
@@ -701,7 +736,10 @@ func TestBuildParallelMigrationWorkItems_ChunksSharePGCopyColumnsSlice(t *testin
 		Chunks:        []Chunk{{Index: 0}, {Index: 1}},
 		PGCopyColumns: pgCols,
 	}}
-	items := buildParallelMigrationWorkItems(plans, &fakeMigrationCheckpointManager{})
+	items, err := buildParallelMigrationWorkItems(plans, &fakeMigrationCheckpointManager{})
+	if err != nil {
+		t.Fatalf("buildParallelMigrationWorkItems: %v", err)
+	}
 	if len(items) != 2 {
 		t.Fatalf("work items = %d, want 2", len(items))
 	}
@@ -721,7 +759,10 @@ func TestBuildParallelMigrationWorkItems_FullTableCarriesPlanPGCopyColumns(t *te
 	}
 	pgCols := tablePGCopyColumns(table)
 	plan := ChunkPlan{Table: table, ChunkSize: 100_000, PGCopyColumns: pgCols}
-	items := buildParallelMigrationWorkItems([]ChunkPlan{plan}, &fakeMigrationCheckpointManager{})
+	items, err := buildParallelMigrationWorkItems([]ChunkPlan{plan}, &fakeMigrationCheckpointManager{})
+	if err != nil {
+		t.Fatalf("buildParallelMigrationWorkItems: %v", err)
+	}
 	if len(items) != 1 {
 		t.Fatalf("work items = %d, want 1", len(items))
 	}

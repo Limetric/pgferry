@@ -408,6 +408,14 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 			localCols := quotedColumnList(fk.Columns)
 			refCols := quotedColumnList(fk.RefColumns)
 			fkName := generatedForeignKeyName(fk)
+			updateRule, err := referentialAction(fk.UpdateRule)
+			if err != nil {
+				return fmt.Errorf("foreign key %s on %s: ON UPDATE: %w", fkName, t.PGName, err)
+			}
+			deleteRule, err := referentialAction(fk.DeleteRule)
+			if err != nil {
+				return fmt.Errorf("foreign key %s on %s: ON DELETE: %w", fkName, t.PGName, err)
+			}
 			q := fmt.Sprintf(
 				"ALTER TABLE %s.%s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s.%s(%s) ON UPDATE %s ON DELETE %s",
 				pgIdent(pgSchema), pgIdent(t.PGName),
@@ -415,7 +423,7 @@ func addForeignKeys(ctx context.Context, pool *pgxpool.Pool, schema *Schema, pgS
 				localCols,
 				pgIdent(pgSchema), pgIdent(fk.RefPGTable),
 				refCols,
-				fk.UpdateRule, fk.DeleteRule,
+				updateRule, deleteRule,
 			)
 			if err := execSQL(ctx, pool, fkName, q); err != nil {
 				return err
@@ -820,6 +828,24 @@ func setTableTriggers(ctx context.Context, exec statementExecutor, pgSchema, tab
 		return err
 	}
 	return nil
+}
+
+// referentialAction validates a foreign key ON UPDATE / ON DELETE action read
+// from the source catalog against the actions PostgreSQL accepts. The action is
+// interpolated into DDL as bare SQL rather than as a quoted identifier or
+// literal, so it must come from a fixed set. Real source engines canonicalize
+// these values, so a rejection means the catalog returned something unexpected.
+func referentialAction(rule string) (string, error) {
+	normalized := strings.Join(strings.Fields(strings.ToUpper(strings.TrimSpace(rule))), " ")
+	switch normalized {
+	case "":
+		// MySQL omits the clause entirely when no action is declared.
+		return "NO ACTION", nil
+	case "NO ACTION", "RESTRICT", "CASCADE", "SET NULL", "SET DEFAULT":
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unsupported referential action %q", rule)
+	}
 }
 
 // quotedColumnList joins column names with proper quoting.

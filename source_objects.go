@@ -32,11 +32,20 @@ type SourceTrigger struct {
 	Definition string
 }
 
+// SourceEvent is a scheduled event (MySQL/MariaDB event scheduler). PostgreSQL has
+// no equivalent, so these are reported rather than migrated.
+type SourceEvent struct {
+	Name       string
+	Dialect    string
+	Definition string
+}
+
 // SourceObjects holds non-table source objects that require manual migration.
 type SourceObjects struct {
 	Views    []SourceView
 	Routines []SourceRoutine
 	Triggers []SourceTrigger
+	Events   []SourceEvent
 }
 
 func sourceObjectWarnings(objs *SourceObjects) []string {
@@ -45,14 +54,14 @@ func sourceObjectWarnings(objs *SourceObjects) []string {
 	}
 
 	var warnings []string
-	if len(objs.Views) == 0 && len(objs.Routines) == 0 && len(objs.Triggers) == 0 {
+	if len(objs.Views) == 0 && len(objs.Routines) == 0 && len(objs.Triggers) == 0 && len(objs.Events) == 0 {
 		return warnings
 	}
 
 	warnings = append(warnings,
 		fmt.Sprintf(
-			"source contains non-table objects not migrated automatically (%d views, %d routines, %d triggers)",
-			len(objs.Views), len(objs.Routines), len(objs.Triggers),
+			"source contains non-table objects not migrated automatically (%d views, %d routines, %d triggers, %d events)",
+			len(objs.Views), len(objs.Routines), len(objs.Triggers), len(objs.Events),
 		),
 	)
 	for _, v := range objs.Views {
@@ -67,6 +76,9 @@ func sourceObjectWarnings(objs *SourceObjects) []string {
 		} else {
 			warnings = append(warnings, fmt.Sprintf("trigger: %s", t.Name))
 		}
+	}
+	for _, e := range objs.Events {
+		warnings = append(warnings, fmt.Sprintf("event: %s", e.Name))
 	}
 	return warnings
 }

@@ -42,6 +42,86 @@ func TestEstimatedChunkCount_OverflowReturnsZero(t *testing.T) {
 	}
 }
 
+func TestPlanChunks_TerminatesAtInt64Extremes(t *testing.T) {
+	// lower+chunkSize overflows int64 near the top of the key space. This used to
+	// wrap negative, emit a chunk whose predicate matched no rows, and spin the
+	// loop back up from the bottom of the range (an effective hang).
+	tests := []struct {
+		name     string
+		min, max int64
+	}{
+		{"top of range", math.MaxInt64 - 250000, math.MaxInt64},
+		{"single chunk at top", math.MaxInt64 - 10, math.MaxInt64},
+		{"bottom of range", math.MinInt64, math.MinInt64 + 250000},
+		{"spans zero at full width", math.MinInt64, math.MaxInt64},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks := planChunks(tt.min, tt.max, 100000)
+			if len(chunks) == 0 {
+				t.Fatal("planChunks returned no chunks")
+			}
+			if len(chunks) > maxPlannedChunks {
+				t.Fatalf("planChunks produced %d chunks, exceeding the %d cap", len(chunks), maxPlannedChunks)
+			}
+
+			// Bounds must be monotonic, non-negative in width, and cover [min, max]
+			// exactly once with no gaps.
+			if chunks[0].LowerBound != tt.min {
+				t.Errorf("first chunk lower = %d, want min %d", chunks[0].LowerBound, tt.min)
+			}
+			last := chunks[len(chunks)-1]
+			if !last.IsLast {
+				t.Error("final chunk is not marked IsLast")
+			}
+			if last.UpperBound != tt.max {
+				t.Errorf("last chunk upper = %d, want max %d", last.UpperBound, tt.max)
+			}
+			for i, c := range chunks {
+				if c.UpperBound < c.LowerBound {
+					t.Fatalf("chunk %d has upper %d < lower %d (overflow wrap)", i, c.UpperBound, c.LowerBound)
+				}
+				if i > 0 && c.LowerBound != chunks[i-1].UpperBound {
+					t.Fatalf("gap between chunk %d (upper %d) and chunk %d (lower %d)",
+						i-1, chunks[i-1].UpperBound, i, c.LowerBound)
+				}
+				if c.IsLast && i != len(chunks)-1 {
+					t.Fatalf("chunk %d marked IsLast but is not final", i)
+				}
+			}
+		})
+	}
+}
+
+func TestPlanChunks_SparseKeyRangeIsCapped(t *testing.T) {
+	// Snowflake-style IDs: a huge key range holding very few rows. Planning over
+	// the key range at the default chunk size would imply ~1e12 chunks and a
+	// preallocation of roughly 32TB.
+	const min = int64(1_700_000_000_000_000_000)
+	const max = int64(1_800_000_000_000_000_000)
+
+	if got := estimatedChunkCount(min, max, 100000); got == 0 || got <= maxPlannedChunks {
+		t.Fatalf("estimatedChunkCount at the configured size = %d; expected an astronomical count that needs capping", got)
+	}
+
+	chunks := planChunks(min, max, 100000)
+	if len(chunks) > maxPlannedChunks {
+		t.Fatalf("planChunks produced %d chunks, exceeding the %d cap", len(chunks), maxPlannedChunks)
+	}
+	if chunks[0].LowerBound != min {
+		t.Errorf("first chunk lower = %d, want %d", chunks[0].LowerBound, min)
+	}
+	last := chunks[len(chunks)-1]
+	if last.UpperBound != max || !last.IsLast {
+		t.Errorf("last chunk = {%d, %d, IsLast=%v}, want upper %d and IsLast", last.LowerBound, last.UpperBound, last.IsLast, max)
+	}
+	for i, c := range chunks {
+		if i > 0 && c.LowerBound != chunks[i-1].UpperBound {
+			t.Fatalf("gap between chunk %d and %d", i-1, i)
+		}
+	}
+}
+
 func TestPlanChunks_SingleChunkWhenSmall(t *testing.T) {
 	chunks := planChunks(1, 100, 1000)
 	if len(chunks) != 1 {
@@ -185,6 +265,76 @@ func TestBuildChunkedSelectQuery_SQLite(t *testing.T) {
 	want := `SELECT "rowid", "value" FROM "items" WHERE "rowid" >= 1 AND "rowid" <= 50 ORDER BY "rowid"`
 	if got != want {
 		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+func TestChunkKeyForTable_SQLiteNullableIntegerPK(t *testing.T) {
+	// In SQLite only the exact declared type "INTEGER" makes a single-column PK a
+	// rowid alias (implicitly NOT NULL). BIGINT/INT/... PRIMARY KEY are ordinary
+	// columns that accept NULL, and chunk predicates never match NULL — so those
+	// rows would be silently dropped. Such tables must fall back to a full copy.
+	src := &sqliteSourceDB{}
+
+	sqliteTable := func(declaredType string, nullable bool, orders []string) Table {
+		return Table{
+			SourceName: "orders",
+			Columns: []Column{
+				{SourceName: "id", PGName: "id", ColumnType: declaredType, Nullable: nullable},
+				{SourceName: "total", PGName: "total", ColumnType: "REAL"},
+			},
+			PrimaryKey: &Index{
+				Columns:      []string{"id"},
+				ColumnOrders: orders,
+				IsPrimary:    true,
+			},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		declaredType string
+		nullable     bool
+		orders       []string
+		wantChunked  bool
+	}{
+		{"INTEGER PK is a rowid alias", "INTEGER", true, []string{"ASC"}, true},
+		{"lowercase integer PK is a rowid alias", "integer", true, nil, true},
+		{"BIGINT PK accepts NULL", "BIGINT", true, []string{"ASC"}, false},
+		{"INT PK accepts NULL", "INT", true, nil, false},
+		{"SMALLINT PK accepts NULL", "SMALLINT", true, nil, false},
+		{"BIGINT PK declared NOT NULL is safe", "BIGINT", false, nil, true},
+		{"INTEGER PK DESC is not a rowid alias", "INTEGER", true, []string{"DESC"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := chunkKeyForTable(sqliteTable(tt.declaredType, tt.nullable, tt.orders), src)
+			if tt.wantChunked && key == nil {
+				t.Fatalf("chunkKeyForTable(%s, nullable=%v) = nil, want a chunk key", tt.declaredType, tt.nullable)
+			}
+			if !tt.wantChunked && key != nil {
+				t.Fatalf("chunkKeyForTable(%s, nullable=%v) = %+v, want nil (rows with a NULL key would be dropped)",
+					tt.declaredType, tt.nullable, key)
+			}
+		})
+	}
+}
+
+func TestChunkKeyForTable_MySQLNullableFlagDoesNotBlockChunking(t *testing.T) {
+	// MySQL and MSSQL force PK columns NOT NULL, so the SQLite guard must not
+	// regress chunking for them even if the introspected flag says otherwise.
+	table := Table{
+		SourceName: "users",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "bigint", Nullable: true},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}, IsPrimary: true},
+	}
+	if key := chunkKeyForTable(table, &mysqlSourceDB{}); key == nil {
+		t.Fatal("chunkKeyForTable(mysql bigint pk) = nil, want a chunk key")
+	}
+	if key := chunkKeyForTable(table, &mssqlSourceDB{}); key == nil {
+		t.Fatal("chunkKeyForTable(mssql bigint pk) = nil, want a chunk key")
 	}
 }
 

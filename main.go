@@ -163,7 +163,9 @@ func isInteractiveDevice(v any) bool {
 }
 
 func runMigrationWithConfig(cfg *MigrationConfig, opts MigrateOptions) (err error) {
-	ctx := context.Background()
+	ctx, stopSignals := withInterruptCancel(context.Background())
+	defer stopSignals()
+
 	start := time.Now()
 	stage := "source"
 	tableCount := 0

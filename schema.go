@@ -13,7 +13,7 @@ const postgresMaxIdentifierBytes = 63
 // "nameASCII" → "name_ascii", "HTMLParser" → "html_parser".
 func toSnakeCase(s string) string {
 	runes := []rune(s)
-	var result []byte
+	var result []rune
 	for i, r := range runes {
 		if unicode.IsUpper(r) {
 			if i > 0 {
@@ -26,9 +26,9 @@ func toSnakeCase(s string) string {
 					result = append(result, '_')
 				}
 			}
-			result = append(result, byte(unicode.ToLower(r)))
+			result = append(result, unicode.ToLower(r))
 		} else {
-			result = append(result, byte(r))
+			result = append(result, r)
 		}
 	}
 	return string(result)

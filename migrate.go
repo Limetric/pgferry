@@ -64,7 +64,10 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 		mgr = &noopCheckpointManager{path: cpPath}
 	}
 
-	workItems := buildParallelMigrationWorkItems(plans, mgr)
+	workItems, err := buildParallelMigrationWorkItems(plans, mgr)
+	if err != nil {
+		return err
+	}
 	progress := newMigrationProgressLogger(cfg.LogLevel, workItems)
 	if err := runParallelMigrationWorkers(
 		ctx,
@@ -76,6 +79,12 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 		mgr,
 		func(ctx context.Context, source dbQuerier, item migrationWorkItem) (int64, error) {
 			if item.ChunkKey == nil {
+				// A full-table COPY commits before the checkpoint records it, so mark it
+				// durably as in flight first: a crash in that window is otherwise
+				// undetectable on a table with no primary key.
+				if err := mgr.BeginFullTable(item.Table.SourceName); err != nil {
+					return 0, err
+				}
 				return migrateTableFromSourceFull(ctx, cfg.Src, source, cfg.Pool, item.Table, cfg.PGSchema, cfg.TypeMap, item.PGCopyColumns, cfg.LogLevel)
 			}
 			progress.StartChunkedTable(item.Table.SourceName)
@@ -87,6 +96,8 @@ func migrateDataParallel(ctx context.Context, cfg migrateDataConfig) error {
 			return count, nil
 		},
 	); err != nil {
+		// Any COPY still unfinished here was cancelled or failed, and rolled back.
+		mgr.ClearInFlight()
 		// Flush partial progress so a resumed run can skip completed work.
 		if flushErr := mgr.Flush(); flushErr != nil {
 			log.Printf("WARN: failed to save checkpoint: %v", flushErr)
@@ -118,7 +129,7 @@ type migrationWorkerSource interface {
 
 type migrationWorkExecutor func(context.Context, dbQuerier, migrationWorkItem) (int64, error)
 
-func buildParallelMigrationWorkItems(plans []ChunkPlan, mgr checkpointManager) []migrationWorkItem {
+func buildParallelMigrationWorkItems(plans []ChunkPlan, mgr checkpointManager) ([]migrationWorkItem, error) {
 	workItems := make([]migrationWorkItem, 0, len(plans))
 	for _, plan := range plans {
 		if plan.ChunkKey == nil {
@@ -130,8 +141,14 @@ func buildParallelMigrationWorkItems(plans []ChunkPlan, mgr checkpointManager) [
 			continue
 		}
 
+		if plan.HasRows {
+			if err := mgr.PrepareTablePlan(plan.Table.SourceName, plan.KeyMin, plan.KeyMax, plan.Chunks); err != nil {
+				return nil, err
+			}
+		}
+
 		for _, chunk := range plan.Chunks {
-			if mgr.IsChunkCompleted(plan.Table.SourceName, chunk.Index) {
+			if mgr.IsChunkCompleted(plan.Table.SourceName, chunk) {
 				continue
 			}
 			workItems = append(workItems, migrationWorkItem{
@@ -144,7 +161,7 @@ func buildParallelMigrationWorkItems(plans []ChunkPlan, mgr checkpointManager) [
 			})
 		}
 	}
-	return workItems
+	return workItems, nil
 }
 
 func runParallelMigrationWorkers(ctx context.Context, workers int, openSource func() (migrationWorkerSource, error), workItems []migrationWorkItem, mgr checkpointManager, execute migrationWorkExecutor) error {
@@ -212,21 +229,55 @@ func runParallelMigrationWorkers(ctx context.Context, workers int, openSource fu
 						return
 					}
 
-					if source == nil {
-						var err error
-						source, err = openSource()
-						if err != nil {
-							recordErr(fmt.Errorf("open source worker: %w", err))
-							return
+					// Retry transient connection failures. Each chunk COPY is its own
+					// transaction and rolls back cleanly on error, so re-running a work
+					// item cannot double-insert rows. Only the parallel path retries:
+					// single_tx holds a long-lived snapshot that reconnecting would
+					// silently replace.
+					var count int64
+					failed := false
+					for attempt := 1; ; attempt++ {
+						if source == nil {
+							var openErr error
+							source, openErr = openSource()
+							if openErr != nil {
+								if attempt < maxCopyAttempts && isTransientError(openErr) {
+									log.Printf("  WARN: open source worker: %v (attempt %d/%d), retrying in %s",
+										openErr, attempt, maxCopyAttempts, copyRetryBackoff(attempt))
+									if waitBeforeRetry(ctx, attempt) != nil {
+										return
+									}
+									continue
+								}
+								recordErr(fmt.Errorf("open source worker: %w", openErr))
+								return
+							}
 						}
-					}
 
-					count, err := execute(ctx, source, item)
-					if err != nil {
+						var err error
+						count, err = execute(ctx, source, item)
+						if err == nil {
+							break
+						}
 						if ctxErr := ctx.Err(); ctxErr != nil && errors.Is(err, ctxErr) {
 							return
 						}
+						if attempt < maxCopyAttempts && isTransientError(err) {
+							log.Printf("  WARN: %v (attempt %d/%d), retrying in %s",
+								formatMigrationWorkError(item, err), attempt, maxCopyAttempts, copyRetryBackoff(attempt))
+							// The connection may be dead; drop it so the next attempt redials.
+							source.Close()
+							source = nil
+							if waitBeforeRetry(ctx, attempt) != nil {
+								return
+							}
+							continue
+						}
 						recordErr(formatMigrationWorkError(item, err))
+						failed = true
+						break
+					}
+					if failed {
 						return
 					}
 					recordMigrationWorkResult(mgr, item, count)
@@ -271,7 +322,7 @@ func recordMigrationWorkResult(mgr checkpointManager, item migrationWorkItem, co
 		mgr.RecordFullTable(item.Table.SourceName, count)
 		return
 	}
-	mgr.RecordChunk(item.Table.SourceName, item.Chunk.Index, count, item.ChunkCount)
+	mgr.RecordChunk(item.Table.SourceName, item.Chunk, count, item.ChunkCount)
 }
 
 func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
@@ -343,6 +394,8 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 	success := false
 	defer func() {
 		if !success {
+			// Any COPY still unfinished here was cancelled or failed, and rolled back.
+			mgr.ClearInFlight()
 			if flushErr := mgr.Flush(); flushErr != nil {
 				log.Printf("WARN: failed to save checkpoint: %v", flushErr)
 			}
@@ -357,6 +410,9 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 			if mgr.IsTableDone(t.SourceName) {
 				log.Printf("  [%s] skipping (completed in previous run)", t.SourceName)
 				continue
+			}
+			if err := mgr.BeginFullTable(t.SourceName); err != nil {
+				return err
 			}
 			count, copyErr := migrateTableFromSourceFull(ctx, cfg.Src, tx, cfg.Pool, t, cfg.PGSchema, cfg.TypeMap, tablePGCopyColumns(t), cfg.LogLevel)
 			if copyErr != nil {
@@ -378,6 +434,9 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 		}
 
 		chunks := planChunks(min, max, cfg.ChunkSize)
+		if err := mgr.PrepareTablePlan(t.SourceName, min, max, chunks); err != nil {
+			return err
+		}
 		colSelectList := buildColumnSelectList(cfg.Src, t, cfg.TypeMap)
 		pgCols := tablePGCopyColumns(t)
 		chunksToCopy := pendingChunks(t.SourceName, chunks, mgr)
@@ -397,7 +456,7 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 				return fmt.Errorf("table %s chunk %d: %w", t.SourceName, chunk.Index, copyErr)
 			}
 			copied += count
-			mgr.RecordChunk(t.SourceName, chunk.Index, count, len(chunks))
+			mgr.RecordChunk(t.SourceName, chunk, count, len(chunks))
 		}
 		if isTableMigrateLogLevel(cfg.LogLevel) {
 			log.Printf("  [%s] done (%d rows copied)", t.SourceName, copied)
@@ -420,7 +479,7 @@ func migrateDataSingleTx(ctx context.Context, cfg migrateDataConfig) error {
 func pendingChunks(tableName string, chunks []Chunk, mgr checkpointManager) []Chunk {
 	pending := make([]Chunk, 0, len(chunks))
 	for _, chunk := range chunks {
-		if mgr.IsChunkCompleted(tableName, chunk.Index) {
+		if mgr.IsChunkCompleted(tableName, chunk) {
 			continue
 		}
 		pending = append(pending, chunk)
@@ -778,6 +837,9 @@ func buildChunkPlansWithDeps(ctx context.Context, src SourceDB, schema *Schema, 
 						ChunkSize:        chunkSize,
 						ColumnSelectList: job.columnSelectList,
 						PGCopyColumns:    job.pgCopyColumns,
+						KeyMin:           min,
+						KeyMax:           max,
+						HasRows:          true,
 					}
 					if isVerboseMigrateLogLevel(logLevel) {
 						log.Printf("  [%s] %d chunks (key=%s, range=%d..%d)", job.table.SourceName, len(chunks), job.key.SourceColumn, min, max)
@@ -935,6 +997,21 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 			return fmt.Sprintf("%s.STAsBinary() AS %s", quoted, quoted)
 		case col.DataType == "sql_variant":
 			return fmt.Sprintf("TRY_CAST(%s AS nvarchar(max)) AS %s", quoted, quoted)
+		case col.DataType == "money", col.DataType == "smallmoney":
+			// money is an exact 8-byte scaled integer spanning 19 significant digits,
+			// but go-mssqldb decodes it to float64 (~15-17 digits), so magnitudes above
+			// roughly 9e11 lose sub-cent precision before the value ever reaches the
+			// transformer. Convert server-side so exact decimal text is what travels.
+			//
+			// Cast to decimal first: converting money straight to varchar uses style 0,
+			// which renders only two decimal places, so 1234.5678 would arrive as
+			// 1234.57. money is decimal(19,4) internally and smallmoney decimal(10,4),
+			// so these casts are lossless.
+			decimalType := "decimal(19,4)"
+			if col.DataType == "smallmoney" {
+				decimalType = "decimal(10,4)"
+			}
+			return fmt.Sprintf("CONVERT(varchar(41), CAST(%s AS %s)) AS %s", quoted, decimalType, quoted)
 		}
 	}
 	return quoted

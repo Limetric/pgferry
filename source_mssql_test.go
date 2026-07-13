@@ -946,6 +946,55 @@ func TestColumnSelectExpr_MSSQLSqlVariant(t *testing.T) {
 	}
 }
 
+func TestColumnSelectExpr_MSSQLMoneyConvertedServerSide(t *testing.T) {
+	// money is an exact scaled integer with 19 significant digits; go-mssqldb
+	// decodes it to float64 (~15-17 digits), so it must be converted to exact
+	// decimal text server-side rather than round-tripped through a float.
+	// The CAST to decimal is load-bearing: converting money directly to varchar uses
+	// style 0, which renders only TWO decimal places, so 1234.5678 would arrive as
+	// 1234.57 — a worse loss than the float64 round-trip this replaces.
+	src := &mssqlSourceDB{}
+	tests := map[string]string{
+		"money":      "CONVERT(varchar(41), CAST([amount] AS decimal(19,4))) AS [amount]",
+		"smallmoney": "CONVERT(varchar(41), CAST([amount] AS decimal(10,4))) AS [amount]",
+	}
+	for dataType, want := range tests {
+		col := Column{SourceName: "amount", DataType: dataType}
+		got := columnSelectExpr(src, col, defaultTypeMappingConfig())
+		if got != want {
+			t.Errorf("columnSelectExpr(%s) = %q, want %q", dataType, got, want)
+		}
+		if !strings.Contains(got, "CAST(") {
+			t.Errorf("columnSelectExpr(%s) must cast to decimal before converting to text, got %q", dataType, got)
+		}
+	}
+}
+
+func TestMSSQLMoneyTransformer_PassesThroughExactDecimalText(t *testing.T) {
+	// With the server-side CONVERT in place the driver hands us exact decimal text,
+	// which must survive untouched. The float64 branch remains only as a fallback.
+	col := Column{SourceName: "amount", DataType: "money"}
+
+	exact := "922337203685477.5807"
+	got, err := mssqlTransformValue(exact, col, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("mssqlTransformValue(%q) error: %v", exact, err)
+	}
+	if got != exact {
+		t.Errorf("mssqlTransformValue(%q) = %v, want the exact decimal preserved", exact, got)
+	}
+
+	// Demonstrate why the CONVERT is necessary: float64 cannot represent this value,
+	// so the old driver-decoded path silently lost precision.
+	viaFloat, err := mssqlTransformValue(922337203685477.5807, col, defaultTypeMappingConfig())
+	if err != nil {
+		t.Fatalf("mssqlTransformValue(float64) error: %v", err)
+	}
+	if viaFloat == exact {
+		t.Errorf("float64 round-tripped %s exactly; the precision premise of this fix is wrong", exact)
+	}
+}
+
 func TestColumnSelectExpr_MSSQLRegularColumn(t *testing.T) {
 	src := &mssqlSourceDB{}
 	col := Column{SourceName: "name", DataType: "nvarchar"}
