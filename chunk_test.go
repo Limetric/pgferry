@@ -268,6 +268,76 @@ func TestBuildChunkedSelectQuery_SQLite(t *testing.T) {
 	}
 }
 
+func TestChunkKeyForTable_SQLiteNullableIntegerPK(t *testing.T) {
+	// In SQLite only the exact declared type "INTEGER" makes a single-column PK a
+	// rowid alias (implicitly NOT NULL). BIGINT/INT/... PRIMARY KEY are ordinary
+	// columns that accept NULL, and chunk predicates never match NULL — so those
+	// rows would be silently dropped. Such tables must fall back to a full copy.
+	src := &sqliteSourceDB{}
+
+	sqliteTable := func(declaredType string, nullable bool, orders []string) Table {
+		return Table{
+			SourceName: "orders",
+			Columns: []Column{
+				{SourceName: "id", PGName: "id", ColumnType: declaredType, Nullable: nullable},
+				{SourceName: "total", PGName: "total", ColumnType: "REAL"},
+			},
+			PrimaryKey: &Index{
+				Columns:      []string{"id"},
+				ColumnOrders: orders,
+				IsPrimary:    true,
+			},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		declaredType string
+		nullable     bool
+		orders       []string
+		wantChunked  bool
+	}{
+		{"INTEGER PK is a rowid alias", "INTEGER", true, []string{"ASC"}, true},
+		{"lowercase integer PK is a rowid alias", "integer", true, nil, true},
+		{"BIGINT PK accepts NULL", "BIGINT", true, []string{"ASC"}, false},
+		{"INT PK accepts NULL", "INT", true, nil, false},
+		{"SMALLINT PK accepts NULL", "SMALLINT", true, nil, false},
+		{"BIGINT PK declared NOT NULL is safe", "BIGINT", false, nil, true},
+		{"INTEGER PK DESC is not a rowid alias", "INTEGER", true, []string{"DESC"}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key := chunkKeyForTable(sqliteTable(tt.declaredType, tt.nullable, tt.orders), src)
+			if tt.wantChunked && key == nil {
+				t.Fatalf("chunkKeyForTable(%s, nullable=%v) = nil, want a chunk key", tt.declaredType, tt.nullable)
+			}
+			if !tt.wantChunked && key != nil {
+				t.Fatalf("chunkKeyForTable(%s, nullable=%v) = %+v, want nil (rows with a NULL key would be dropped)",
+					tt.declaredType, tt.nullable, key)
+			}
+		})
+	}
+}
+
+func TestChunkKeyForTable_MySQLNullableFlagDoesNotBlockChunking(t *testing.T) {
+	// MySQL and MSSQL force PK columns NOT NULL, so the SQLite guard must not
+	// regress chunking for them even if the introspected flag says otherwise.
+	table := Table{
+		SourceName: "users",
+		Columns: []Column{
+			{SourceName: "id", PGName: "id", DataType: "bigint", ColumnType: "bigint", Nullable: true},
+		},
+		PrimaryKey: &Index{Columns: []string{"id"}, IsPrimary: true},
+	}
+	if key := chunkKeyForTable(table, &mysqlSourceDB{}); key == nil {
+		t.Fatal("chunkKeyForTable(mysql bigint pk) = nil, want a chunk key")
+	}
+	if key := chunkKeyForTable(table, &mssqlSourceDB{}); key == nil {
+		t.Fatal("chunkKeyForTable(mssql bigint pk) = nil, want a chunk key")
+	}
+}
+
 func TestBuildChunkedSelectQuery_MSSQLWithSourceSchema(t *testing.T) {
 	src := &mssqlSourceDB{sourceSchema: "sales"}
 	table := Table{

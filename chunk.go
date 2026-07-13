@@ -204,15 +204,48 @@ func chunkKeyForTable(table Table, src SourceDB) *ChunkKey {
 		if col.PGName != pkPGName {
 			continue
 		}
-		if isNumericChunkableType(col, src) {
-			return &ChunkKey{
-				SourceColumn: col.SourceName,
-				PGColumn:     col.PGName,
-			}
+		if !isNumericChunkableType(col, src) {
+			return nil
 		}
-		return nil
+		if !isChunkKeyNullSafe(table, col, src) {
+			log.Printf("  [%s] primary key %q may contain NULLs; copying the table in one pass instead of chunking",
+				table.SourceName, col.SourceName)
+			return nil
+		}
+		return &ChunkKey{
+			SourceColumn: col.SourceName,
+			PGColumn:     col.PGName,
+		}
 	}
 	return nil
+}
+
+// isChunkKeyNullSafe reports whether the chunk key column is guaranteed to hold
+// no NULLs. Every chunk predicate is a range comparison (key >= lo AND key <= hi),
+// which never matches NULL, and queryMinMax ignores NULLs — so chunking a nullable
+// key would silently drop those rows from the migration.
+func isChunkKeyNullSafe(table Table, col Column, src SourceDB) bool {
+	if !col.Nullable {
+		return true
+	}
+	if sourceTypeForDB(src) != "sqlite" {
+		// MySQL and MSSQL force primary key columns NOT NULL.
+		return true
+	}
+
+	// SQLite only makes a single-column PK an implicitly NOT NULL rowid alias when
+	// the declared type is exactly INTEGER. Any other integer-affinity spelling
+	// (BIGINT, INT, SMALLINT, ...) is an ordinary column that accepts NULL — a
+	// documented legacy quirk. A DESC primary key is not a rowid alias either.
+	if !strings.EqualFold(strings.TrimSpace(col.ColumnType), "INTEGER") {
+		return false
+	}
+	for _, order := range table.PrimaryKey.ColumnOrders {
+		if strings.EqualFold(strings.TrimSpace(order), "DESC") {
+			return false
+		}
+	}
+	return true
 }
 
 // isNumericChunkableType returns true if the column has a numeric integer type
