@@ -997,12 +997,21 @@ func columnSelectExpr(src SourceDB, col Column, typeMap TypeMappingConfig) strin
 			return fmt.Sprintf("%s.STAsBinary() AS %s", quoted, quoted)
 		case col.DataType == "sql_variant":
 			return fmt.Sprintf("TRY_CAST(%s AS nvarchar(max)) AS %s", quoted, quoted)
-		case col.DataType == "money" || col.DataType == "smallmoney":
+		case col.DataType == "money", col.DataType == "smallmoney":
 			// money is an exact 8-byte scaled integer spanning 19 significant digits,
 			// but go-mssqldb decodes it to float64 (~15-17 digits), so magnitudes above
 			// roughly 9e11 lose sub-cent precision before the value ever reaches the
-			// transformer. Convert server-side so the exact decimal text is what travels.
-			return fmt.Sprintf("CONVERT(varchar(41), %s) AS %s", quoted, quoted)
+			// transformer. Convert server-side so exact decimal text is what travels.
+			//
+			// Cast to decimal first: converting money straight to varchar uses style 0,
+			// which renders only two decimal places, so 1234.5678 would arrive as
+			// 1234.57. money is decimal(19,4) internally and smallmoney decimal(10,4),
+			// so these casts are lossless.
+			decimalType := "decimal(19,4)"
+			if col.DataType == "smallmoney" {
+				decimalType = "decimal(10,4)"
+			}
+			return fmt.Sprintf("CONVERT(varchar(41), CAST(%s AS %s)) AS %s", quoted, decimalType, quoted)
 		}
 	}
 	return quoted

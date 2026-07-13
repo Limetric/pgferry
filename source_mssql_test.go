@@ -950,13 +950,22 @@ func TestColumnSelectExpr_MSSQLMoneyConvertedServerSide(t *testing.T) {
 	// money is an exact scaled integer with 19 significant digits; go-mssqldb
 	// decodes it to float64 (~15-17 digits), so it must be converted to exact
 	// decimal text server-side rather than round-tripped through a float.
+	// The CAST to decimal is load-bearing: converting money directly to varchar uses
+	// style 0, which renders only TWO decimal places, so 1234.5678 would arrive as
+	// 1234.57 — a worse loss than the float64 round-trip this replaces.
 	src := &mssqlSourceDB{}
-	for _, dataType := range []string{"money", "smallmoney"} {
+	tests := map[string]string{
+		"money":      "CONVERT(varchar(41), CAST([amount] AS decimal(19,4))) AS [amount]",
+		"smallmoney": "CONVERT(varchar(41), CAST([amount] AS decimal(10,4))) AS [amount]",
+	}
+	for dataType, want := range tests {
 		col := Column{SourceName: "amount", DataType: dataType}
 		got := columnSelectExpr(src, col, defaultTypeMappingConfig())
-		want := "CONVERT(varchar(41), [amount]) AS [amount]"
 		if got != want {
 			t.Errorf("columnSelectExpr(%s) = %q, want %q", dataType, got, want)
+		}
+		if !strings.Contains(got, "CAST(") {
+			t.Errorf("columnSelectExpr(%s) must cast to decimal before converting to text, got %q", dataType, got)
 		}
 	}
 }
