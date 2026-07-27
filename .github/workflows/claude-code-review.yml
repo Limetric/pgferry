@@ -46,20 +46,34 @@ jobs:
             - Read the PR description and existing PR comments or review feedback.
             - Use the recent commit history and current diff to understand what changed since earlier review rounds.
             - Treat previously addressed comments as resolved unless the underlying issue is still present in the current code.
+            - Do not repeat comments that were already addressed in later commits unless the problem remains.
+            - Do not look for replacement findings merely because earlier findings were addressed.
 
-            Focus your review on:
-            - Newly introduced bugs or regressions
-            - Unresolved review feedback that still applies
-            - Code quality and best practices
-            - Performance considerations
-            - Security concerns
-            - Test coverage gaps
+            Report only material problems introduced or made worse by this pull request.
 
-            Do not repeat comments that were already addressed in later commits unless the problem remains.
+            A finding is worth reporting only when:
+            - It has a realistic failure scenario supported by the changed code.
+            - Its impact is correctness, security, data integrity, a user-visible regression, or a significant performance or operational problem.
+            - You are highly confident the issue is real after checking the surrounding code.
+            - The author would reasonably want to fix it before merging.
 
-            Use AGENTS.md file for guidance on style and conventions.
+            Do NOT post:
+            - Summaries of what the PR does
+            - Praise, approval, or "looks good" remarks
+            - Optional improvements, speculative edge cases, theoretical future concerns, or defensive hardening without a demonstrated risk
+            - Generic requests for more tests, validation, types, comments, logging, refactoring, or abstraction
+            - Maintainability, consistency, style, or preference suggestions unless the current code creates a concrete and material defect risk
+            - Pre-existing problems that this pull request does not worsen
+            - Questions the author can answer from the diff or existing context
+            - Duplicate or already-resolved comments
 
-            IMPORTANT: Be concise and avoid unnecessary verbosity. Focus on actionable feedback. Be constructive and helpful.
+            A missing test is a finding only when you can identify important behavior that is incorrect or likely to regress, not merely because changed code lacks a test.
+
+            For each finding, cite the file or location, state the concrete failure scenario and impact, and recommend a specific change. If you cannot state the scenario and impact clearly, omit the finding.
+
+            Return at most the three highest-impact findings. It is better to return no findings than a low-confidence or low-impact finding.
+
+            Your comment must contain only the findings. If you find no qualifying issues, post exactly one line: No actionable feedback.
 
             Use `gh pr view`, `gh pr diff`, and other allowed `gh pr` commands as needed to inspect prior feedback before commenting.
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
