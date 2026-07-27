@@ -35,5 +35,6 @@ jobs:
           allowed_non_write_users: "*" # Required for issue triage workflow, if users without repo write access create issues
           # github_token: ${{ secrets.GITHUB_TOKEN }}
           claude_args: |
-            --model claude-sonnet-4-6
+            --model claude-sonnet-5
+            --effort medium
             --mcp-config .mcp.json
