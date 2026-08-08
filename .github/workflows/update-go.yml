@@ -43,7 +43,7 @@ jobs:
 
           echo "changed=true" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         if: steps.version.outputs.changed == 'true'
         with:
           go-version: ${{ steps.version.outputs.latest }}
