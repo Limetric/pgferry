@@ -41,15 +41,22 @@ cd pgferry
 go build -o build/pgferry .
 ```
 
-For a first run, start with the wizard and then run `plan`:
+## Quick Start
+
+For a first run, the wizard is all you need:
 
 ```bash
 pgferry wizard
+```
+
+It walks you through the source and target DSNs, target schema, migration mode, and the key type-mapping options. It then runs `plan` and lets you start the migration in the same flow. In an interactive terminal, plain `pgferry` also opens the wizard.
+
+To run the generated config through those steps yourself:
+
+```bash
 pgferry plan migration.toml
 pgferry migrate migration.toml
 ```
-
-In an interactive terminal, plain `pgferry` also opens the wizard. It walks you through the source and target DSNs, target schema, migration mode, and the key type-mapping options.
 
 If you prefer to create the config yourself, the minimum shape looks like this:
 
