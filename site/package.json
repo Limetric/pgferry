@@ -14,9 +14,9 @@
     "@fontsource/fraunces": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
-    "@plausible-analytics/tracker": "0.4.5",
+    "@plausible-analytics/tracker": "0.4.6",
     "@vercel/speed-insights": "2.0.0",
-    "astro": "7.2.0",
+    "astro": "7.2.4",
     "remark-gfm": "4.0.1"
   }
 }
