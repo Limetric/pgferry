@@ -6,7 +6,7 @@
 		},
 		"exa": {
 			"type": "http",
-			"url": "https://mcp.exa.ai/mcp?tools=web_search_exa,get_code_context_exa"
+			"url": "https://mcp.exa.ai/mcp"
 		}
 	}
 }
