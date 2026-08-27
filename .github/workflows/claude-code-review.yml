@@ -82,6 +82,12 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
+          # The checked-out PR branch may predate the .gitignore entry for this
+          # directory, and a review action that finds a dirty working tree at the
+          # end of a run commits and pushes it onto the PR branch. Exclude the
+          # scratch directory per-checkout so that cannot happen on any branch.
+          mkdir -p .git/info
+          echo '/.review-scope/' >>.git/info/exclude
           mkdir -p .review-scope
           if [ -n "$DIFF_BASE" ]; then
             gh api "repos/$GITHUB_REPOSITORY/compare/$DIFF_BASE...$HEAD_SHA" \
