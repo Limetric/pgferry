@@ -57,3 +57,6 @@ Thumbs.db
 /pgferry
 /build/
 /dist/
+
+# Diff scaffolding written by the automated PR review workflows
+.review-scope/
