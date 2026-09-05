@@ -165,7 +165,7 @@ jobs:
           # response here, leaving the action without a GitHub client. It also
           # avoids granting a third-party App write access to this public repo.
           use_github_token: true
-          model: openai/gpt-5.6-sol
+          model: openai/gpt-6-astra
           variant: medium
           prompt: |
             REPO: ${{ github.repository }}
