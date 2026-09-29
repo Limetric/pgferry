@@ -924,19 +924,15 @@ func TestValidateWizardTargetDSN_AcceptsPercentEncodedUnicode(t *testing.T) {
 	}
 }
 
-func TestValidateWizardTargetDSN_RejectsInvalidUserinfo(t *testing.T) {
-	badPassword := string([]byte{'p', 'a', 's', 0xc2, 's'})
-	dsn := "postgres://postgres:" + badPassword + "@127.0.0.1:5432/target?sslmode=disable"
+func TestValidateWizardTargetDSN_AcceptsRawNonASCIIUserinfo(t *testing.T) {
+	rawPassword := string([]byte{'p', 'a', 's', 0xc2, 's'})
+	dsn := "postgres://postgres:" + rawPassword + "@127.0.0.1:5432/target?sslmode=disable"
 
-	// Raw non-ASCII bytes in URL userinfo are rejected by the current pgx/net/url
-	// parser path as invalid userinfo; this documents the present boundary rather
+	// Since pgx v5.11, raw non-ASCII bytes in URL userinfo are accepted and
+	// passed through verbatim; this documents the present pgx boundary rather
 	// than claiming pgferry implements its own UTF-8 validation.
-	err := validateWizardTargetDSN(dsn)
-	if err == nil {
-		t.Fatal("validateWizardTargetDSN() expected error for invalid URL userinfo")
-	}
-	if !strings.Contains(strings.ToLower(err.Error()), "invalid userinfo") {
-		t.Fatalf("validateWizardTargetDSN() error = %q, want invalid userinfo parse failure", err)
+	if err := validateWizardTargetDSN(dsn); err != nil {
+		t.Fatalf("validateWizardTargetDSN() error: %v", err)
 	}
 }
 
