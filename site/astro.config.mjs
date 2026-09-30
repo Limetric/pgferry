@@ -1,7 +1,6 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import remarkGfm from 'remark-gfm';
 
 function normalizeURL(value) {
 	if (!value) return null;
@@ -34,12 +33,6 @@ const head = [
 export default defineConfig({
 	site,
 	trailingSlash: 'always',
-	// Starlight 0.39 wires its own remark plugins into the MDX pipeline, which
-	// stops GFM from being applied to .mdx files (tables render as raw text).
-	// Apply remark-gfm explicitly so both .md and .mdx get GFM tables.
-	markdown: {
-		remarkPlugins: [remarkGfm],
-	},
 	integrations: [
 		starlight({
 			title: 'pgferry',
