@@ -166,7 +166,7 @@ jobs:
           # avoids granting a third-party App write access to this public repo.
           use_github_token: true
           model: openai/gpt-6.1-sol
-          variant: high
+          variant: medium
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
