@@ -10,7 +10,7 @@ require (
 	github.com/microsoft/go-mssqldb v1.11.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.24.0
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (
