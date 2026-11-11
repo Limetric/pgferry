@@ -59,7 +59,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.should-review == 'true'
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
@@ -188,7 +188,7 @@ jobs:
 
           claude_args: |
             --model claude-opus-5-5
-            --effort medium
+            --effort high
             --mcp-config .mcp.json
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
             --system-prompt "Caveman mode active. Respond terse like smart caveman: drop articles, filler, pleasantries, hedging. Keep technical terms exact. Code and commands unchanged; security warnings clear."
