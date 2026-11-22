@@ -7,7 +7,7 @@ require (
 	github.com/dustin/go-humanize v1.1.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/microsoft/go-mssqldb v1.11.2
+	github.com/microsoft/go-mssqldb v1.12.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sync v0.24.0
 	modernc.org/sqlite v1.61.1
