@@ -10,12 +10,12 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "0.42.7",
+    "@astrojs/starlight": "0.43.1",
     "@fontsource/fraunces": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
     "@plausible-analytics/tracker": "0.4.7",
-    "@vercel/speed-insights": "2.0.0",
-    "astro": "7.4.4"
+    "@vercel/speed-insights": "2.1.0",
+    "astro": "7.4.13"
   }
 }
